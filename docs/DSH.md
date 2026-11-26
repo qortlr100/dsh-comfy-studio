@@ -2,7 +2,7 @@
 
 DeepSeek Harness(dsh) 위에 이 프로젝트를 올릴 때 알아야 하는 것을 모았다. 항목마다 확인 수준이 다르므로 표시를 본다(뜻은 `AGENTS.md` "확인 수준").
 
-- **띄워 확인** — dsh 0.2.2-rc.5를 실제로 실행하고 헤드리스 Chromium(Chrome for Testing 153)으로 확인했다(2026-11-24~25, 콘솔 오류 0건).
+- **띄워 확인** — dsh 0.2.2-rc.5를 실제로 실행하고 헤드리스 Chromium(Chrome for Testing 153)으로 확인했다(2026-11-24~25, 콘솔 오류 0건). 1-0에서 이 저장소의 틀로 다시 띄운 것은 날짜(2026-11-26)를 따로 적었다.
 - **소스 확인** — 업스트림 저장소의 태그 `dsh-v0.2.2-rc.5`에서 소스나 문서를 읽었다. 실행하지는 않았다. "소스 확인(DreamVerse)"는 DreamVerse 포크(dsh 0.1.7-rc.1에서 갈라짐)의 소스에서 읽었다는 뜻이고, 0.2.2-rc.5에서도 되는지는 말하지 않는다.
 - **미확인** — 아직 확인하지 못했다. 맨 아래 "확인하지 못한 것"에 모았다.
 
@@ -40,7 +40,7 @@ dsh plugin --profile <name> <pnpm-args>   프로필 디렉터리에서 pnpm을 �
 - **번들**은 `package.json`의 `dsh.bundle.patch`로 패치 파일을 가리키는 npm 패키지다. 패치 파일은 플러그인 행을 넣거나 덮는 YAML이다. 패치 파일을 여러 개 적을 수도 있다(`dsh-web-app`이 그렇다).
 - **합성 순서**(**소스 확인**: 업스트림 `docs/user/develop/basic/publish.md` "The loading order"): 빈 뿌리 → 프로필 `package.json`의 `dsh.profile.bundles`에 적힌 번들을 순서대로 → 프로필의 `cordis.patch.yml` → `$DSH_HOME/cordis.patch.yml`(그 home의 모든 프로필에 공통) → `--patch`(준 순서대로). 뒤 계층이 행 단위로 이긴다. 패치는 행의 `config` 전체를 바꾼다(키별로 합치지 않는다). 그래서 앞 계층의 행을 `id`로 덮을 때는 그 행에 필요한 키를 전부 다시 적는다.
 
-아래 구성은 2026-11-24에 그대로 동작했다(**띄워 확인**).
+아래 구성은 2026-11-24에 그대로 동작했다(**띄워 확인**). 지금은 `scripts/dsh.ts`가 같은 일을 한다: `pnpm dsh:profile`이 처음 두 명령을, `pnpm dsh:start`가 그 둘과 셋째를 한다(`AGENTS.md` "명령").
 
 프로필 만들기와 실행:
 
@@ -89,25 +89,27 @@ pnpm exec dsh --profile comfy-studio --no-open --port 8092
 
 알아 둘 것:
 
-- 번들은 자기가 넣는 플러그인 패키지에 의존한다(위의 `dependencies`). 행이 하나도 없는 패치를 가진 번들은 띄워 보지 않았다.
+- 번들은 자기가 넣는 플러그인 패키지에 의존한다(위의 `dependencies`).
+- 패치가 빈 배열(`[]`)인 번들도 기동한다. 그때 `--dump-config`에는 그 번들의 머리 줄이 나오지 않는다(**띄워 확인**, 2026-11-25).
+- `--from-default-profile`은 프로필 디렉터리에 `package.json`, `cordis.yml`, `cordis.patch.yml`, `pnpm-workspace.yaml` 넷만 만든다. `node_modules`는 `dsh plugin add`를 처음 돌릴 때 생긴다. `dsh-base`와 `dsh-web-app`은 프로필이 아니라 dsh를 설치한 쪽에서 풀린다(**띄워 확인**, 2026-11-25).
 - 프로필의 `pnpm-workspace.yaml`은 `nodeLinker: hoisted`다.
 - 설정 화면에서 바꾼 값은 프로필의 `cordis.patch.yml`에 쓰인다.
-- 그때 합성된 구성은 203행이었다(`dsh-base`와 `dsh-web-app`이 202행). `--dump-config`는 행 묶음마다 어느 계층의 것인지 `# == <번들 이름>` 머리 줄을 찍는다(우리 번들의 행은 `# == @cs/bundle` 아래에 나왔다). 자주 볼 행 id: `llm-pi-ai`, `llm-deepseek`, `credentials`, `storage`, `storage-json`, `storage-domain`, `schedule`, `mcp-manager`, `skill`, `subagent`, `web-search-deepseek`, `webserver`, `web-runtime`, `connection`, `locale`, `ui-theme`, `ui-layout`, `ui-sidebar`, `ui-sidebar-right`, `ui-conversation`, `ui-settings`, `agent-preset-registry`, `preset-standard`.
+- 합성된 구성은 203행이다(`dsh-base`와 `dsh-web-app`이 202행. 2026-11-26에 이 저장소의 틀로 다시 셌다). `--dump-config`는 행 묶음마다 어느 계층의 것인지 `# == <번들 이름>` 머리 줄을 찍는다(우리 번들의 행은 `# == @cs/bundle` 아래에 나왔다). 자주 볼 행 id: `llm-pi-ai`, `llm-deepseek`, `credentials`, `storage`, `storage-json`, `storage-domain`, `schedule`, `mcp-manager`, `skill`, `subagent`, `web-search-deepseek`, `webserver`, `web-runtime`, `connection`, `locale`, `ui-theme`, `ui-layout`, `ui-sidebar`, `ui-sidebar-right`, `ui-conversation`, `ui-settings`, `agent-preset-registry`, `preset-standard`.
 - 업스트림 안내: `docs/user/develop/basic/publish.md`.
 
 ### 워크트리와 DSH_HOME
 
 `DSH_HOME`에는 프로필(설정 화면에서 바꾼 값 포함), 자격 증명(`.credentials.yaml`, 모델 키), 세션이 들어 있다. 프로필은 번들을 **절대 경로**로 링크한다. 이 저장소의 작업은 단계마다 `.worktree/<이름>`에서 하고 병합 뒤 그 워크트리를 지운다(`AGENTS.md` "브랜치·커밋·병합"). 이 셋이 부딪친다.
 
-| 방식                                         | 얻는 것                                                   | 잃는 것                                                                                               |
-| -------------------------------------------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| 워크트리마다 home(`<워크트리>/.dsh-home`)    | 링크가 늘 그 워크트리를 가리킨다. 서로 섞이지 않는다.     | 워크트리를 지우면 모델 키와 설정이 같이 사라진다. 단계마다 키를 다시 넣어야 한다.                     |
-| 개발용 home 하나를 같이 쓴다                 | 모델 키와 설정이 단계를 넘어 남는다.                      | 링크는 한 번에 한 워크트리만 가리킨다. 워크트리를 바꿀 때마다 `dsh plugin add`를 그 경로로 다시 돌린다. |
+**정해진 방식**(사용자가 고름, 2026-11-26): **본 체크아웃의 `.dsh-home` 하나를 모든 워크트리가 같이 쓰고, 스크립트가 띄울 때마다 번들 링크를 지금 워크트리로 다시 건다.** 모델 키와 설정이 단계를 넘어 남는다.
 
-- 링크를 다른 경로로 바꾸는 방법은 `dsh plugin --profile comfy-studio add <그 경로의 packages/bundle>`을 다시 돌리는 것이다. 2026-11-25에 저장소 폴더를 옮긴 뒤 이렇게 다시 걸었다.
-- home은 체크아웃이 아니므로 저장소 밖에 두어도 "체크아웃을 저장소 밖에 만들지 않는다"는 규칙에 걸리지 않는다. 저장소 안에 두면 `.gitignore`에 넣는다.
-- 시험은 어느 방식이든 임시 home을 쓴다("띄워서 확인하는 법").
-- **어느 방식으로 할지는 정해지지 않았다.** 1-0에서 안을 만들어 사용자가 확인한다(`docs/DECISIONS.md` "미정").
+- `scripts/dsh-env.ts`가 `git rev-parse --git-common-dir`로 본 체크아웃을 찾아 그 아래 `.dsh-home`을 home으로 쓴다. 어느 워크트리에서 돌려도 같은 home이다. `.gitignore`에 들어 있다.
+- `pnpm dsh:profile`·`dsh:start`·`dsh:config`는 먼저 프로필을 맞춘다. 프로필이 없으면 `web` 템플릿으로 만들고(`--from-default-profile`은 있던 프로필을 덮어쓰므로 없을 때만 돌린다), 프로필 `package.json`의 `@cs/bundle` 링크가 지금 체크아웃의 `packages/bundle`이 아니면 `dsh plugin --profile comfy-studio add <그 경로>`로 다시 건다.
+- 다시 거는 데는 약 0.5초가 걸린다. `bundles` 목록에 번들이 겹쳐 들어가지 않고 프로필의 `cordis.patch.yml`(설정 화면에서 바꾼 값)은 그대로 남는다(**띄워 확인**, 2026-11-25).
+- **링크는 한 번에 한 워크트리만 가리킨다.** 한 워크트리에서 띄워 둔 채 다른 워크트리에서 띄우면 먼저 띄운 쪽의 링크가 바뀐다. 두 곳에서 동시에 띄울 때는 한쪽에 `DSH_HOME=<다른 경로>`를 준다. 환경 변수가 있으면 스크립트는 그 경로를 쓴다.
+- 워크트리를 지운 뒤에는 링크가 없는 경로를 가리킨다. 다음에 어느 체크아웃에서든 `pnpm dsh:profile`이나 `pnpm dsh:start`를 돌리면 다시 걸린다(**띄워 확인**, 2026-11-26).
+- 시험은 임시 home을 쓴다("띄워서 확인하는 법"). 개발용 home의 키와 설정을 건드리지 않는다.
+- 버린 안: 워크트리마다 home을 두는 것(워크트리를 지우면 모델 키와 설정이 같이 사라진다), 저장소 밖에 공용 home을 두는 것.
 
 ## 플러그인 패키지 하나의 모양
 
@@ -133,7 +135,8 @@ export function apply() {}
 - `dsh.client`가 있으면 `./client` export가 반드시 있어야 한다. 없으면 기동이 실패한다(**소스 확인**).
 - `dsh.client.inject`는 패키지 이름 목록이고 정보용이다. 실행 순서를 정하지 않는다. 순서는 Cordis가 `inject`에 적힌 **서비스**를 기다리는 것으로만 정해진다(**소스 확인**: 업스트림 `packages/client/AGENTS.md`).
 - 브라우저 번들은 **띄우기 전에 빌드돼 있어야** 한다. dsh는 소스가 아니라 `lib/client.js`를 내보낸다.
-- 호스트 절반을 TypeScript로 쓰면 JavaScript로 빌드해 내보내는 것을 기본으로 한다. 링크된 패키지의 `.ts`를 Node가 바로 읽는지는 미확인이다.
+- 호스트 절반만 있는 플러그인을 우리 번들로 띄우면 기동 때 `apply(ctx)`가 불린다(**띄워 확인**, 2026-11-25. `packages/ui-shell`이 이 모양이다).
+- 링크된 패키지의 호스트 절반을 `.ts`로 두고 `main`과 `exports["."]`가 그 파일을 가리키게 해도 Node 24.22.3이 바로 읽는다(**띄워 확인**, 2026-11-25. 타입 주석만 있는 작은 파일로 봤다). Node 문서에 따르면 타입 지우기는 지울 수 있는 문법만 받고(enum·생성자 매개변수 속성은 안 된다) `node_modules` 안의 파일에는 적용되지 않는다. 링크된 패키지는 실제 경로로 풀려서 걸리지 않은 것으로 보인다(추정). 호스트 절반을 이렇게 쓸지 JavaScript로 빌드해 내보낼지는 1-1에서 정한다.
 
 ## 브라우저 절반
 
@@ -471,6 +474,8 @@ span[class$="_brandMark"]:has(> [data-slot="sidebar.brand.mark"]:empty) { displa
 ## 함정
 
 - 새 프로필을 처음 열면 "Preview Notice" 창(버튼은 `Continue`)과 "Get started" 창(API 키·로그인, `Close`로 닫는다)이 차례로 뜬다. 첫 창이 떠 있는 동안 페이지 전체가 inert라 클릭이 막힌다.
+- Preview Notice 창은 페이지 로드가 끝난(`networkidle`) 뒤에 뜬다. 로드 직후에 `count()`로 있는지 보면 0이 나와 닫지 못하고 지나간다(2026-11-26에 그렇게 됐다). 창이 뜨기를 기다린 뒤 닫는다.
+- pnpm 10은 의존성의 설치 스크립트를 돌리지 않는다. dsh를 설치하면 `@deepseek-ai/dsh-subprocess-local`(`node-pty`의 `spawn-helper`에 실행 권한을 준다), `node-pty`, `koffi`, `protobufjs`, `@google/genai` 다섯 개가 무시됐다고 나온다. 그 상태로 웹은 뜬다(**띄워 확인**, 2026-11-26). 에이전트의 셸 도구가 그 상태로 도는지는 보지 않았다(1-3, 1-4). 필요하면 `pnpm-workspace.yaml`의 `onlyBuiltDependencies`에 적어 돌리게 한다.
 - "Get started" 창의 DOM 노드를 강제로 지우면 `sidebar.settings` 슬롯이 `removeChild` 오류로 죽는다. 반드시 버튼으로 닫는다.
 - Preview Notice를 넘기면 프로필 `cordis.patch.yml`의 `ui-settings-general` 행에 `welcomeNoticeVersion`이 기록된다(관찰).
 - 실행 때 출력되는 주소에는 로그인 토큰이 들어 있다. 로그나 문서에 붙이지 않는다.
@@ -484,6 +489,8 @@ span[class$="_brandMark"]:has(> [data-slot="sidebar.brand.mark"]:empty) { displa
 ## 띄워서 확인하는 법
 
 화면이 걸린 변경은 dsh를 실제로 띄워 확인한다. 아래는 2026-11-24~25에 쓴 절차를 한 파일로 정리한 것이다(`playwright-core` 1.65.1). 이 모양 그대로 돌려 보지는 않았다. 1-2에서 조합 시험으로 만든다.
+
+1-0에서는 저장소 밖에 둔 같은 모양의 스크립트로 `DSH_HOME=<임시 폴더> pnpm -s dsh:start --no-open --port 0`을 띄워 화면과 콘솔 오류 0건을 확인했다(2026-11-26). 아래 0번의 두 명령은 `DSH_HOME=<임시 폴더> pnpm dsh:profile` 하나로 바꿀 수 있다. 3번의 창 닫기는 아래처럼 쓰면 Preview Notice를 놓친다("함정"). `playwright-core`는 아직 이 저장소의 의존성이 아니다.
 
 **브라우저 준비.** 그때는 이 장비에 받아 둔 Chromium을 경로로 지정해 썼다(`~/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome`). 다른 장비에서는 `CHROME`에 Chrome이나 Chromium 실행 파일 경로를 주거나, `pnpm exec playwright-core install chromium`으로 받고 `executablePath`를 빼서 playwright가 찾게 한다(이 설치 명령은 이 저장소에서 돌려 보지 않았다).
 
@@ -572,7 +579,7 @@ await browser.close(); child.kill('SIGTERM')
 - **Astryx가 전혀 없는 브라우저 번들.** Astryx 없이 그린 화면(React 18 컴포넌트 + 기본 부품 + 토큰 CSS)은 띄워 확인했지만, 그 브라우저 번들에는 Astryx 시험 코드가 같이 실려 있었다(그 화면에는 쓰이지 않았다). 완전히 뺀 것은 1-1이 처음이다.
 - **규칙대로 쓴 브라우저 절반.** 슬롯 등록의 `inject`·`store`·`hooks` 칸, TSX와 JSX 자동 런타임, dsh 타입으로 하는 타입 검사, 공유 모듈 열한 개만 external로 둔 빌드(시험은 `createElement`로 쓴 타입 없는 JavaScript였다).
 - **에이전트 프리셋.** 우리 프리셋을 넣어 띄우는 것, 프리셋 밖에서 등록한 도구가 에이전트에게 보이는지, 기본 제공 프리셋을 끄는 것.
-- 행이 하나도 없는 번들 패치, 호스트 절반만 있는 플러그인을 우리 번들로 띄우는 것(1-0).
+- 무시된 설치 스크립트(`node-pty` 등)가 에이전트의 셸 도구에 주는 영향("함정").
 - DreamVerse의 서버 쪽 코드를 0.2.2-rc.5에서 실행하는 것(타입 검사까지만 했다. 2-0).
 - 가운데에 입력창을 끼운 첫 화면, `@` 메뉴에 우리 항목 추가.
 - `ctx.credentials`와 `ctx.storageDomain`을 저장소 밖 플러그인에서 쓰는 것.

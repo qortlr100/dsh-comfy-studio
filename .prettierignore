@@ -1,0 +1,9 @@
+node_modules
+lib
+build
+.dsh-home
+.worktree
+pnpm-lock.yaml
+
+# Documents keep their hand-aligned tables.
+*.md
