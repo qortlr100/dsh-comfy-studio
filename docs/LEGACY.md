@@ -4,7 +4,7 @@
 
 **기존 저장소는 읽기만 한다.** 지금 쓰이고 있는 앱이다. 코드도 `data/`도 고치지 않는다.
 
-**기존 저장소는 비공개이고 이 저장소는 공개다.** 그래서 이 문서에는 기존 앱의 운영 데이터(DB 행 수, 용량, 사용 통계)와 사용자의 서버 환경을 적지 않는다(`AGENTS.md` "꼭 지킬 것"). 필요하면 로컬에서 확인한다.
+**기존 저장소는 비공개이고 이 저장소는 공개다.** 그래서 이 문서에는 기존 앱의 운영 데이터(DB 행 수, 용량, 사용 통계, 운영 기록에서 끌어낸 판단)와 사용자의 서버·배포 환경(기존 앱이 어떻게 배포돼 있는지 포함)을 적지 않는다(`AGENTS.md` "꼭 지킬 것"). 필요하면 로컬에서 확인한다.
 
 이 문서의 `src/…`, `data/…` 경로는 기존 저장소 안의 경로다. 기존 저장소의 문서는 이 저장소의 같은 이름 문서와 헷갈리지 않게 `comfy-studio/docs/…`로 적는다. 기존 저장소의 문서는 에이전트(채팅에서 도구를 부르는 LLM)를 "모델"이라고 부른다. 이 문서에서는 "에이전트"로 옮겨 적었다.
 
@@ -17,12 +17,7 @@
 | 스택        | Next.js 16 App Router, React 19, TypeScript strict, Tailwind v4 + 자체 부품, SQLite(better-sqlite3) + Drizzle, iron-session, zod v4, Vitest    |
 | LLM         | `@anthropic-ai/sdk`와 `openai` SDK를 직접 쓴다. 프로바이더에는 API 키 방식(`anthropic`, `openai`, `openai_compatible`)과 OAuth 로그인 방식이 있다. |
 | 규모        | `src` 63,172줄 + 테스트 25,089줄. 화면(`src/components`)의 `.tsx`가 약 21,600줄이고(`.ts`까지 약 23,200줄) 그중 자체 부품(`src/components/ui`)이 942줄이다. |
-| 배포        | Docker 컨테이너 하나 + 볼륨 하나를 리버스 프록시 뒤에 두고 비밀번호로 로그인한다. 받아쓰기 서버와 Blender 작업 서버는 별도 컨테이너다.         |
 | 읽을 문서   | `comfy-studio/AGENTS.md`(규칙), `comfy-studio/docs/ARCHITECTURE.md`(동작의 상세. "ComfyUI 연동" 절이 가장 자세하다), `comfy-studio/docs/CONVENTIONS.md`, `comfy-studio/docs/ROADMAP.md`(기능 이력), `comfy-studio/docs/DESIGN.md`(토큰과 부품), `comfy-studio/docs/PHASE17_PLAN.md`~`PHASE19_PLAN.md` |
-
-## 실제로 쓰이는 방식
-
-기존 로드맵(Phase 17)이 운영 기록을 보고 내린 판단이다. 실행의 대부분이 채팅에서 시작됐고, 저장한 변형은 쓰이지 않았다. 사람이 폼으로 돌리는 것보다 **local ComfyUI에서 검증한 워크플로를 가져와, 채팅의 에이전트가 그래프를 고쳐 다른 서버에서 실행하는** 쪽이 주된 사용이다. 무엇을 먼저 옮길지 정할 때 이 점을 본다.
 
 ## 기능
 
