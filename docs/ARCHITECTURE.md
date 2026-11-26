@@ -20,18 +20,18 @@
 | 기반             | DeepSeek Harness `@deepseek-ai/dsh` **0.2.2-rc.5** 고정(MIT)                                                                                                      | 에이전트 코어, 웹 클라이언트, 플러그인 체계를 준다. `@deepseek-ai/dsh-*`는 전부 이 버전으로 맞춘다. `cordis`와 `schemastery`는 버전 줄이 따로다(아래 두 줄). |
 | 런타임           | Node.js 24.9.0 이상(확인에 쓴 버전 24.22.3)                                                                                                                       | dsh의 요구다.                                                                                                                                              |
 | 패키지 관리      | pnpm 워크스페이스, **10.34.8** 고정(`packageManager`). 업스트림은 11.28.5다                                                                                       | `dsh plugin` 명령이 프로필 디렉터리에서 pnpm을 부른다. pnpm 10은 의존성의 설치 스크립트를 돌리지 않는다(`docs/DSH.md` "함정").                            |
-| 언어             | TypeScript **6.0.3** 고정, strict, ESM                                                                                                                            | 업스트림과 DreamVerse가 쓰는 줄(`^6.0.3`)이다. dsh의 peer 허용 범위는 `>=5 <7`이다. 공통 옵션은 `tsconfig.base.json`에 있다.                               |
+| 언어             | TypeScript **6.0.3** 고정, strict, ESM                                                                                                                            | 업스트림과 DreamVerse가 쓰는 줄(`^6.0.3`)이다. dsh의 peer 허용 범위는 `>=5 <7`이다. 공통 옵션은 `tsconfig.base.json`에 있다. 스크립트와 플러그인의 호스트 절반은 `.ts`를 Node가 바로 실행한다(빌드 없음, 지울 수 있는 문법만). 빌드하는 것은 브라우저 절반뿐이다. 브라우저 절반이 있는 패키지는 호스트·브라우저 두 프로그램으로 타입 검사한다(`docs/DSH.md` "플러그인 패키지 하나의 모양"). |
 | 플러그인 체계    | Cordis `@deepseek-ai/cordis` 4.1.0(dsh 0.2.2-rc.5가 끌고 온다)                                                                                                    | `inject`, `apply(ctx)`, `Service`, `ctx.effect`.                                                                                                           |
 | 스키마           | zod 4.6.x(브라우저 공유 모듈 표에 있다), `@deepseek-ai/schemastery` 3.19.0(플러그인 설정, dsh가 끌고 온다)                                                        | 외부 데이터는 스키마로 좁힌다.                                                                                                                             |
 | 브라우저 UI      | React **18.3.1**과 react-dom(dsh 공유 모듈이라 브라우저 번들에 싣지 않는다), dsh 슬롯, dsh 기본 부품, `@tanstack/react-virtual` 3.14.10(공유)                     | React 19 전용 API와 그것을 요구하는 라이브러리는 쓸 수 없다.                                                                                               |
-| 스타일           | 직접 쓴 CSS(우리 클래스에만 적용) + dsh 색 토큰 `--dsw-alias-*`                                                                                                   | 다크 모드가 토큰으로 따라온다. CSS를 브라우저 번들에 싣는 방식은 1-1에서 정한다.                                                                           |
-| 브라우저 번들    | esbuild(확인에 쓴 버전 0.28.2)로 CJS 본문을 만들어 dsh 로더 형식으로 감싼다                                                                                       | 업스트림 빌드 프리셋은 npm에 없다. 형식은 `docs/DSH.md` "브라우저 번들 형식"에 있다.                                                                                |
+| 스타일           | 직접 쓴 CSS(우리 클래스에만 적용) + dsh 색 토큰 `--dsw-alias-*`                                                                                                   | 다크 모드가 토큰으로 따라온다. CSS Modules(`*.module.css`)로 싣는다(`docs/DSH.md` "CSS").                                                                           |
+| 브라우저 번들    | esbuild 0.28.2로 CJS 본문을 만들어 dsh 로더 형식으로 감싼다. CSS Modules는 lightningcss 1.33.0(`scripts/build-client.ts`)                                                                                       | 업스트림 빌드 프리셋은 npm에 없다. 형식은 `docs/DSH.md` "브라우저 번들 형식"에 있다.                                                                                |
 | 브라우저 쪽 타입 | dsh 패키지를 `0.2.2-rc.5`로 devDependency 고정(타입만 가져온다), `@types/react` 18                                                                                | 이 패키지들의 npm `latest`는 옛 버전이다. 어느 패키지가 필요한지는 `docs/DSH.md` "타입을 얻는 패키지"에 있다.                                              |
 | 생성 백엔드      | ComfyUI HTTP·WebSocket, Comfy Cloud, RunPod Serverless(+ 네트워크 볼륨 S3), Modal 게이트웨이                                                                      | 기존 `lib/comfy`를 옮긴다(`docs/LEGACY.md`).                                                                                                               |
 | LLM              | dsh가 관리한다: DeepSeek, 내장 프로바이더 목록(`anthropic`, `openai` 등), 사용자 지정 API(OpenAI Chat Completions, OpenAI Responses, Anthropic Messages, Gemini)  | 우리 코드에 LLM SDK를 두지 않는다.                                                                                                                         |
 | 저장             | 프로젝트는 폴더 + 추가 전용 기록 파일, 대화·설정·자격 증명은 dsh(`$DSH_HOME`)                                                                                     | 프로젝트를 넘는 데이터의 자리는 설계 과제다(아래 "데이터가 사는 곳").                                                                                      |
 | 테스트           | Vitest(단위), dsh를 실제로 띄운 조합 시험, 헤드리스 Chromium(`playwright-core`, 확인에 쓴 버전 1.65.1)으로 화면 확인                                              | 기존 `lib/comfy` 테스트가 Vitest다. 틀은 1-2에서 만든다.                                                                                                   |
-| 린트·포맷        | oxlint 1.95.0, Prettier 3.10.1                                                                                                                                    | 사용자가 골랐다(2026-11-26). Prettier 설정은 기존 저장소의 것이고 Markdown은 대상이 아니다. 타입 기반 린트 규칙은 켜지 않았다(1-2에서 정한다).             |
+| 린트·포맷        | oxlint 1.95.0, Prettier 3.10.1                                                                                                                                    | 사용자가 골랐다(2026-11-26). Prettier 설정은 기존 저장소의 것이고 Markdown은 대상이 아니다. 타입 기반 린트 규칙은 켜지 않았다(1-2에서 정한다). oxlint의 `react` 플러그인을 켰다(규칙 넷은 `docs/archive/PLAN_1-1.md` "린트 규칙"). |
 
 **쓰지 않는 것**: Astryx와 StyleX, React 19, Next.js, Tailwind, UI 컴포넌트 라이브러리, 자체 LLM SDK 연동, 자체 채팅 구현.
 
@@ -148,7 +148,7 @@ DreamVerse는 dsh의 `connection` 서비스에 fetch 라우트를, `webServer`�
 
 ## 화면 구조
 
-DreamVerse처럼 기본 dsh 화면을 교체한다. 방법과 확인 결과는 `docs/DSH.md` "화면 교체"에 있다. 아래의 "띄워 확인"은 그 장치가 0.2.2-rc.5에서 동작한다는 뜻이다. 확인에 쓴 코드는 업스트림의 브라우저 코드 규칙을 따르지 않은 시험용이었고, 규칙대로 쓴 형태는 1-1에서 확인한다.
+DreamVerse처럼 기본 dsh 화면을 교체한다. 방법과 확인 결과는 `docs/DSH.md` "화면 교체"에 있다. 아래의 "띄워 확인"은 그 장치가 0.2.2-rc.5에서 동작한다는 뜻이다. 확인에 쓴 코드는 업스트림의 브라우저 코드 규칙을 따르지 않은 시험용이었다. 규칙대로 쓴 형태(`inject`, `hooks`)는 1-1에서 띄워 확인했다(`docs/DSH.md` "슬롯").
 
 | 영역                              | 그리는 쪽 | 방법                                                                                   | 확인(dsh 0.2.2-rc.5)                     |
 | --------------------------------- | --------- | -------------------------------------------------------------------------------------- | ---------------------------------------- |
@@ -221,8 +221,6 @@ scripts/             프로필 만들기, 실행, 합성 구성 찍기(`dsh.ts`,
 
 | 과제                                                                                  | 정하는 단계 |
 | ------------------------------------------------------------------------------------- | ----------- |
-| CSS를 브라우저 번들에 싣는 방식(문자열 주입, CSS Modules 여부)                        | 1-1         |
-| 호스트 절반을 TypeScript로 쓸 때의 빌드와 타입 확보                                   | 1-1         |
 | 호스트 쪽 서비스를 화면 없이 확인하는 조합 시험의 방법                                | 1-2         |
 | 타입 기반 린트 규칙을 켤지(`oxlint-tsgolint`)                                         | 1-2         |
 | 에이전트 프리셋에 넣을 도구(셸·파일 도구를 줄지, 기본 제공 프리셋을 끌지)             | 1-4         |

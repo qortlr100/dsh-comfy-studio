@@ -8,10 +8,11 @@
     "node": ">=24.9.0"
   },
   "scripts": {
+    "build": "node scripts/build-client.ts",
     "dsh:profile": "node scripts/dsh.ts profile",
     "dsh:start": "node scripts/dsh.ts start",
     "dsh:config": "node scripts/dsh.ts config",
-    "typecheck": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json && pnpm -r run typecheck",
     "lint": "oxlint",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
@@ -19,6 +20,8 @@
   "devDependencies": {
     "@deepseek-ai/dsh": "0.2.2-rc.5",
     "@types/node": "24.19.2",
+    "esbuild": "0.28.2",
+    "lightningcss": "1.33.0",
     "oxlint": "1.95.0",
     "prettier": "3.10.1",
     "typescript": "6.0.3"

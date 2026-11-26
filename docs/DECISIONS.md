@@ -42,6 +42,7 @@
 | 가져온 코드의 고지는 저장소 루트의 `THIRD_PARTY_NOTICES.md`에 모은다                                          | dsh와 DreamVerse가 쓰는 파일 이름이다.                                                                                                                                                       | 파일 이름만 바꾸면 된다.                                                                           |
 | 1-0의 기본값: 빈 플러그인의 이름은 `@cs/ui-shell`, 명령 이름은 `dsh:profile`·`dsh:start`·`dsh:config`, 스크립트는 TypeScript로 쓰고 Node가 바로 실행한다, pnpm은 10.34.8로 고정한다, 개발 의존성은 정확한 버전으로 적는다 | Claude가 고른 기본값이다. 이유는 `docs/archive/PLAN_1-0.md` "Claude가 고른 기본값"에 있다. | 이름과 설정만 바꾸면 된다. |
 | Prettier 설정은 기존 저장소의 것 그대로(세미콜론, 큰따옴표, 폭 100)이고 Markdown은 대상에서 뺀다. oxlint는 `correctness`·`suspicious` 범주를 오류로 둔다 | Claude가 고른 기본값이다. Markdown을 넣으면 표를 다시 맞추느라 문서 전체가 바뀐다. | 설정 파일을 고친다. 모양이 바뀌면 전체를 한 번 다시 포맷한다. |
+| 1-1의 기본값: 호스트 절반은 `.ts` 그대로 내보내고 빌드하지 않는다, CSS는 CSS Modules(`*.module.css`)로 싣고 클래스 이름 무늬는 `cs-[hash]-[local]`이다, 브라우저 번들은 esbuild와 lightningcss로 만든다, 브라우저 절반이 있는 패키지는 `tsconfig.json`(호스트)과 `tsconfig.client.json`(브라우저) 둘로 타입 검사한다, oxlint `react` 플러그인을 켜고 규칙 넷을 맞춘다, `pnpm dsh:start`가 띄우기 전에 빌드한다 | Claude가 고른 기본값이다. 로드맵 1-1의 "정할 것"이었고 사용자는 "로드맵 확인하여 다음 작업 진행"이라고만 했다. 이유는 `docs/archive/PLAN_1-1.md` "Claude가 고른 기본값"에 있다. | 같은 표의 "뒤집으면"에 있다. CSS 방식을 바꾸면 그때까지 쓴 `.module.css`를 옮겨야 하므로 화면(계획 3)이 늘기 전에 정하는 것이 싸다. |
 | 기존 `lib/comfy`의 코드를 이 공개 저장소로 옮긴다 | 계획 4의 출발점이다. 사용자가 확인한 것은 기존 앱에 관한 설명을 공개하는 데까지다. 코드와 테스트 픽스처의 공개는 따로 확인받지 않았다. 4-0의 단계 계획 문서에서 확인한다. | 연동 라이브러리를 새로 쓰거나 공개하지 않는 패키지로 둔다. |
 
 ## 미정

@@ -119,60 +119,78 @@ pnpm exec dsh --profile comfy-studio --no-open --port 8092
 {
   "name": "@cs/ui-shell",
   "type": "module",
-  "main": "index.js",
-  "exports": { ".": "./index.js", "./client": "./lib/client.js", "./package.json": "./package.json" },
-  "dsh": { "client": { "platform": "web", "inject": ["@deepseek-ai/dsh-client-ui-layout"] } }
+  "main": "src/index.ts",
+  "exports": { ".": "./src/index.ts", "./client": "./lib/client.js", "./package.json": "./package.json" },
+  "dsh": { "client": { "platform": "web", "inject": ["@deepseek-ai/dsh-client-ui-renderer"] } }
 }
 ```
 
-```js
-// index.js — 호스트 절반. 브라우저 절반만 있는 패키지도 이 파일은 있어야 한다.
-export const name = 'cs-ui-shell'
-export function apply() {}
+```ts
+// src/index.ts — 호스트 절반. 브라우저 절반만 있는 패키지도 이 파일은 있어야 한다.
+import type { Context } from "@deepseek-ai/cordis";
+export const name = "cs-ui-shell";
+export function apply(_ctx: Context): void {}
 ```
 
-- 호스트 절반만 있는 플러그인은 `exports["./client"]`와 `dsh.client`를 빼면 된다(1-0의 빈 플러그인이 이 모양이다).
+패키지 안의 자리(1-1에서 정했다. `docs/archive/PLAN_1-1.md` "만든 것"):
+
+```
+package.json
+tsconfig.json           호스트 프로그램(src/ 중 src/client/ 밖, Node 타입)
+tsconfig.client.json    브라우저 프로그램(src/client/, DOM, JSX). 루트의 tsconfig.client.base.json을 extends만 한다
+src/index.ts            호스트 절반
+src/client/index.ts     브라우저 절반의 진입점
+src/client/*.tsx, *.module.css, strings.ts
+lib/client.js           브라우저 번들(빌드 결과, .gitignore)
+```
+
+- **호스트 절반은 `.ts` 그대로 내보낸다**(1-1에서 정했다. `docs/DECISIONS.md` "전제"). 빌드하지 않는다. 그래서 지울 수 있는 문법만 쓰고(enum·생성자 매개변수 속성 금지) 상대 import에는 `.ts` 확장자를 붙인다. `@deepseek-ai/cordis`의 타입을 `import type`으로 쓰는 `src/index.ts`의 `apply`가 기동 때 불린다(**띄워 확인**, 2026-11-26).
+- 호스트 절반만 있는 플러그인은 `exports["./client"]`와 `dsh.client`를 빼면 된다(1-0의 빈 플러그인이 그 모양이었다).
 - `dsh.client`가 있으면 `./client` export가 반드시 있어야 한다. 없으면 기동이 실패한다(**소스 확인**).
 - `dsh.client.inject`는 패키지 이름 목록이고 정보용이다. 실행 순서를 정하지 않는다. 순서는 Cordis가 `inject`에 적힌 **서비스**를 기다리는 것으로만 정해진다(**소스 확인**: 업스트림 `packages/client/AGENTS.md`).
-- 브라우저 번들은 **띄우기 전에 빌드돼 있어야** 한다. dsh는 소스가 아니라 `lib/client.js`를 내보낸다.
-- 호스트 절반만 있는 플러그인을 우리 번들로 띄우면 기동 때 `apply(ctx)`가 불린다(**띄워 확인**, 2026-11-25. `packages/ui-shell`이 이 모양이다).
-- 링크된 패키지의 호스트 절반을 `.ts`로 두고 `main`과 `exports["."]`가 그 파일을 가리키게 해도 Node 24.22.3이 바로 읽는다(**띄워 확인**, 2026-11-25. 타입 주석만 있는 작은 파일로 봤다). Node 문서에 따르면 타입 지우기는 지울 수 있는 문법만 받고(enum·생성자 매개변수 속성은 안 된다) `node_modules` 안의 파일에는 적용되지 않는다. 링크된 패키지는 실제 경로로 풀려서 걸리지 않은 것으로 보인다(추정). 호스트 절반을 이렇게 쓸지 JavaScript로 빌드해 내보낼지는 1-1에서 정한다.
+- 브라우저 번들은 **띄우기 전에 빌드돼 있어야** 한다. dsh는 소스가 아니라 `lib/client.js`를 내보낸다. `pnpm dsh:start`는 띄우기 전에 빌드한다.
+- 호스트 절반만 있는 플러그인을 우리 번들로 띄우면 기동 때 `apply(ctx)`가 불린다(**띄워 확인**, 2026-11-25).
+- 링크된 패키지의 호스트 절반을 `.ts`로 두고 `main`과 `exports["."]`가 그 파일을 가리키게 해도 Node 24.22.3이 바로 읽는다(**띄워 확인**, 2026-11-25~26). Node 문서에 따르면 타입 지우기는 지울 수 있는 문법만 받고(enum·생성자 매개변수 속성은 안 된다) `node_modules` 안의 파일에는 적용되지 않는다. 링크된 패키지는 실제 경로로 풀려서 걸리지 않은 것으로 보인다(추정). 그래서 패키지를 링크가 아니라 타르볼로 설치하게 되면 호스트 절반도 JavaScript로 빌드해야 한다.
 
 ## 브라우저 절반
 
 ### 브라우저 번들 형식
 
-dsh의 브라우저 쪽 모듈 로더는 아래 형식의 스크립트를 받는다. 업스트림의 빌드 프리셋(tsdown `clientBundle`)은 저장소 안에만 있고 npm에 없어서, 같은 형식을 직접 만든다(**띄워 확인**).
+dsh의 브라우저 쪽 모듈 로더는 아래 형식의 스크립트를 받는다. 업스트림의 빌드 프리셋(tsdown `clientBundle`, 업스트림 `packages/client/tsdown.client.ts`)은 저장소 안에만 있고 npm에 없어서, 같은 형식을 `scripts/build-client.ts`가 esbuild로 만든다(**띄워 확인**, 2026-11-26). 명세는 `docs/archive/PLAN_1-1.md` "빌드 스크립트 명세"에 있다.
 
 ```js
-// build.mjs — 2026-11-24에 동작한 방식
-import { build } from 'esbuild'
-import { readFile, writeFile } from 'node:fs/promises'
-
-const pkg = JSON.parse(await readFile('package.json', 'utf8'))
-const result = await build({
-  entryPoints: ['src/client.js'],
-  bundle: true,
-  format: 'cjs',
-  platform: 'browser',
-  write: false,
-  // 공유 모듈은 싣지 않는다. 로더가 넘기는 require가 푼다.
-  external: ['react', 'react/jsx-runtime', 'react-dom', 'react-dom/client', '@deepseek-ai/*'],
-  loader: { '.css': 'text' },
-  logLevel: 'warning',
-})
-const body = result.outputFiles[0].text
-await writeFile(
-  'lib/client.js',
-  `window.__ModuleLoader__.load({id:${JSON.stringify(pkg.name)},factory:require=>{var module={exports:{}};var exports=module.exports;\n${body}\nreturn module.exports}});\n`,
-)
+window.__ModuleLoader__.load({ id: "@cs/ui-shell", factory: (require) => { var module = { exports: {} }; var exports = module.exports;
+/* esbuild가 만든 CJS 본문. 공유 모듈은 여기서 require("react/jsx-runtime")처럼 부른다 */
+return module.exports; } });
+//# sourceMappingURL=client.js.map
 ```
 
-1-1에서 이 스크립트를 고칠 곳(아래는 돌려 보지 않았다):
+- `pnpm build`가 `packages/*` 가운데 `dsh.client`가 있는 패키지를 전부 빌드한다. 진입점은 `src/client/index.ts`(또는 `.tsx`), 결과는 `lib/client.js`와 `lib/client.js.map`이다.
+- 번들을 실행하는 것은 팩토리를 등록할 뿐이고, 모듈 본문은 플러그인이 처음 쓰일 때 실행된다(**소스 확인**: 업스트림 `packages/client/modules/README.md` "Lazy-CJS model").
+- **external은 공유 모듈 열한 개뿐이다**(아래 표). 정확히 같은 경로만 맞춘다.
+- **빌드가 거절하는 import**: 표에 없는 `@deepseek-ai/*`의 값 import, 표에 없는 `react`·`react-dom`·`scheduler`와 그 하위 경로, `.module.css`가 아닌 `.css`. 업스트림 프리셋의 "purity" 게이트를 본뜬 것이다(업스트림은 일부 `@deepseek-ai/*` 계약 패키지를 싣도록 허용한다. 우리는 아직 허용 목록이 없다).
+- 타입만 가져오는 import는 esbuild가 지우므로 걸리지 않는다. 다만 `verbatimModuleSyntax` 아래에서 `import { type X } from "…"`는 `import {} from "…"`로 남아 값 import가 된다. **`import type { X } from "…"`로 쓴다**(2026-11-26에 빌드가 거절하는 것을 봤다).
+- 그 밖의 서드파티 패키지는 브라우저 번들에 같이 실린다. 빌드가 끝나면 패키지마다 크기와 같이 실린 패키지 이름을 찍는다.
+- 진입점은 TSX와 JSX 자동 런타임을 쓴다(`react/jsx-runtime`은 공유 표에 있다).
+- 줄이지 않는다. ASCII가 아닌 글자는 `\uXXXX`로 나간다(esbuild 기본값).
+- **소스맵**: dsh는 플러그인 번들을 묶음 스크립트(`/plugins/??…`)로 내보내고 그 끝에 묶음 맵의 참조를 붙인다. 그 맵(Indexed Source Map)에 우리 `.tsx`가 소스 내용과 함께 들어 있다(**띄워 확인**, 2026-11-26). `/plugins/<패키지>/client.js.map`이라는 주소는 없다(404).
+- `dsh.client.external`은 우리 빌드가 아직 받지 않는다(있으면 오류).
 
-- `external`을 공유 모듈 열한 개의 이름으로 바꾼다(아래 표). 위의 `'@deepseek-ai/*'`는 표에 없는 패키지까지 external로 만들어, 그런 값 import가 빌드는 통과하고 실행 때 실패한다. 위 목록에는 `zod`와 `@tanstack/react-virtual`도 빠져 있어서, 이 둘을 쓰면 공유본이 아니라 사본이 브라우저 번들에 실린다.
-- 표에 없는 `@deepseek-ai/*`의 값 import는 빌드에서 거절한다(업스트림 프리셋도 그렇게 한다). 타입만 가져오는 import는 esbuild가 지우므로 걸리지 않는다.
-- 진입점을 TSX로 바꾸고 JSX 자동 런타임을 쓴다(`react/jsx-runtime`은 공유 표에 있다).
+### CSS
+
+**CSS Modules로 싣는다**(1-1에서 정했다. `docs/DECISIONS.md` "전제"). `x.module.css`를 import하면 클래스 이름 표를 받는다.
+
+```tsx
+import styles from "./BuildProbe.module.css";
+<div className={styles.probe} />     // 실제 클래스는 cs-W6SYKq-probe 같은 모양이다
+```
+
+- 빌드가 lightningcss로 클래스 이름을 `cs-[hash]-[local]`로 바꾸고, CSS를 번들 안에 문자열로 넣는다. 팩토리가 실행될 때 `<style data-plugin="<패키지>" data-plugin-css="<패키지>/<파일>">`로 `<head>`에 들어간다(**띄워 확인**, 2026-11-26).
+- 업스트림 프리셋과 같은 방식이다. dsh 로더는 플러그인이 내려갈 때 `style[data-plugin]`이 그 패키지인 태그를 지운다(**소스 확인**: 업스트림 `packages/client/modules/src/client/entry-lifecycle.ts`. 내려 보지는 않았다).
+- 클래스 이름 무늬가 업스트림(`[hash]_[local]`)과 다른 것은 일부러다. dsh 기본 요소를 숨기는 접미사 선택자(`[class$="_newSession"]`, "dsh 내부에 기대는 장치")가 우리 클래스에 걸리지 않게 한다.
+- 클래스가 없는 선택자는 바뀌지 않고 그대로 나간다. `button[class$="_newSession"]` 같은 속성 선택자와 `:global(.이름)`이 그렇다(lightningcss 1.33.0으로 변환해 봤다, 2026-11-26). 그래서 dsh 기본 요소를 숨기는 규칙도 `.module.css`에 둘 수 있다.
+- `.module.css`가 아닌 `.css`는 빌드가 거절한다. 업스트림 프리셋은 맨 `x.css`(전역 주입)와 `x.css?inline`(문자열)도 받는다. 필요해지면 `scripts/build-client.ts`에 더한다.
+- 타입은 루트의 `types/css-modules.d.ts`가 준다(`Readonly<Record<string, string>>`).
 
 ### 공유 모듈 표
 
@@ -211,30 +229,34 @@ react  react/jsx-runtime  react-dom  react-dom/client  @deepseek-ai/cordis  zod 
 | id 타입                                    | `@deepseek-ai/dsh-session/types`(`SessionId`), `@deepseek-ai/dsh-workspace/types`(`WorkspaceId`)                             |
 
 - DreamVerse의 `@dv/ui-shell`은 devDependency로 `cordis`, `dsh-api-session-controller`, `dsh-api-workspace-controller`, `dsh-client-locale`, `dsh-client-ui-conversation`, `dsh-client-ui-layout`, `dsh-client-ui-primitives`, `dsh-client-ui-renderer`, `dsh-client-ui-session`, `dsh-client-ui-sidebar`, `dsh-client-ui-sidebar-right`, `dsh-client-ui-slots`, `dsh-client-ui-workspace`, `dsh-session`, `dsh-workspace`를 둔다(**소스 확인(DreamVerse)**).
-- npm에 올라온 0.2.2-rc.5 패키지에 타입 선언이 실려 있다. `dsh-client-ui-sidebar-right`와 `dsh-client-ui-slots`의 타르볼 목록에서 `lib/types/…/index.d.ts`를 확인했다(2026-11-25). 이 타입으로 우리 브라우저 코드를 실제로 타입 검사해 보지는 않았다(시험 코드는 타입 없는 JavaScript였다). 1-1에서 한다.
+- npm에 올라온 0.2.2-rc.5 패키지에 타입 선언이 실려 있다. 이 타입으로 `@cs/ui-shell`의 브라우저 절반을 타입 검사한다(2026-11-26). 타입이 실제로 걸리는지는 일부러 틀린 코드로 봤다: 없는 슬롯 이름, 목록 슬롯에 `id` 없는 등록, 서비스의 없는 멤버, 타입을 불러오지 않은 서비스, 슬롯 props와 `use<이름>` 선택자의 타입이 모두 오류가 된다.
+- **`@deepseek-ai/dsh-client-store`를 devDependency에 같이 넣는다.** `dsh-client-ui-slots`의 타입이 훅 타입(`SnapshotSelectorHook` 등)을 거기서 가져오는데 의존성으로 따라오지 않는다. 빠지면 `skipLibCheck` 아래에서 그 타입들이 조용히 `any`가 된다(2026-11-26).
+- `@deepseek-ai/dsh`를 설치해도 `dsh-client-ui-slots`, `dsh-client-ui-primitives`, `dsh-client-store`는 `node_modules`에 들어오지 않는다. 쓰는 패키지가 직접 넣는다(2026-11-26).
+- `@cs/ui-shell`이 지금 두는 것: `cordis` 4.1.0, `dsh-client-store`, `dsh-client-ui-primitives`, `dsh-client-ui-renderer`, `dsh-client-ui-sidebar`, `dsh-client-ui-slots`, `dsh-client-ui-theme`(0.2.2-rc.5), `@types/react` 18.3.32.
+- 브라우저 프로그램의 `tsconfig`는 `moduleResolution: bundler`, `module: preserve`, `jsx: react-jsx`, `lib`에 DOM이다(루트 `tsconfig.client.base.json`). Node 타입은 넣지 않는다.
+- oxlint의 `import/no-empty-named-blocks`와 `unicorn/require-module-specifiers`는 `import type {} from …`을 막으므로 껐다. `react/hooks`(컴파일러식 검사)는 props로 받은 훅을 막으므로 끄고, 대신 `react/rules-of-hooks`를 켰다(`docs/archive/PLAN_1-1.md` "린트 규칙").
 
 ### 진입점
 
 브라우저 절반은 `inject`(기다릴 서비스 이름)와 `apply(ctx)`를 export한다(**띄워 확인**).
 
-```js
-import { createElement as h } from 'react'
-import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+```ts
+// packages/ui-shell/src/client/index.ts에서 추렸다(2026-11-26).
+import type { Context } from "@deepseek-ai/cordis";
+import type {} from "@deepseek-ai/dsh-client-ui-renderer/client"; // ctx.slots
+import type {} from "@deepseek-ai/dsh-client-ui-sidebar/client"; // 슬롯 sidebar.*
+import type {} from "@deepseek-ai/dsh-client-ui-theme/client"; // ctx.theme
+import { BuildProbe, type BuildProbeInjected } from "./BuildProbe.tsx";
 
-export const inject = ['slots', 'sidebarRightTabs', 'sidebarRight', 'workspaces', 'sessions', 'uiWorkspace']
+export const inject = ["slots", "theme"];
 
-export function apply(ctx) {
-  // 스타일: 확인된 방식은 문자열 CSS를 <style>로 넣고 플러그인이 내려갈 때 빼는 것이다.
-  ctx.effect(() => {
-    const style = document.createElement('style')
-    style.dataset.owner = '@cs/ui-shell'
-    style.textContent = css
-    document.head.append(style)
-    return () => style.remove()
-  })
+export function apply(ctx: Context): void {
   // 슬롯 등록은 아래 "슬롯" 참고
 }
 ```
+
+- 스타일은 CSS Modules로 싣는다(위 "CSS"). 2026-11-24에 확인한 다른 방식은 문자열 CSS를 `ctx.effect` 안에서 `<style>`로 넣고 그 정리 함수에서 빼는 것이다. 지금은 쓰지 않는다.
+- `ctx.slots.inject(…)`는 `apply`에서 바로 부른다(업스트림 패키지들이 그렇게 쓴다). 2026-11-24~25의 시험 코드는 `ctx.effect(() => ctx.slots.inject(…))`로 감쌌고 그것도 동작했다.
 
 ### 업스트림의 브라우저 코드 규칙
 
@@ -248,7 +270,7 @@ export function apply(ctx) {
 - 등록은 `apply` 안에서만 한다. 모듈 최상위에 부작용을 두지 않는다.
 - 색은 토큰으로, 화면 문자열은 로케일 사전으로. 문자열 쪽은 이 저장소에서 1-6까지 미뤘다(`AGENTS.md`의 임시 규칙).
 
-**주의**: 2026-11-24~25의 시험 코드는 빨리 확인하려고 `ctx`의 값을 모듈 변수와 수동 구독으로 React 컴포넌트에 넘겼다. 이 문서의 조각은 동작 확인용이다. 실제 구현은 위 규칙대로 쓴다. 규칙대로 쓴 등록(`inject`, `hooks`, `store`)은 띄워 보지 않았고 1-1에서 처음 확인한다.
+**주의**: 2026-11-24~25의 시험 코드는 빨리 확인하려고 `ctx`의 값을 모듈 변수와 수동 구독으로 React 컴포넌트에 넘겼다. "화면 교체"와 "채팅을 우측 탭으로 옮기는 코드"의 조각은 그때의 동작 확인용이다. 실제 구현은 위 규칙대로 쓴다. 규칙대로 쓴 등록 가운데 `inject`(값, 콜백)와 `hooks`는 1-1에서 **띄워 확인**했다(2026-11-26, `packages/ui-shell/src/client`). `store`와 `locale` 칸은 아직 띄워 보지 않았다.
 
 ## 슬롯
 
@@ -266,24 +288,44 @@ ctx.effect(() => ctx.slots.inject('main.conversation', () =>
 - **Factory 슬롯**은 여러 곳에서 다시 그릴 수 있게 선언된 조립이다. 슬롯 props의 `renderFactorySlot(이름, 속성, { slots })`으로 그린다. 대화 본문 `conversation.content`가 그렇다("채팅을 우측 탭으로 옮기는 코드").
 - 소스에서 찾은 슬롯 선언은 약 180개다(시험용 포함). 전체 목록은 업스트림 `packages/extensions/cordis-client-runner/src/client/slot-catalog.ts`에 있다.
 
-규칙대로 `ctx`의 값을 React 컴포넌트에 넘기는 등록(**소스 확인**: 업스트림 `docs/subsystems/slots.md` "Developer-provided injection". 돌려 보지 않았다):
+규칙대로 `ctx`의 값을 React 컴포넌트에 넘기는 등록(**띄워 확인**, 2026-11-26. `packages/ui-shell/src/client`에서 추렸다. 근거는 업스트림 `docs/subsystems/slots.md` "Developer-provided injection"):
 
 ```tsx
-function Navigator({ openProject, useStatus }: NavigatorProps) {
-  const busy = useStatus(s => s.busy)          // hooks의 `status`가 `useStatus`로 온다
-  return <button disabled={busy} onClick={() => openProject('…')}>…</button>
+// BuildProbe.tsx — React 컴포넌트. ctx를 보지 않는다.
+interface Observable<T> { getSnapshot(): T; subscribe(listener: () => void): () => void }
+
+export interface BuildProbeInjected {
+  owner: string;                                        // 값
+  setColorScheme(scheme: "light" | "dark"): void;       // 콜백
+  hooks: { theme: Observable<ThemeSnapshot> };          // 관찰 가능한 값. `useTheme(selector)`로 온다
+}
+type Props = PropsRuntime<"sidebar.footer.action"> & InjectFace<BuildProbeInjected>;
+
+export function BuildProbe({ wide, owner, setColorScheme, useTheme }: Props) {
+  const scheme = useTheme((snapshot) => snapshot.active.colorScheme);
+  return <Button onClick={() => setColorScheme(scheme === "dark" ? "light" : "dark")}>…</Button>;
 }
 
-ctx.slots.inject('sidebar.workspaces', () =>
+// index.ts — apply 안. ctx의 서비스는 여기서만 쓴다.
+const theme = {
+  getSnapshot: () => ctx.theme.getTheme(),
+  subscribe: (listener: () => void) => ctx.on("theme/change", listener),
+};
+ctx.slots.inject("sidebar.footer.action", () =>
   ctx.slots.register({
-    name: 'sidebar.workspaces', priority: -1,
-    // apply 쪽에서 실행된다. ctx의 서비스를 여기서만 쓰고, React 컴포넌트에 필요한 값과 콜백만 돌려준다.
-    inject: () => ({
-      openProject: (sessionId) => ctx.uiWorkspace.openSession(sessionId),
-      hooks: { status: statusSource },         // getSnapshot·subscribe를 가진 값
+    name: "sidebar.footer.action", id: "cs-build-probe",
+    inject: (): BuildProbeInjected => ({
+      owner: "@cs/ui-shell",
+      setColorScheme: (scheme) => ctx.theme.setTheme(scheme),
+      hooks: { theme },
     }),
-  }, Navigator))
+  }, BuildProbe));
 ```
+
+- React 컴포넌트의 props 타입은 `PropsRuntime<"슬롯 이름">`(부모가 주는 값과 틀의 훅)과 `InjectFace<등록이 돌려주는 타입>`(`hooks` 칸이 `use<이름>` 훅으로 바뀐 모양)의 교차다. `hooks` 자체는 props로 오지 않는다(타입에서도 빠진다).
+- `hooks`에 넣는 값은 `getSnapshot`이 다음 변경까지 **같은 참조**를 돌려줘야 한다(업스트림 규칙: "Keep observable source and snapshot identities stable between changes"). 서비스의 "스냅샷 읽기 + 변경 이벤트" 쌍이 그대로 맞는다.
+- 목록(`list`) 슬롯에 등록할 때는 `id`가 필수다. 빠지면 타입 오류다.
+- 이 시험용 등록은 3-0에서 셸의 등록으로 바뀐다.
 
 이 프로젝트에 관계있는 슬롯(이름, 종류/범위):
 
@@ -364,7 +406,8 @@ ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () =>
 ### 색과 테마
 
 - 색은 `--dsw-alias-*` 토큰으로 쓴다(**띄워 확인**: 라이트·다크가 따로 손대지 않아도 바뀐다). 자주 쓰는 것: `label-primary`·`-secondary`·`-tertiary`, `bg-base`, `bg-layer-1`·`-2`·`-3`, `border-l1`~`-l4`, `interactive-bg-hover`·`-active`, `state-error-primary`·`state-success-primary`·`state-warn-primary`, `brand-primary`, `link`. 토큰 값의 출처는 업스트림 `packages/client/ui-theme/src/styles/`다.
-- 테마 상태는 `document.documentElement`의 `color-scheme` 스타일과 `data-ds-theme-source`, `<body>`의 `data-ds-dark-theme`, `<body>` 인라인의 `--dsw-*`·`--dsh-*` 토큰에 있다. 바꾸고 읽는 것은 `ctx.theme.setTheme(id)`·`ctx.theme.getTheme()`이다.
+- 테마 상태는 `document.documentElement`의 `color-scheme` 스타일과 `data-ds-theme-source`, `<body>`의 `data-ds-dark-theme`(다크일 때만 빈 값으로 있고 라이트에서는 없다), `<body>` 인라인의 `--dsw-*`·`--dsh-*` 토큰에 있다. 바꾸고 읽는 것은 `ctx.theme.setTheme(id)`·`ctx.theme.getTheme()`이다.
+- `ctx.theme.getTheme()`은 스냅샷(`preference`, `active.colorScheme`, `themes`, `revision` 등)을 돌려주고 다음 변경까지 같은 객체다. 바뀌면 `theme/change` 이벤트가 새 스냅샷과 함께 온다. `setTheme`은 `"light"`, `"dark"`, `"system"`과 등록된 테마 id를 받고, 모르는 id에는 던진다(**띄워 확인**: `setTheme("light" | "dark")`와 `active.colorScheme`, 2026-11-26. 나머지는 **소스 확인**).
 - dsh의 전역 규칙이 우리 요소에도 적용된다: `*, ::before, ::after { corner-shape: var(--dsw-corner-shape) }`(모서리가 superellipse가 된다)와 `:focus-visible`의 외곽선 색·두께. 모양을 dsh에 맞추는 데는 도움이 된다.
 - 우리 CSS는 우리 클래스에만 건다. 맨 요소 선택자와 전역 리셋을 넣지 않는다. dsh의 CSS는 전부 레이어 밖에 있어서 `@layer` 안의 규칙보다 항상 우선한다.
 - 업스트림의 스타일 규칙은 `docs/web-styling.md`와 `docs/ui-radius.md`다. 저장소 안 패키지는 CSS Modules + `clsx`를 쓰고 컴포넌트 라이브러리와 Tailwind를 금한다.
@@ -480,7 +523,11 @@ span[class$="_brandMark"]:has(> [data-slot="sidebar.brand.mark"]:empty) { displa
 - Preview Notice를 넘기면 프로필 `cordis.patch.yml`의 `ui-settings-general` 행에 `welcomeNoticeVersion`이 기록된다(관찰).
 - 실행 때 출력되는 주소에는 로그인 토큰이 들어 있다. 로그나 문서에 붙이지 않는다.
 - `--from-default-profile`은 있던 프로필을 덮어쓴다. 설정 화면에서 바꾼 값이 사라진다.
-- 브라우저 절반을 고치고 빌드하지 않으면 옛 `lib/client.js`(브라우저 번들)가 나간다.
+- 브라우저 절반을 고치고 빌드하지 않으면 옛 `lib/client.js`(브라우저 번들)가 나간다. `pnpm dsh:start`는 띄우기 전에 빌드하지만, 띄워 둔 동안 고친 것은 `pnpm build`를 다시 돌려야 나간다.
+- **dsh를 띄워 둔 채 `lib/client.js`가 바뀌면 새로고침 없이 화면이 새 번들로 바뀐다**(**띄워 확인**, 2026-11-26. 파일을 바꾸고 1.5초 뒤에 이미 바뀌어 있었고 콘솔 오류는 없었다). 개발할 때는 dsh를 띄워 두고 `pnpm build`만 다시 돌리면 된다. 호스트 절반을 고친 것이 다시 실리는지는 보지 않았다.
+- `verbatimModuleSyntax` 아래에서 `import { type X } from "…"`는 값 import로 남는다. 표 밖의 `@deepseek-ai/*`면 빌드가 거절한다. `import type { X } from "…"`로 쓴다.
+- 임시 home으로 처음 띄우면 "Unable to create default workspace. Use Choose workspace to select a folder." 토스트가 뜬다(관찰, 2026-11-26. 콘솔 오류는 아니다. 원인은 보지 않았다. 기본 작업공간은 3-0과 2-0이 다룬다).
+- 헤드리스 확인 환경에 한국어 글꼴이 없으면 스크린샷의 한국어가 네모로 나온다. DOM의 글자로 확인한다.
 - 프로필의 번들 링크는 절대 경로다. 저장소 폴더를 옮기거나 다른 워크트리에서 띄우려면 링크를 다시 건다("워크트리와 DSH_HOME").
 - Playwright는 크기가 0인 요소를 "숨김"으로 본다. 표시용 빈 요소를 기다릴 때는 `state: 'attached'`를 쓴다.
 - 토스트 같은 알림은 화면에 안 보이는 `aria-live` 사본이 따로 있다. 시험에서 보이는 요소만 골라야 한다.
@@ -490,7 +537,7 @@ span[class$="_brandMark"]:has(> [data-slot="sidebar.brand.mark"]:empty) { displa
 
 화면이 걸린 변경은 dsh를 실제로 띄워 확인한다. 아래는 2026-11-24~25에 쓴 절차를 한 파일로 정리한 것이다(`playwright-core` 1.65.1). 이 모양 그대로 돌려 보지는 않았다. 1-2에서 조합 시험으로 만든다.
 
-1-0에서는 저장소 밖에 둔 같은 모양의 스크립트로 `DSH_HOME=<임시 폴더> pnpm -s dsh:start --no-open --port 0`을 띄워 화면과 콘솔 오류 0건을 확인했다(2026-11-26). 아래 0번의 두 명령은 `DSH_HOME=<임시 폴더> pnpm dsh:profile` 하나로 바꿀 수 있다. 3번의 창 닫기는 아래처럼 쓰면 Preview Notice를 놓친다("함정"). `playwright-core`는 아직 이 저장소의 의존성이 아니다.
+1-0과 1-1에서는 저장소 밖에 둔 같은 모양의 스크립트로 `DSH_HOME=<임시 폴더> pnpm -s dsh:start --no-open --port 0`을 띄워 화면과 콘솔 오류 0건을 확인했다(2026-11-26). 1-1의 스크립트는 두 창이 뜨기를 기다렸다가 닫고(`waitFor({ state: "visible" })`), 시험용 요소의 속성과 계산된 스타일을 읽고, 버튼을 눌러 테마가 바뀌는지 봤다. 아래 0번의 두 명령은 `DSH_HOME=<임시 폴더> pnpm dsh:profile` 하나로 바꿀 수 있다. 3번의 창 닫기는 아래처럼 쓰면 Preview Notice를 놓친다("함정"). `playwright-core`는 아직 이 저장소의 의존성이 아니다.
 
 **브라우저 준비.** 그때는 이 장비에 받아 둔 Chromium을 경로로 지정해 썼다(`~/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome`). 다른 장비에서는 `CHROME`에 Chrome이나 Chromium 실행 파일 경로를 주거나, `pnpm exec playwright-core install chromium`으로 받고 `executablePath`를 빼서 playwright가 찾게 한다(이 설치 명령은 이 저장소에서 돌려 보지 않았다).
 
@@ -576,8 +623,8 @@ await browser.close(); child.kill('SIGTERM')
 ## 확인하지 못한 것
 
 - **실제 모델과의 채팅.** 모델 키가 없어 메시지를 주고받지 못했다. 우측 탭의 채팅에 메시지·도구 호출이 그려지는지, 채팅 안의 카드 슬롯에 우리 React 컴포넌트가 그려지는지는 1-3과 3-4에서 본다.
-- **Astryx가 전혀 없는 브라우저 번들.** Astryx 없이 그린 화면(React 18 컴포넌트 + 기본 부품 + 토큰 CSS)은 띄워 확인했지만, 그 브라우저 번들에는 Astryx 시험 코드가 같이 실려 있었다(그 화면에는 쓰이지 않았다). 완전히 뺀 것은 1-1이 처음이다.
-- **규칙대로 쓴 브라우저 절반.** 슬롯 등록의 `inject`·`store`·`hooks` 칸, TSX와 JSX 자동 런타임, dsh 타입으로 하는 타입 검사, 공유 모듈 열한 개만 external로 둔 빌드(시험은 `createElement`로 쓴 타입 없는 JavaScript였다).
+- **슬롯 등록의 `store`·`locale` 칸.** `inject`(값, 콜백)와 `hooks`, TSX와 JSX 자동 런타임, dsh 타입으로 하는 타입 검사, 공유 모듈 열한 개만 external로 둔 빌드, Astryx가 전혀 없는 브라우저 번들은 1-1에서 확인했다(2026-11-26).
+- 서드파티 패키지가 같이 실린 브라우저 번들, 공유 모듈의 하위 경로(`zod/v4` 등), 플러그인이 내려갈 때 로더가 우리 `<style>`을 지우는 것, 호스트 절반을 고쳤을 때 다시 실리는지.
 - **에이전트 프리셋.** 우리 프리셋을 넣어 띄우는 것, 프리셋 밖에서 등록한 도구가 에이전트에게 보이는지, 기본 제공 프리셋을 끄는 것.
 - 무시된 설치 스크립트(`node-pty` 등)가 에이전트의 셸 도구에 주는 영향("함정").
 - DreamVerse의 서버 쪽 코드를 0.2.2-rc.5에서 실행하는 것(타입 검사까지만 했다. 2-0).

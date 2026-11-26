@@ -1,12 +1,14 @@
 // Development entry points for running dsh with our bundle.
 //
 //   node scripts/dsh.ts profile            create the profile if needed and link our bundle
-//   node scripts/dsh.ts start [dsh args]   the above, then launch dsh web
-//   node scripts/dsh.ts config [dsh args]  the above, then print the composed profile config
+//   node scripts/dsh.ts start [dsh args]   the above, build the browser bundles, launch dsh web
+//   node scripts/dsh.ts config [dsh args]  link the bundle, then print the composed profile config
 
 import { spawn } from "node:child_process";
+import { buildClientBundles } from "./build-client.ts";
 import {
   bundleDir,
+  checkoutRoot,
   dshCommand,
   dshEnv,
   ensureProfile,
@@ -44,7 +46,7 @@ function handOverToDsh(home: string, args: readonly string[]): void {
   });
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
   const home = resolveDshHome();
 
@@ -54,6 +56,8 @@ function main(): void {
       return;
     case "start":
       report(ensureProfile(home));
+      // dsh serves lib/client.js as built; without this a stale bundle would go out.
+      await buildClientBundles(checkoutRoot);
       handOverToDsh(home, ["--profile", PROFILE, ...rest]);
       return;
     case "config":
@@ -67,7 +71,7 @@ function main(): void {
 }
 
 try {
-  main();
+  await main();
 } catch (error) {
   console.error(error instanceof Error ? error.message : error);
   process.exitCode = 1;
