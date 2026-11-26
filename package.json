@@ -1,0 +1,26 @@
+{
+  "name": "dsh-comfy-studio",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.34.8",
+  "engines": {
+    "node": ">=24.9.0"
+  },
+  "scripts": {
+    "dsh:profile": "node scripts/dsh.ts profile",
+    "dsh:start": "node scripts/dsh.ts start",
+    "dsh:config": "node scripts/dsh.ts config",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "oxlint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh": "0.2.2-rc.5",
+    "@types/node": "24.19.2",
+    "oxlint": "1.95.0",
+    "prettier": "3.10.1",
+    "typescript": "6.0.3"
+  }
+}

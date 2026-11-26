@@ -1,0 +1,4 @@
+# Plugin rows this bundle adds to the profile. Per-row settings go under `config`.
+- insert:
+    - id: cs-ui-shell
+      name: "@cs/ui-shell"

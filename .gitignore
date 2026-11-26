@@ -1,0 +1,10 @@
+node_modules/
+lib/
+build/
+*.tsbuildinfo
+
+# dsh home for development: profile, credentials, sessions. See docs/DSH.md.
+.dsh-home/
+
+# Step worktrees. See AGENTS.md.
+.worktree/
