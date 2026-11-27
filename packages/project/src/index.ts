@@ -91,7 +91,7 @@ import type {
 
 export * from "./types.ts";
 export * from "./operation-types.ts";
-export { ProjectError } from "./shared.ts";
+export { OperationFailure, ProjectError } from "./shared.ts";
 export { promptAssets, replacePromptCitations } from "./citations.ts";
 export {
   citationTarget,
@@ -748,6 +748,7 @@ export default class CsProject extends Service {
     return {
       has: (asset) => this.currentAssetStore().has(asset),
       get: (asset) => this.currentAssetStore().get(asset),
+      read: (asset) => this.currentAssetStore().read(asset),
       url: (asset) => this.currentAssetStore().url(asset),
     };
   }

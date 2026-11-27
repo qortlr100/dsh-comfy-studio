@@ -21,6 +21,7 @@ import { RecordStore } from "./record-store.ts";
 import { projReducer, ReducerRegistry } from "./reducers.ts";
 import { Runner } from "./runner.ts";
 import { Scheduler } from "./scheduler.ts";
+import { OperationFailure } from "./shared.ts";
 import type { AssetId, ProjectId, ProjectRecord, RecordOrigin, RunRequest } from "./types.ts";
 
 declare module "@cs/project" {
@@ -432,6 +433,35 @@ describe("Runner", () => {
     expect(
       m.store.getRecord(project, defined(result.record?.id, "the result record")).finished_at,
     ).toBeDefined();
+  });
+
+  it("fails the record with the code of a thrown OperationFailure", async () => {
+    const m = startModules();
+    const project = await createTestProject(m);
+    m.runner.registerOperation(
+      operation({
+        name: "image.generate",
+        component: "image",
+        execute: () =>
+          Promise.reject(new OperationFailure("not_queued", "The server refused the graph.")),
+      }),
+    );
+
+    const result = await m.runner.run(request(project, "image.generate"));
+
+    expect(result.record).toMatchObject({
+      status: "failed",
+      error: { code: "not_queued", message: "The server refused the graph." },
+    });
+    for (const code of [
+      "operation_failed",
+      "input_failed",
+      "stopped",
+      "discarded",
+      "Not Queued",
+      "",
+    ])
+      expect(() => new OperationFailure(code, "no")).toThrow(TypeError);
   });
 
   it("reuses outputs of an identical deterministic call", async () => {

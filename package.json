@@ -21,6 +21,7 @@
     "check": "pnpm build && pnpm typecheck && pnpm lint && pnpm format:check && pnpm test"
   },
   "devDependencies": {
+    "@cs/catalog": "workspace:*",
     "@cs/project": "workspace:*",
     "@deepseek-ai/cordis": "4.1.0",
     "@deepseek-ai/dsh": "0.2.2-rc.5",

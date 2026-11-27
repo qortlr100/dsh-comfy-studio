@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@cs/api": "workspace:*",
+    "@cs/catalog": "workspace:*",
     "@cs/project": "workspace:*",
     "@cs/ui-shell": "workspace:*"
   }

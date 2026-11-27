@@ -1,9 +1,16 @@
 import { existsSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
+import CsCatalog from "@cs/catalog";
 import { ProjectError, type ProjectEvent, type ProjectId, type ProjectRecord } from "@cs/project";
 import { agentOrigin, asError, defined, standIn } from "@cs/project/testing/support";
 import { answer, ApiRequestError } from "./api.ts";
-import { asRecord, mountApi, ROUTES, type ApiFixture } from "./testing/support.ts";
+import {
+  asRecord,
+  mountApi,
+  probeCatalogEntry,
+  ROUTES,
+  type ApiFixture,
+} from "./testing/support.ts";
 
 /**
  * @param fixture - the mounted API.
@@ -966,17 +973,67 @@ describe("answer and internal errors", () => {
   });
 });
 
+describe("the generation catalog", () => {
+  it("lists nothing while no catalog is mounted", async () => {
+    const f = await mountApi();
+    expect(await f.call(ROUTES.catalog)).toEqual({ status: 200, json: [] });
+  });
+
+  it("lists the entries of a mounted catalog, and one whose server does not answer without facts", async () => {
+    const f = await mountApi();
+    await f.context.plugin(CsCatalog, { factsTimeoutMs: 5000 }).await();
+    f.context.csCatalog.register(probeCatalogEntry("a"));
+    f.context.csCatalog.register(
+      probeCatalogEntry("b", () => Promise.reject(new Error("connection refused"))),
+    );
+    const listed = await f.call(ROUTES.catalog);
+    expect(listed.status).toBe(200);
+    expect(listed.json).toEqual([
+      {
+        primitive: "graph",
+        provider: "probe",
+        target: "a",
+        description: "A probe entry.",
+        abilities: [],
+        facts: { label: "Probe a", kind: "probe", system: { version: "1" } },
+        problem: null,
+      },
+      {
+        primitive: "graph",
+        provider: "probe",
+        target: "b",
+        description: "A probe entry.",
+        abilities: [],
+        facts: null,
+        problem: "connection refused",
+      },
+    ]);
+  });
+
+  it("follows a catalog that is mounted before the API and one that goes away", async () => {
+    let catalog: { dispose(): Promise<void> } | undefined;
+    const f = await mountApi((context) => {
+      catalog = context.plugin(CsCatalog, { factsTimeoutMs: 5000 });
+    });
+    f.context.csCatalog.register(probeCatalogEntry("a"));
+    expect(await f.api.listCatalog()).toHaveLength(1);
+    await defined(catalog, "the catalog plugin").dispose();
+    expect(await f.api.listCatalog()).toEqual([]);
+  });
+});
+
 describe("the asset reader of the project layer", () => {
   it("offers reads only and follows the registered store", async () => {
     const f = await mountApi();
     const project = await f.newProject();
     const reader = f.project.assets();
-    expect(Object.keys(reader).toSorted()).toEqual(["get", "has", "url"]);
+    expect(Object.keys(reader).toSorted()).toEqual(["get", "has", "read", "url"]);
     const snap = await f.api.runOperation({ project, operation: "probe_note.snap" });
     const asset = defined(snap.outputs[0], "the output");
     // The reader was made before the asset existed.
     expect(reader.has(asset)).toBe(true);
     expect(reader.get(asset)).toMatchObject({ mime: "image/png" });
     expect(reader.url(asset)).toBe(f.assets.url(asset));
+    expect(reader.read(asset)).toEqual(f.assets.read(asset));
   });
 });

@@ -140,29 +140,64 @@ export function apply(ctx: Context): void {
 
 ## 두 계약
 
-계획 2가 먼저 정해야 하는 것이다. 이 둘이 정해져야 계획 3(화면)과 계획 4(Comfy 연결)가 따로 갈 수 있다. 화면용 API는 2-2에서 만들었다. **카탈로그 계약은 아직 설계하지 않았다.**
+계획 2가 먼저 정해야 하는 것이다. 이 둘이 정해져야 계획 3(화면)과 계획 4(Comfy 연결)가 따로 갈 수 있다. 화면용 API는 2-2에서, 카탈로그 계약은 2-1에서 만들었다.
 
-### 카탈로그 계약
+### 카탈로그 계약 — `@cs/catalog`
 
-생성 프로바이더가 꽂히는 자리다. DreamVerse의 카탈로그 항목은 `(modality, task, provider, model)` 열쇠와 `facts()`·`schema()`·`validateGenerationRequest()`·`render()`를 가진다. 요청은 프롬프트와 참조 에셋 모양이다(`prompt`, `references`, `firstFrame`, `lastFrame`, 크기·길이, `seed`, `extra`). ComfyUI는 이 모양이 아니다. 그래서 이 계약은 가져오지 못하고 새로 정한다. 다만 DreamVerse 카탈로그는 선언 병합으로 새 요청 종류를 받게 되어 있어서(image, audio가 그렇게 추가됐다) 틀은 쓸 수 있다.
+생성 프로바이더가 꽂히는 자리다. 2-1에서 정하고 만들었다(`packages/catalog`, 호스트 절반만 있다). 서비스는 `ctx.csCatalog`이고 번들의 행은 `cs-catalog`다. 사용자가 고른 모양이다(2026-11-28, `docs/DECISIONS.md` "확정"): 항목은 등록된 서버 하나, 요청은 완성된 그래프이고 결과는 이벤트 스트림, 검증은 기록 전에 하고 서버의 거절은 실행으로 세지 않는다. 틀(프리미티브마다의 타입 표와 선언 병합, 등록·조회·변경 알림)은 DreamVerse `@dv/models`를 따랐고, 요청과 항목의 모양은 ComfyUI에 맞게 새로 정했다. 아래의 동작은 단위 시험과 조합 시험으로 확인했다(**띄워 확인**, 2026-11-28: 가짜 생성 프로바이더로 실제 dsh 안에서 돌렸다. 실제 ComfyUI 서버로는 돌리지 않았다. 4-2의 일이다).
 
-계약이 담아야 하는 것(기존 앱이 이미 하는 일이다):
+**항목.** 카탈로그는 "어디서 돌릴 수 있는가"의 목록이다. 열쇠는 `{ primitive, provider, target }`이고, 지금 프리미티브는 `graph` 하나다. `graph` 항목 하나는 프로바이더가 등록한 ComfyUI 서버 하나이고 `target`이 그 서버의 id다. 워크플로(템플릿)는 카탈로그에 없다. 워크플로 기능 컴포넌트의 데이터다. 그래프가 아닌 생성이 생기면 그 패키지가 선언 병합으로 프리미티브를 더한다.
 
-- **요청**: API 형식 그래프(템플릿), 선택적인 그래프 패치, 필드 값, 입력 에셋 참조(실행 직전에 서버의 input 폴더로 복사한다), 대상 서버.
-- **실행**: 제출 → 진행률(노드, 값, 최대) → 완료 판정(폴링이 기준이고 WebSocket은 보조다) → 출력 파일 여러 개(이미지, 영상, 오디오) → 바이트를 받아 에셋으로 저장.
-- **취소**: 결과가 셋이다(`canceled`, `running`, `finished`).
-- **보내기 전 검증**: 그래프 검증과 서버별 준비 점검(빠진 노드, 없는 모델 파일).
-- **서버 조회**: 시스템 상태, 노드 카탈로그, 모델 파일 목록과 메타데이터, 서버의 실행 기록. 서버 종류마다 되는 것이 다르다.
-- **재시작 후 이어받기**: 진행 중이던 실행을 다시 추적한다.
+| 항목의 멤버 | 하는 일 |
+| --- | --- |
+| `description` | 에이전트와 사용자가 항목을 고를 때 읽는 글 |
+| `facts()` | 서버에서 읽은 사실: `{ label, kind, system }`. `kind`는 프로바이더가 붙인 서버 종류(local, cloud, runpod, modal)다. 서버에 닿지 못하면 거절한다 |
+| `validate(draft, signal?)` | 큐에 넣지 않는 검증. 문제마다 에이전트가 읽을 문장 하나를 주고, 없으면 빈 목록이다. 받는 것은 입력이 에셋으로 풀리기 전의 요청(`GraphDraft`: 그래프와, 미디어 입력이 들어갈 자리 `{ node, input }`)이고, 그 자리의 리터럴은 자리표시자라 판단하지 않는다. 부르는 쪽이 기록을 쓰기 전에 프로젝트 잠금 안에서 부르므로 프로바이더가 이미 가진 것(캐시한 노드 카탈로그)으로 답한다. 가진 것이 없으면 빈 목록을 주고 거절을 `run`에 맡기거나 바로 거절한다. 서버를 오래 기다리지 않는다 |
+| `run(request, { dir, assets, signal })` | 실행한다. 이벤트의 흐름을 준다(아래). 순회를 시작할 때까지 아무것도 하지 않고, 한 번만 순회한다 |
+| `resume?(run, options)` | 이미 받아들여진 실행을 다시 따라간다. 있는 프로바이더만 |
+| `nodeCatalog?()`, `listModelFiles?(folder)`, `modelFileMetadata?(folder, file)`, `listRuns?(limit)` | 서버 조회. 되는 서버의 항목에만 있다(기존 `ComfyBackend`의 선택 메서드와 같은 방식이다) |
 
-설계할 때 답해야 하는 질문:
+**요청과 결과.** 요청(`GraphRequest`)은 실제로 보낼 API 형식 그래프 전체(`graph`. 그래프 패치와 필드 값이 이미 적용된 것)와 에셋으로 받은 미디어 입력(`media`: `{ node, input, asset }`)이다. 템플릿, 패치, 필드 값으로 그래프를 만드는 일은 기능 컴포넌트가 연동 라이브러리(`@cs/comfy`)의 순수 함수로 한다. 프로바이더는 워크플로를 모른다. 프로바이더는 실행 직전에 미디어 입력을 서버에 올리고 그 이름을 그래프에 써넣는다. 에셋은 `run`의 옵션으로 받은 리더(`assets.get`, `assets.read`)로 읽고, 부르는 쪽이 `ctx.csProject.assets()`를 넘긴다.
 
-1. 카탈로그 항목 하나는 무엇인가. 서버 하나인가, 서버와 워크플로 템플릿의 짝인가.
-2. 요청에 그래프 전체를 싣는가, 템플릿 id + 패치 + 필드 값을 싣는가. 어느 쪽이든 기록에는 실제로 보낸 그래프가 남아야 한다.
-3. 결과는 스트림인가, 출력 파일 목록인가. 진행률·취소·이어받기는 카탈로그와 기능 컴포넌트 중 어디에 속하는가.
-4. 서버 조회는 카탈로그 항목의 `facts`·`schema`에 넣는가, 별도 서비스로 두는가.
-5. 기존 `ComfyBackend` 인터페이스(네 서버 종류에서 이미 쓰이고 있다)를 카탈로그 아래의 내부 인터페이스로 그대로 둘 수 있는가.
-6. 기존 규칙 "`/prompt` 검증 실패는 기록을 남기지 않는다"를 어떻게 지키는가. 위 흐름에서는 `pending` 기록이 구현 실행(서버 제출)보다 먼저 추가된다. 서버 검증을 사전 조건 단계로 올릴지, 제출 전에 실패한 기록을 실행으로 세지 않을지를 정한다.
+결과는 이벤트의 흐름(`AsyncIterable<GraphRunEvent>`)이다.
+
+| 이벤트 | 뜻 |
+| --- | --- |
+| `queued { run, graph }` | 서버가 받았다. `graph`는 실제로 보낸 것(올린 입력의 이름이 들어간 뒤)이다. 부르는 쪽이 기록의 보고에 남긴다 |
+| `progress { node, value, max }` | 실행 중인 노드와 단계. 서버가 말하지 않는 값은 `null`이다 |
+| `output { node, name, mime, path, preview }` | 출력 파일 하나. `path`는 부르는 쪽이 준 폴더(`dir`. 연산의 `scratchDir`) 바로 아래의 파일이고, 한 실행 안에서 이름이 겹치지 않으며, 이벤트가 올 때 다 쓰여 있다. `name`은 서버가 준 표시용 이름이다. `preview`는 저장된 출력이 없을 때의 임시 출력이다 |
+| `done` | 끝났다. 이 뒤에 순회가 끝나고, 그 뒤로는 거절하지 않는다. `done` 없이 끝난 순회는 끝나지 않은 실행이다 |
+
+- **진행률, 완료 판정, 출력 수집, 취소 판정은 프로바이더가 한다**(기존 규칙 "한 곳에서 한다"). 실패는 순회가 거절된다.
+- **출력은 `done` 뒤에 에셋으로 넣는다.** 부르는 쪽은 `output` 이벤트를 모아 두었다가 `done`을 받은 뒤에 `importAsset({ path }, …)`로 넣는다. 중간에 실패한 실행은 에셋을 남기지 않는다(기록이 가리키지 않는 에셋이 생기지 않는다).
+- **취소**는 `signal` 하나다. 중지되면 프로바이더가 서버에 취소를 보낸다. 서버가 이미 끝냈으면 출력과 `done`까지 내서 결과를 살리고, 아니면 서버의 끝 상태를 안 뒤에 `Error`로 거절한다. 기존 앱의 취소 결과 셋(`canceled`, `running`, `finished`)이 이 둘로 접힌다. 순회를 시작할 때 이미 중지돼 있으면 아무것도 보내지 않는다.
+- **순회가 일찍 끝나도 취소다.** 부르는 쪽이 중간에 순회를 그만두면(`return()`) 프로바이더가 끝나지 않은 실행을 취소한다. 순회가 어떻게 끝나든 프로바이더는 그 실행을 위해 쥔 것(연결, 서버가 따로 들고 있는 출력 사본)을 놓고, `dir`에 더 쓰지 않는다. 부르는 쪽은 순회가 끝난 뒤에 `dir`을 지운다.
+- **비밀값을 내놓지 않는다.** `facts()`의 값, `validate`의 문제, `RequestRejected`의 이유, 거절하는 오류의 메시지는 기록 파일과 에이전트와 브라우저에 닿는다. 프로바이더가 서버의 답을 전할 때 키와 토큰, 그것이 든 주소를 걷어낸다.
+- **검증과 거절**(기존 규칙 "`/prompt` 검증 실패는 기록을 남기지 않는다"). 부르는 연산이 `precondition`에서 `validate`를 불러, 걸리면 기록 없이 거절한다. 그것을 통과하고도 서버가 그래프를 실행하지 않고 거절하면 `run`이 `RequestRejected`(문제 목록)로 거절된다. 제출에 바로 답하는 서버(ComfyUI의 `/prompt`)는 이벤트 없이, 나중에야 알려 주는 서버(작업 큐)는 `queued` 뒤에 거절한다. 이때는 이미 `pending` 기록이 있으므로, 부르는 연산이 `OperationFailure`로 기록의 실패 코드를 `not_queued`(`NOT_QUEUED`)로 남긴다. 실행을 세는 쪽(생성 목록, 배치)은 이 코드의 기록을 뺀다. `precondition` 때는 입력이 아직 에셋으로 풀리지 않았으므로 `validate`에는 미디어 입력이 들어갈 자리만 넘긴다. `precondition`의 거절은 `ProjectError("invalid_params", …)`로 던져야 화면용 API가 400으로 답한다(그냥 `Error`는 500이 된다).
+- **`ComfyBackend`와의 관계.** `ComfyBackend`(`@cs/comfy/backend`)는 카탈로그 아래의 내부 인터페이스로 남는다. 프로바이더(4-2)가 항목 하나를 `ComfyBackend` 하나 위에 구현한다. 계약 패키지는 연동 라이브러리에 의존하지 않는다(그래프 타입은 구조가 같은 자체 선언이다).
+
+**서비스**(`ctx.csCatalog`).
+
+| 메서드 | 하는 일 |
+| --- | --- |
+| `register(entry)` | 항목을 넣고 빼는 함수를 준다. 프로바이더가 `ctx.effect` 안에서 부른다. 같은 열쇠가 있거나 프로바이더·대상이 비면 던진다 |
+| `get(key)`, `list(filter?)` | 열쇠로 하나, 또는 프리미티브·프로바이더로 거른 목록(등록 순) |
+| `onChanged(listener)` | 등록과 해제를 듣는다. 듣는 쪽이 던져도 등록과 다른 듣는 쪽은 그대로 간다 |
+| `whileServing(primitives, start)` | 그 프리미티브의 항목이 하나라도 있는 동안만 소비자의 등록(연산)을 유지한다. `start`나 그 정리 함수가 카탈로그를 바꿔도 한 번씩만 불린다 |
+| `summary()` | 화면이 읽는 목록: 열쇠, 설명, 가진 선택 메서드의 이름(`abilities`), `facts`. `facts()`가 거절하거나 `factsTimeoutMs`(설정, 기본 5000) 안에 답하지 않은 항목은 `facts: null`과 `problem`으로 싣는다 |
+
+화면은 `GET /api/cs/catalog`로 이 목록을 읽고, 이벤트 스트림의 `catalog` 이벤트로 바뀐 것을 안다(아래 "화면용 API").
+
+**의존.** 기능 컴포넌트 → 카탈로그 ← 생성 프로바이더다. 그 밖에 둘이 더 있다: 카탈로그 계약은 프로젝트 계층의 타입(에셋 id, 에셋 읽기)을 쓰고, 화면용 API는 카탈로그를 읽기만 한다(목록과 변경 알림).
+
+**본이 되는 시험.** `packages/catalog/src/contract.test.ts`가 실제 프로젝트 계층 위에서 계약을 끝까지 돈다: `whileServing`으로 연산을 등록하고, `precondition`에서 검증하고, `execute`에서 흐름을 끝까지 읽은 뒤 출력을 에셋으로 넣고, 거절(제출 때와 `queued` 뒤)을 `not_queued`로 남기고, 중지의 두 결과를 본다. 2-3의 생성 기능 컴포넌트와 4-2의 프로바이더가 이 모양을 따른다. 가짜 생성 프로바이더는 `@cs/catalog/testing/fake-provider`에 있다.
+
+**정하지 않은 것.**
+
+- 재시작 후 이어받기. 계약에 `resume`은 있지만, 프로젝트 계층은 재시작 때 끝나지 않은 기록을 `cancelled`로 끝낸다. 이어받으려면 그 규칙을 바꾸거나 실행 id를 기록 밖에 둬야 한다(4-2).
+- 카탈로그를 읽는 에이전트 도구(DreamVerse의 `dv_models_list`·`dv_models_get`). 무엇을 보일지는 생성 기능 컴포넌트가 워크플로와 함께 정한다(2-3).
+- 서버 id의 모양과 서버 목록의 자리(4-1).
+- 실행을 구현하며 정할 것(4-2): 중지한 뒤 서버가 아직 돌고 있을 때 순회가 끝나는 시점, 큰 미디어 입력(지금 `assets.read`는 파일 전체를 메모리에 올린다), 실행 중에 항목이 빠질 때, 한 항목에서 동시에 도는 실행, 마스크 같은 다른 올리기, `facts()`의 캐시, 긴 오류 메시지 자르기. 실행 중의 미리보기 프레임을 싣는 이벤트는 없다(3-3·4-2에서 필요하면 더한다).
 
 ### 화면용 API — `@cs/api`
 
@@ -184,15 +219,17 @@ export function apply(ctx: Context): void {
 | `/api/cs/redo` | POST | `{project}` | `{tip, at}` |
 | `/api/cs/stale/accept` | POST | `{project, record, session?, surface?}` | `proj.stale_accept` 기록 |
 | `/api/cs/history` | POST | `{project, actor?, component?, operation?, kind?, status?, session?, turn?, tool_call?, records?, before?, limit?}` | `WireHistory`(`{entries, assets}`). `limit`은 1~200, 기본 50 |
-| `/cs/events?project=<id>` | GET | — | `text/event-stream`: `ready` 뒤에 `record`(기록 추가), `update`(기록 갱신), `line`(현재 위치나 끝이 바뀜) |
+| `/api/cs/catalog` | GET | — | `WireCatalogEntry[]`(`{primitive, provider, target, description, abilities, facts, problem}`): 카탈로그의 항목. 카탈로그가 없으면 `[]` |
+| `/cs/events?project=<id>` | GET | — | `text/event-stream`: `ready` 뒤에 `record`(기록 추가), `update`(기록 갱신), `line`(현재 위치나 끝이 바뀜), `catalog`(카탈로그가 바뀜. 데이터 없음) |
 
 - **쓰는 요청은 전부 프로젝트 계층의 연산 실행을 지난다.** `actor: "user"`로 부르고, 기록의 `surface`는 요청의 `surface`가 `chat`이면 `chat`, 그 밖은 `view`다. `session`을 주면 그 채팅 세션이 기록에 남는다.
 - **오류**는 라우트와 스트림이 같은 본문 `{error, code, ...details}`로 답한다: `invalid_params`·`invalid_inputs`·`input_not_ready`·`read_only_operation`(400), `unknown_project`·`unknown_record`·`unknown_operation`·`unknown_asset`(404), 그 밖의 프로젝트 계층 거절(409. 예: `nothing_to_undo`), `internal_error`(500. 호스트 로그에도 남는다). 인증에서 걸린 요청(401·403)은 dsh가 답하는 꼴이라 이 본문이 아니다.
 - 제목과 폴더 이름은 제어 문자가 없고 200바이트 이하여야 한다. 만들기는 한 번에 하나씩 처리되어 동시에 온 같은 제목도 서로 다른 번호를 받는다. 읽기 전용 연산은 이 API로 실행하지 못한다.
 - **인증은 dsh의 것을 그대로 탄다.** fetch 라우트는 dsh `connection` 서비스의 정확 일치 라우트라, dsh가 Host·Origin과 브라우저 세션 쿠키를 검사한 뒤에 부르고 소유자만 닿는다. 이벤트 스트림은 `webServer`의 날 라우트라 요청마다 `connection.admit`으로 같은 검사를 하고 소유자일 때만 연다. `connection`이 없으면 스트림 라우트를 등록하지 않는다. 쿠키 없는 요청은 둘 다 401이다(**띄워 확인**). 플러그인이 내려가면 열린 스트림을 모두 끝내고(브라우저의 `EventSource`가 다시 잇는다), 읽지 않는 클라이언트의 버퍼가 4MiB를 넘어도 끝낸다.
 - **화면은 상태를 들고 있지 않는다.** 스트림에 이벤트가 오면 `/api/cs/state`를 다시 읽는다. 상태는 통째로 온다(부분 갱신 라우트는 없다).
+- **카탈로그**(2-1)는 있으면 읽는다. `@cs/api`는 카탈로그 서비스(`csCatalog`) 없이도 뜨고, 그때 `/api/cs/catalog`는 `[]`다. 카탈로그가 올라오거나 내려가거나 항목이 등록·해제되면 열린 스트림 모두에 `catalog` 이벤트가 간다(프로젝트와 무관하다). 화면은 그 이벤트에 목록을 다시 읽는다. 항목의 `problem`에는 프로바이더가 낸 오류 문장이 그대로 실리므로, 프로바이더는 그 문장에 키나 토큰이 든 주소를 넣지 않는다.
 - **에셋**은 프로젝트 계층에 등록된 에셋 저장소에서 읽는다(`ctx.csProject.assets()`). 항목은 `{id, mime, name, url}`이고 상태의 `assets`에는 `made_by`(만든 연산)가 붙는다. 에셋 기능 컴포넌트(2-3)가 생기기 전에는 빈 저장소라 늘 `[]`이다.
-- 브라우저가 받는 JSON의 타입은 `@cs/api/wire`에 있다(`WireState`, `WireOperation`, `WireHistory`, `WireProject`, `ProjectAsset`). 브라우저 절반은 `import type`으로 가져다 쓴다.
+- 브라우저가 받는 JSON의 타입은 `@cs/api/wire`에 있다(`WireState`, `WireOperation`, `WireHistory`, `WireProject`, `ProjectAsset`, `WireCatalogEntry`). 브라우저 절반은 `import type`으로 가져다 쓴다.
 - 설정(번들의 `cs-api` 행): `keepaliveMs`(15000, 1000 이상. 스트림이 조용할 때 주석 줄을 보내는 간격).
 
 DreamVerse의 라우트 가운데 아직 없는 것과 생길 곳:
@@ -200,7 +237,8 @@ DreamVerse의 라우트 가운데 아직 없는 것과 생길 곳:
 | DreamVerse 경로 | 하는 일 | 우리 쪽 |
 | --- | --- | --- |
 | `/api/dv/assets/import`, `/dv/assets` | 에셋 가져오기, 파일 내려주기 | 에셋 기능 컴포넌트와 함께(2-3) |
-| `/api/dv/models`, `/api/dv/tasks`, 스트림의 `models` 이벤트 | 카탈로그 | 카탈로그 계약이 정해진 뒤(2-1 이후) |
+| `/api/dv/models`, 스트림의 `models` 이벤트 | 카탈로그 | 2-1에서 `/api/cs/catalog`와 `catalog` 이벤트로 만들었다 |
+| `/api/dv/tasks` | 작업 이름의 표시 글 | 가져오지 않는다. 우리 카탈로그에는 작업 구분이 없다 |
 | `/api/dv/skills`, `/api/dv/skills/upload` | 스킬 묶음 업로드 | 가져오지 않는다. 스킬 관리를 dsh에 맡길지는 1-4가 정한다 |
 
 ## 화면 구조
@@ -264,7 +302,7 @@ packages/
   bundle/            @cs/bundle        cordis.patch.yml의 행 모음(프로필 계층), 에이전트 프리셋
   project/           @cs/project       프로젝트 계층(2-0)
   api/               @cs/api           화면용 API(2-2)
-  catalog/           카탈로그 계약(타입과 서비스 정의)
+  catalog/           @cs/catalog       카탈로그 계약(2-1): 계약 타입, 서비스 ctx.csCatalog, 시험용 가짜 생성 프로바이더
   comfy/             @cs/comfy         ComfyUI 연동 라이브러리(4-0): 서버 종류별 클라이언트, 그래프와 패치, 프로토콜, 모델 계열. dsh에 의존하지 않는다. 플러그인이 아니라 번들의 행이 없다
   comfy-provider/    카탈로그에 등록하는 생성 프로바이더, 실행기
   <이름>/            기능 컴포넌트 하나에 패키지 하나
@@ -281,7 +319,8 @@ scripts/             프로필 만들기, 실행, 합성 구성 찍기(`dsh.ts`,
 | 에이전트 프리셋에 넣을 도구(셸·파일 도구를 줄지, 기본 제공 프리셋을 끌지)             | 1-4         |
 | 접속·배포 구성                                                                        | 1-5         |
 | UI 언어(한국어 언어 팩 여부, 문자열을 로케일 사전으로 옮길지)                         | 1-6         |
-| 카탈로그 계약                                                                         | 2-1         |
+| 재시작 후 실행 이어받기(프로젝트 계층은 재시작 때 끝나지 않은 기록을 끝낸다)          | 4-2         |
+| 카탈로그를 읽는 에이전트 도구                                                         | 2-3         |
 | 기존 관계형 데이터(폴더, 태그, 검토 상태, 배치)를 기록과 리듀서로 옮기는 모양         | 2-3         |
 | 프로젝트를 넘는 데이터의 자리                                                         | 2-3, 4-1    |
 | 화면에 쓸 제품 이름과 마크, 숨길 기본 요소, 프로젝트 하나에 둘 세션 수                | 3-0         |

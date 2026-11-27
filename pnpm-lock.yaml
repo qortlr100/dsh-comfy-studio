@@ -8,6 +8,9 @@ importers:
 
   .:
     devDependencies:
+      '@cs/catalog':
+        specifier: workspace:*
+        version: link:packages/catalog
       '@cs/project':
         specifier: workspace:*
         version: link:packages/project
@@ -56,6 +59,9 @@ importers:
 
   packages/api:
     dependencies:
+      '@cs/catalog':
+        specifier: workspace:*
+        version: link:../catalog
       '@cs/project':
         specifier: workspace:*
         version: link:../project
@@ -84,12 +90,34 @@ importers:
       '@cs/api':
         specifier: workspace:*
         version: link:../api
+      '@cs/catalog':
+        specifier: workspace:*
+        version: link:../catalog
       '@cs/project':
         specifier: workspace:*
         version: link:../project
       '@cs/ui-shell':
         specifier: workspace:*
         version: link:../ui-shell
+
+  packages/catalog:
+    dependencies:
+      '@cs/project':
+        specifier: workspace:*
+        version: link:../project
+      '@deepseek-ai/dsh-util-values':
+        specifier: 0.2.2-rc.5
+        version: 0.2.2-rc.5(@deepseek-ai/cordis@4.1.0)
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.1.0
+        version: 4.1.0(@deepseek-ai/cordis-plugin-include@1.1.0)(@deepseek-ai/cordis-plugin-loader@1.1.0)
+      '@deepseek-ai/schemastery':
+        specifier: 3.19.0
+        version: 3.19.0
+      '@types/node':
+        specifier: 24.19.2
+        version: 24.19.2
 
   packages/comfy:
     dependencies:

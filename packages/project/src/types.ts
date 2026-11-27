@@ -114,8 +114,10 @@ export interface RecordCost {
 
 /**
  * Why a call failed or was cancelled, in words a creator can read. `code` is one of `operation_failed` (the
- * operation's execute threw), `input_failed` (a record the scheduled call waited for failed), or `stopped` (the turn
- * was stopped: the run request's signal aborted). A stopped record ends with status `cancelled`.
+ * operation's execute threw), a code of the operation's own (its execute threw an `OperationFailure`), `input_failed`
+ * (a record the scheduled call waited for failed), `stopped` (the turn was stopped: the run request's signal
+ * aborted), or `discarded` (a write discarded the step before or while it ran). A stopped or discarded record ends
+ * with status `cancelled`.
  */
 export interface RecordFailure {
   code: string;
@@ -449,7 +451,7 @@ export type ProjectShown =
     };
 
 /** The read side of the {@link AssetStore}: what a caller outside the project layer may ask about an asset. */
-export type AssetReader = Pick<AssetStore, "has" | "get" | "url">;
+export type AssetReader = Pick<AssetStore, "has" | "get" | "read" | "url">;
 
 /** What a subscriber learns about a project change. */
 export type ProjectEvent =
