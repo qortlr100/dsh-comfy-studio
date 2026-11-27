@@ -21,7 +21,14 @@ import CsProject, {
   type SessionId,
 } from "./index.ts";
 import { formatToolResult } from "./agent-tools.ts";
-import { MemoryAssets, STAND_IN_COMPONENTS, tempRoot, testKind } from "./testing/support.ts";
+import {
+  defined,
+  MemoryAssets,
+  STAND_IN_COMPONENTS,
+  standIn,
+  tempRoot,
+  testKind,
+} from "./testing/support.ts";
 import {
   chatProject,
   provideChatServices,
@@ -82,8 +89,8 @@ async function start(
   contexts.push(context);
   const provided = services ?? provideChatServices(context);
   if (services !== undefined) {
-    context.provide("workspaceRegistry", services.workspaces as never);
-    context.provide("sessions", services.chats as never);
+    context.provide("workspaceRegistry", standIn(services.workspaces));
+    context.provide("sessions", standIn(services.chats));
   }
   if (attachments) context.provide("attachments", new MemoryAttachments());
   const turns = new Map<string, number>();
@@ -91,7 +98,7 @@ async function start(
   const agents = {
     turnBoundaryOf: (session: { id: string }) => ({ lastTurn: turns.get(session.id) ?? 0 }),
   };
-  context.provide("agents", agents as never);
+  context.provide("agents", standIn(agents));
   await context.plugin(SystemPrompt, {}).await();
   await mountTools(context);
   await context
@@ -153,10 +160,13 @@ function operation(
   };
 }
 
+/** A placeholder that a test replaces once the real function exists. */
+const noop = (): void => undefined;
+
 /** The value of a successful operation tool call. */
 function value(result: ToolExecutionResult): OperationToolValue {
   if (result.isError) throw new Error(result.error.message);
-  return result.value as OperationToolValue;
+  return standIn<OperationToolValue>(result.value);
 }
 
 /** The record origin of a project the tests create. */
@@ -185,7 +195,7 @@ describe("agent tools", () => {
     expect(schema?.description).toBe("A test operation.");
     expect(
       Object.keys(
-        (schema?.parameters as { properties: object } | undefined)?.properties ?? {},
+        standIn<{ properties: object } | undefined>(schema?.parameters)?.properties ?? {},
       ).toSorted((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
     ).toEqual(["based_on", "inputs", "prompt", "reason", "supersedes"]);
     // The description ends with the resource hint and, for a read or a deterministic operation, how calls reuse work.
@@ -340,9 +350,9 @@ describe("agent tools", () => {
     );
     expect(
       Object.keys(
-        (
+        standIn<{ properties: object } | undefined>(
           fixture.context.tools.schemas().find((tool) => tool.name === "cs_inspect_asset")
-            ?.parameters as { properties: object } | undefined
+            ?.parameters,
         )?.properties ?? {},
       ),
     ).not.toContain("supersedes");
@@ -356,7 +366,7 @@ describe("agent tools", () => {
   it("lets an operation prepare its call, keeps tool-only arguments out of params, and schedules behind unfinished producers", async () => {
     const fixture = await start();
     const projectId = await boundProject(fixture);
-    let release = (): void => {};
+    let release = noop;
     const held = new Promise<void>((resolve) => {
       release = resolve;
     });
@@ -395,10 +405,13 @@ describe("agent tools", () => {
     );
     const generating = fixture.call("cs_image_generate", { reason: "variant", prompt: "r" });
     await new Promise((resolve) => setTimeout(resolve, 30));
-    const variant = fixture.project.listHistory({
-      project: projectId,
-      operation: "image.generate",
-    })[0]?.record.id as RecordId;
+    const variant = defined(
+      fixture.project.listHistory({
+        project: projectId,
+        operation: "image.generate",
+      })[0]?.record.id,
+      "the variant record",
+    );
     const still = value(
       await fixture.call("cs_asset_crop", {
         reason: "still of the variant",
@@ -438,7 +451,7 @@ describe("agent tools", () => {
     fixture.project.registerOperation(operation({ name: "asset.crop", component: "asset" }));
     const sectionOf = async (session: string): Promise<string | undefined> => {
       const assembly = await fixture.context.systemPrompt.assemble({
-        agent: { id: session } as never,
+        agent: standIn({ id: session }),
       });
       return assembly.sections.find((section) => section.name === "cs:project")?.text;
     };
@@ -467,7 +480,7 @@ describe("agent tools", () => {
   it("names the registered reference kinds in the naming rule of the cs:project prompt section", async () => {
     const fixture = await start();
     const section = async (): Promise<string | undefined> =>
-      (await fixture.context.systemPrompt.assemble({ agent: { id: "s1" } as never })).sections.find(
+      (await fixture.context.systemPrompt.assemble({ agent: standIn({ id: "s1" }) })).sections.find(
         (entry) => entry.name === "cs:project",
       )?.text;
     expect(await section()).toContain(
@@ -490,7 +503,7 @@ describe("agent tools", () => {
     await boundProject(fixture);
     fixture.project.registerOperation(operation({ name: "asset.crop", component: "asset" }));
     const order: string[] = [];
-    let finish = (): void => {};
+    let finish = noop;
     const work = new Promise<void>((_resolve, reject) => {
       finish = () => {
         order.push("work");
@@ -650,8 +663,8 @@ describe("agent tools", () => {
     ]);
     // A reference without a kind key, which no typed caller builds, names no version.
     expect([
-      versionRefOf({ version: 1 } as never),
-      formatInputRef({ version: 1 } as never),
+      versionRefOf(standIn({ version: 1 })),
+      formatInputRef(standIn({ version: 1 })),
     ]).toEqual([null, '{"version":1}']);
   });
 });

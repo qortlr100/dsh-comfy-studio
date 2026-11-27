@@ -344,7 +344,7 @@ export function readLines(root: string, project: ProjectId): Array<Record<string
   return readFileSync(join(root, project, ".comfy-studio", "records.jsonl"), "utf8")
     .split("\n")
     .filter((line) => line !== "")
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
+    .map((line) => standIn<Record<string, unknown>>(JSON.parse(line)));
 }
 
 /**
@@ -379,4 +379,42 @@ export function createTestProject(
     title,
   );
   return Promise.resolve(id);
+}
+
+/**
+ * Strip `undefined` and `null` from a value, failing loudly when the test's expectation does not hold.
+ * @param value - the value that the test expects to be present.
+ * @param what - what the value is, for the error message.
+ * @returns the value.
+ */
+export function defined<T>(value: T | undefined | null, what = "value"): T {
+  if (value === undefined || value === null) throw new Error(`Expected ${what} to be defined`);
+  return value;
+}
+
+/**
+ * Narrow a caught value to an error class.
+ * @param value - the caught value.
+ * @param type - the error class that the test expects.
+ * @returns the value as an instance of `type`.
+ */
+export function asError<T extends Error>(value: unknown, type: new (...args: never[]) => T): T {
+  if (!(value instanceof type))
+    throw new Error(`Expected an instance of ${type.name}`, { cause: value });
+  return value;
+}
+
+/**
+ * Give a test value the type that a call site expects. Tests hand minimal stand-ins to DSH APIs (a `{ id }` object for
+ * an agent or a session, an in-memory object for a DSH service) and read tool results whose JSON shape the test itself
+ * produced; the cast is the point of a stand-in, so it lives here once.
+ * @param value - the stand-in or the loosely typed value.
+ * @param _witness - never passed; it names `T` a second time in the signature, which the lint rule on lone type
+ *   parameters wants. Callers let `T` be inferred from the context or write it as a type argument.
+ * @returns the same value, typed as `T`.
+ */
+export function standIn<T>(value: unknown, ..._witness: T[]): T {
+  // The test builds the value so that it has the shape `T` names; nothing here can check that.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+  return value as T;
 }

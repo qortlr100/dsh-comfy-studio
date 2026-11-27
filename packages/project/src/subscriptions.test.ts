@@ -6,6 +6,9 @@ import type { ProjectEvent, ProjectId, RecordId } from "./types.ts";
 
 const PROJECT = brandString<ProjectId>("project-1");
 const OTHER_PROJECT = brandString<ProjectId>("project-2");
+/** A placeholder that a test replaces once the real function exists. */
+const noop = (): void => undefined;
+
 const EVENT: ProjectEvent = {
   kind: "record",
   record: {
@@ -58,7 +61,7 @@ describe("Subscriptions", () => {
   it("delivers the current event to the listeners subscribed when delivery started", () => {
     const subscriptions = new Subscriptions();
     const calls: string[] = [];
-    let removeSecond = (): void => undefined;
+    let removeSecond = noop;
     subscriptions.subscribe(PROJECT, () => {
       calls.push("first");
       removeSecond();

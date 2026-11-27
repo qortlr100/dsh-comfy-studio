@@ -35,7 +35,7 @@ import {
   type SessionSeen,
 } from "./project-updates.ts";
 import type { ProjToolDeps } from "./proj-tools.ts";
-import { MemoryAssets, STAND_IN_COMPONENTS, tempRoot } from "./testing/support.ts";
+import { MemoryAssets, STAND_IN_COMPONENTS, standIn, tempRoot } from "./testing/support.ts";
 import {
   chatProject,
   provideChatServices,
@@ -52,6 +52,33 @@ const contexts: Context[] = [];
 afterEach(async () => {
   for (const context of contexts.splice(0)) await context.fiber.dispose();
 });
+
+/** A placeholder that a test replaces once the real function exists. */
+const noop = (): void => undefined;
+
+/** @returns the origin of an agent call made in `session`. */
+function agentOrigin(session: string): RecordOrigin {
+  return {
+    actor: "agent",
+    surface: "chat",
+    session: brandString<SessionId>(session),
+    turn: null,
+    tool_call: "call-x",
+    intent: "agent import",
+  };
+}
+
+/** @returns the origin of a user edit made in `session`. */
+function humanOrigin(session: string): RecordOrigin {
+  return {
+    actor: "user",
+    surface: "chat",
+    session: brandString<SessionId>(session),
+    turn: null,
+    tool_call: null,
+    intent: "user import",
+  };
+}
 
 /** The asset ID of the bytes of a text. */
 const assetOf = (text: string): string => createHash("sha256").update(text).digest("hex");
@@ -81,7 +108,7 @@ const scheduler = (intent: string): RecordOrigin => ({
  */
 class AgentLog {
   readonly events: SessionEvent[] = [];
-  seen: SessionSeen = seenProjection().init({} as never, 0 as never);
+  seen: SessionSeen = seenProjection().init(standIn({}), standIn(0));
 
   private readonly project: CsProject;
   private readonly deps: ProjToolDeps;
@@ -199,7 +226,7 @@ async function start(bound = true): Promise<Fixture> {
   const gate = (prompt: string): { promise: Promise<void>; resolve: () => void } => {
     const existing = gates.get(prompt);
     if (existing !== undefined) return existing;
-    let resolve = (): void => {};
+    let resolve = noop;
     const made = {
       promise: new Promise<void>((done) => {
         resolve = done;
@@ -341,11 +368,11 @@ describe("project state message", () => {
         "and never call cs_proj_create. Later changes that your own tool results did not show reach you as project updates. " +
         "The project summary, as cs_proj_state returns it without the reports of recent records:",
     );
-    const summary = JSON.parse(json.join("\n")) as {
+    const summary = standIn<{
       project_id: string;
       head: string;
       recent: Array<Record<string, unknown>>;
-    };
+    }>(JSON.parse(json.join("\n")));
     expect(summary).toMatchObject({ project_id: fixture.projectId, head: gen.id });
     expect(summary.recent.at(-2)).toEqual({
       record: record.id,
@@ -586,16 +613,10 @@ describe("project update message", () => {
   it("names a record of another chat session and an unreported record of this session's agent", async () => {
     const fixture = await start();
     fixture.log.step();
-    const agent = (session: string): RecordOrigin => ({
-      actor: "agent",
-      surface: "chat",
-      session: brandString<SessionId>(session),
-      turn: null,
-      tool_call: "call-x",
-      intent: "agent import",
+    const other = await fixture.run(agentOrigin("s2"), "asset.import", { name: "other.png" });
+    const stopped = await fixture.run(agentOrigin(SESSION), "asset.import", {
+      name: "stopped.png",
     });
-    const other = await fixture.run(agent("s2"), "asset.import", { name: "other.png" });
-    const stopped = await fixture.run(agent(SESSION), "asset.import", { name: "stopped.png" });
     expect(fixture.log.step()).toBe(
       update(
         `- done ${other.id} (another chat): imported other.png`,
@@ -609,16 +630,8 @@ describe("project update message", () => {
   it("names a user edit made in another chat apart from one made in this chat", async () => {
     const fixture = await start();
     fixture.log.step();
-    const human = (session: string): RecordOrigin => ({
-      actor: "user",
-      surface: "chat",
-      session: brandString<SessionId>(session),
-      turn: null,
-      tool_call: null,
-      intent: "user import",
-    });
-    const other = await fixture.run(human("s2"), "asset.import", { name: "other.png" });
-    const here = await fixture.run(human(SESSION), "asset.import", { name: "here.png" });
+    const other = await fixture.run(humanOrigin("s2"), "asset.import", { name: "other.png" });
+    const here = await fixture.run(humanOrigin(SESSION), "asset.import", { name: "here.png" });
     expect(fixture.log.step()).toBe(
       update(
         `- done ${other.id} (user in another chat): imported other.png`,
@@ -740,7 +753,7 @@ describe("csProjectSight fold", () => {
     const definition = seenProjection();
     const replayed = fixture.log.events.reduce(
       (state, event) => definition.apply(state, event),
-      definition.init({} as never, 0 as never),
+      definition.init(standIn({}), standIn(0)),
     );
     expect(replayed).toEqual(fixture.log.seen);
     expect(definition.stateSchema.parse(JSON.parse(JSON.stringify(replayed)))).toEqual(replayed);

@@ -19,7 +19,7 @@ import CsProject, {
   type ProjectId,
   type SessionId,
 } from "./index.ts";
-import { MemoryAssets, STAND_IN_COMPONENTS, tempRoot } from "./testing/support.ts";
+import { MemoryAssets, STAND_IN_COMPONENTS, standIn, tempRoot } from "./testing/support.ts";
 import {
   provideChatServices,
   type TestChatServices,
@@ -135,16 +135,24 @@ function still(overrides: Partial<OperationSpec> = {}): OperationSpec {
   };
 }
 
+/** A placeholder that a test replaces once the real function exists. */
+const noop = (): void => undefined;
+
+/** @returns the asset ID of the still made from `prompt`. */
+function stillAsset(prompt: string): string {
+  return createHash("sha256").update(`still ${prompt}`).digest("hex");
+}
+
 /** The JSON value of a successful `cs_proj_*` call. */
 function json(result: ToolExecutionResult): Record<string, unknown> {
   if (result.isError) throw new Error(result.error.message);
-  return result.value as Record<string, unknown>;
+  return standIn<Record<string, unknown>>(result.value);
 }
 
 /** The value of a successful operation tool call. */
 function value(result: ToolExecutionResult): OperationToolValue {
   if (result.isError) throw new Error(result.error.message);
-  return result.value as OperationToolValue;
+  return standIn<OperationToolValue>(result.value);
 }
 
 /** The error message of a failed call. */
@@ -174,7 +182,7 @@ describe("cs_proj_* tools", () => {
     );
     for (const tool of schemas) {
       expect(
-        Object.keys((tool.parameters as { properties: object }).properties),
+        Object.keys(standIn<{ properties: object }>(tool.parameters).properties),
         tool.name,
       ).not.toContain("project_id");
     }
@@ -385,8 +393,9 @@ describe("cs_proj_* tools", () => {
     // A record whose operation is no longer registered is summarized by its operation name.
     removeStill();
     expect(
-      (json(await fixture.call("cs_proj_state", {}))["recent"] as Array<{ summary: string }>)[1]
-        ?.summary,
+      standIn<Array<{ summary: string }>>(
+        json(await fixture.call("cs_proj_state", {}))["recent"],
+      )[1]?.summary,
     ).toBe("asset.crop");
     expect(json(await fixture.call("cs_proj_history_list", { limit: 3 }))).toEqual([
       expect.objectContaining({
@@ -526,7 +535,7 @@ describe("cs_proj_* tools", () => {
 
   it("shows a pending record by its status in the project summary", async () => {
     const fixture = await start();
-    let release = (): void => {};
+    let release = noop;
     const held = new Promise<void>((resolve) => {
       release = resolve;
     });
@@ -562,10 +571,9 @@ describe("cs_proj_* tools", () => {
       inputs: [],
       after: [],
     });
-    const pending = json(await fixture.call("cs_proj_state", {}))["recent"] as Array<{
-      record: string;
-      summary: string;
-    }>;
+    const pending = standIn<Array<{ record: string; summary: string }>>(
+      json(await fixture.call("cs_proj_state", {}))["recent"],
+    );
     expect(pending.at(-1)?.record).toBe(scheduled.record?.id);
     expect(["pending", "running"]).toContain(pending.at(-1)?.summary);
     release();
@@ -574,7 +582,7 @@ describe("cs_proj_* tools", () => {
 
   it("cs_proj_wait reads the named records after they finish", async () => {
     const fixture = await start();
-    let release = (): void => {};
+    let release = noop;
     const held = new Promise<void>((resolve) => {
       release = resolve;
     });
@@ -631,16 +639,14 @@ describe("cs_proj_* tools", () => {
     const waiting = fixture.call("cs_proj_wait", { records: [slow, early.record, broken] });
     release();
     const result = await waiting;
-    const asset = (prompt: string): string =>
-      createHash("sha256").update(`still ${prompt}`).digest("hex");
     expect(result.content).toEqual([
       {
         type: "text",
         text: [
           `done ${slow} (a slow still): made from slow`,
-          `- still: ${asset("slow")} (image/png) https://assets.example/${asset("slow")}`,
+          `- still: ${stillAsset("slow")} (image/png) https://assets.example/${stillAsset("slow")}`,
           `done ${early.record} (an early still): made from kite`,
-          `- still: ${asset("kite")} (image/png) https://assets.example/${asset("kite")}`,
+          `- still: ${stillAsset("kite")} (image/png) https://assets.example/${stillAsset("kite")}`,
           `failed ${broken} (a broken still): The ink ran out.`,
         ].join("\n"),
       },
@@ -723,9 +729,12 @@ describe("projects as Workspace folders", () => {
       { id: "s-old", cwd: folder },
       { id: "s-child", cwd: folder, origin: "subagent" },
     ];
-    fixture.context.provide("sessionPersistence", {
-      list: () => Promise.resolve(stored.map((header) => ({ header }))),
-    } as never);
+    fixture.context.provide(
+      "sessionPersistence",
+      standIn({
+        list: () => Promise.resolve(stored.map((header) => ({ header }))),
+      }),
+    );
     fixture.services.workspaces.unattachable.add("s-broken");
     const again = await fixture.project.createProject(folder, "reel", HUMAN);
     expect(again.id).not.toBe(first.id);

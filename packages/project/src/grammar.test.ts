@@ -15,6 +15,7 @@ import {
   parsePromptCitations,
   splitInputRef,
 } from "./grammar.ts";
+import { standIn } from "./testing/support.ts";
 
 describe("citation grammar", () => {
   it("writes an ID with parentheses so that the reader returns the whole URI and the element (V1)", () => {
@@ -23,7 +24,7 @@ describe("citation grammar", () => {
     const [parsed] = parsePromptCitations(`${citation} waves`);
     expect(parsed?.uri).toBe("cs:character/mia%28young%29");
     expect(citedElement(parsed?.uri ?? "")).toEqual({ kind: "character", id: "mia(young)" });
-    expect(elementCitationUri({ character: "mia(young)", version: 1 } as never)).toBe(parsed?.uri);
+    expect(elementCitationUri(standIn({ character: "mia(young)", version: 1 }))).toBe(parsed?.uri);
   });
 
   it("never writes an empty label or a label with a line break, and still reads both (V2)", () => {
@@ -73,7 +74,7 @@ describe("input reference grammar", () => {
     expect(splitInputRef("@2")).toEqual({ asset: "@2" });
     expect(
       [{ asset: "a1" }, { record: "r7", output: 0 }, { character: "mia", version: 2 }].map((ref) =>
-        formatInputRef(ref as never),
+        formatInputRef(standIn(ref)),
       ),
     ).toEqual(["a1", "r7#0", "mia@2"]);
     expect(["a1", "r7#0", "mia@2"].map((text) => formatInputSyntax(splitInputRef(text)))).toEqual([

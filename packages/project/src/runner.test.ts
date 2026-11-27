@@ -9,7 +9,9 @@ import { describe, expect, it, vi } from "vitest";
 import type { ProjectModules } from "./testing/support.ts";
 import {
   agentOrigin,
+  asError,
   createTestProject,
+  defined,
   readLines,
   startModules,
   userOrigin,
@@ -75,9 +77,12 @@ function request(
   };
 }
 
+/** A placeholder that a test replaces once the real function exists. */
+const noop = (): void => undefined;
+
 /** @returns a promise with its resolve function, for holding an execute or an approval until the test releases it. */
 function gate<T = void>(): { promise: Promise<T>; resolve: (value: T) => void } {
-  let resolve: (value: T) => void = () => undefined;
+  let resolve: (value: T) => void = noop;
   const promise = new Promise<T>((done) => {
     resolve = done;
   });
@@ -134,7 +139,7 @@ describe("Runner", () => {
     expect(record?.report).toEqual({ seed: 7 });
     expect(record?.cost?.reused).toBe(false);
     expect(record?.cost?.wall_seconds).toBeGreaterThan(0);
-    expect(m.assets.created.get(record?.outputs[0] as AssetId)).toBe(record?.id);
+    expect(m.assets.created.get(defined(record?.outputs[0], "the output asset"))).toBe(record?.id);
     const lines = readLines(m.root, project).filter(
       (line) => line["id"] === record?.id || line["update"] === record?.id,
     );
@@ -244,7 +249,7 @@ describe("Runner", () => {
     await vi.waitFor(() => {
       expect(recordsOf(m, project, "image.generate")[0]?.status).toBe("running");
     });
-    const producer = recordsOf(m, project, "image.generate")[0] as ProjectRecord;
+    const producer = defined(recordsOf(m, project, "image.generate")[0], "the producer record");
     const before = files(m, project);
     const eventCount = m.events.length;
 
@@ -334,7 +339,7 @@ describe("Runner", () => {
         .run(request(project, "image.generate", userOrigin(), extra))
         .then(
           () => "",
-          (error: unknown) => (error as Error).message,
+          (error: unknown) => asError(error, Error).message,
         );
       expect(refusal).not.toBe("");
       expect(await m.runner.check(request(project, "image.generate", userOrigin(), extra))).toEqual(
@@ -383,7 +388,7 @@ describe("Runner", () => {
     await vi.waitFor(() => {
       expect(recordsOf(m, project, "image.generate")[0]?.status).toBe("running");
     });
-    const producer = recordsOf(m, project, "image.generate")[0] as ProjectRecord;
+    const producer = defined(recordsOf(m, project, "image.generate")[0], "the producer record");
     const call = request(project, "inspect.image", userOrigin(), {
       inputs: [{ role: "reference", ref: { record: producer.id, output: 0 } }],
       after: [],
@@ -416,7 +421,7 @@ describe("Runner", () => {
     });
     expect(result.outputs).toEqual([]);
     expect(
-      m.store.getRecord(project, result.record?.id as ProjectRecord["id"]).finished_at,
+      m.store.getRecord(project, defined(result.record?.id, "the result record")).finished_at,
     ).toBeDefined();
   });
 
@@ -724,7 +729,7 @@ describe("Runner", () => {
     );
     const scheduler = new Scheduler(
       store,
-      (id, record) => (holder.runner as Runner).execute(id, record),
+      (id, record) => defined(holder.runner, "the runner").execute(id, record),
       { cpu: 1, gpu: 1 },
     );
     holder.runner = new Runner({ store, reducers, scheduler, assets: m.assets });

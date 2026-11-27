@@ -11,6 +11,7 @@ import * as nativeToolExecutor from "@deepseek-ai/dsh-tool-executor-native";
 import { ToolRuntime, type ToolExecutionResult } from "@deepseek-ai/dsh-tools";
 import type CsProject from "../index.ts";
 import type { ProjectId, RecordOrigin } from "../index.ts";
+import { standIn } from "./support.ts";
 
 /** One Workspace of {@link TestWorkspaces}. */
 export class TestWorkspace {
@@ -132,8 +133,8 @@ export interface TestChatServices {
  */
 export function provideChatServices(ctx: Context): TestChatServices {
   const services = { workspaces: new TestWorkspaces(), chats: new TestChats() };
-  ctx.provide("workspaceRegistry", services.workspaces as never);
-  ctx.provide("sessions", services.chats as never);
+  ctx.provide("workspaceRegistry", standIn(services.workspaces));
+  ctx.provide("sessions", standIn(services.chats));
   return services;
 }
 
@@ -188,7 +189,7 @@ export async function callTool(
       { type: "tool-call", id: ToolCallId(callId), name: tool, arguments: JSON.stringify(args) },
     ],
     signal: new AbortController().signal,
-    agent: agent as never,
+    agent: standIn(agent),
   });
   const [entry] = batch.results;
   if (entry === undefined) throw new Error(`The tool registry returned no result for ${tool}.`);

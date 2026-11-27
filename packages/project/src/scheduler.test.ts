@@ -5,7 +5,7 @@
 import { brandString } from "@deepseek-ai/dsh-brand";
 import { describe, expect, it, vi } from "vitest";
 import type { ProjectModules } from "./testing/support.ts";
-import { createTestProject, startModules, userOrigin } from "./testing/support.ts";
+import { createTestProject, defined, startModules, userOrigin } from "./testing/support.ts";
 import type { OperationSpec } from "./operation-types.ts";
 import type { OperationContext, ProjectId, ProjectRecord, RecordId, RunRequest } from "./types.ts";
 
@@ -31,9 +31,12 @@ function operation(
   };
 }
 
+/** A placeholder that a test replaces once the real function exists. */
+const noop = (): void => undefined;
+
 /** @returns a promise with its resolve function, for holding an execute until the test releases it. */
 function gate(): { promise: Promise<void>; resolve: () => void } {
-  let resolve: () => void = () => undefined;
+  let resolve = noop;
   const promise = new Promise<void>((done) => {
     resolve = done;
   });
@@ -66,7 +69,7 @@ async function schedule(
     ...extra,
   });
   expect(result.record?.status).toBe("pending");
-  return result.record as ProjectRecord;
+  return defined(result.record, "the scheduled record");
 }
 
 /**
@@ -276,7 +279,7 @@ describe("Scheduler", () => {
             ...userOrigin(),
             actor: "system",
           });
-          followUps.push((scheduled.record as ProjectRecord).id);
+          followUps.push(defined(scheduled.record, "the follow-up record").id);
           return { outputs: [] };
         },
       }),
@@ -298,7 +301,7 @@ describe("Scheduler", () => {
 
     expect(m.store.getRecord(project, batch.id).status).toBe("done");
     expect(followUps).toHaveLength(1);
-    expect(m.store.getRecord(project, followUps[0] as RecordId).status).toBe("done");
+    expect(m.store.getRecord(project, defined(followUps[0], "the follow-up")).status).toBe("done");
     await expect(m.scheduler.wait(project, [batch.id])).resolves.toBeUndefined();
     await expect(
       m.scheduler.wait(project, [brandString<RecordId>("no-such-record")]),

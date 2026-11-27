@@ -8,6 +8,7 @@ import { brandString } from "@deepseek-ai/dsh-brand";
 import { describe, expect, it } from "vitest";
 import type { ProjectModules } from "./testing/support.ts";
 import {
+  asError,
   createTestProject,
   startModules,
   testKind,
@@ -119,7 +120,7 @@ describe("reducers", () => {
       error = thrown;
     }
     expect(error).toBeInstanceOf(ProjectError);
-    expect((error as ProjectError).code).toBe("reducer_exists");
+    expect(asError(error, ProjectError).code).toBe("reducer_exists");
     remove();
     expect(() => m.reducers.register("reducers_test", reducer)).not.toThrow();
   });

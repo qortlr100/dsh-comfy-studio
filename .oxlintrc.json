@@ -16,14 +16,5 @@
     "react/rules-of-hooks": "error",
     "typescript/no-misused-promises": "error"
   },
-  "overrides": [
-    {
-      "files": ["packages/project/src/**/*.test.ts", "packages/project/src/testing/**/*.ts"],
-      "rules": {
-        "typescript/no-unsafe-type-assertion": "off",
-        "unicorn/consistent-function-scoping": "off"
-      }
-    }
-  ],
   "ignorePatterns": ["**/lib/**", "**/build/**", ".worktree/**", ".dsh-home/**"]
 }

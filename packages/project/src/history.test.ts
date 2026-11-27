@@ -4,14 +4,18 @@
  * were after the position, and the runner cancels a discarded step that has not finished; the history list shows the
  * steps of the list with their place. Plain writes append after the position under the project lock, as the runner does.
  */
+import { brandString } from "@deepseek-ai/dsh-brand";
 import { describe, expect, it } from "vitest";
 import type { ProjectModules } from "./testing/support.ts";
 import {
   agentOrigin,
+  asError,
   createTestProject,
+  defined,
   OTHER_SESSION,
   readLines,
   SESSION,
+  standIn,
   startModules,
   userOrigin,
 } from "./testing/support.ts";
@@ -99,7 +103,7 @@ async function expectCode(fn: () => unknown, code: string): Promise<void> {
       (thrown: unknown) => thrown,
     );
   expect(error).toBeInstanceOf(ProjectError);
-  expect((error as ProjectError).code).toBe(code);
+  expect(asError(error, ProjectError).code).toBe(code);
 }
 
 /**
@@ -117,7 +121,7 @@ describe("history", () => {
   it("moves the current position on undo and redo without writing a record, and the state follows it", async () => {
     const m = startWithValues();
     const project = await createTestProject(m);
-    const create = readLines(m.root, project)[0]!.id as RecordId;
+    const create = standIn<RecordId>(defined(readLines(m.root, project)[0], "the create line").id);
     const first = await write(m, project, DIRECT, 1);
     const second = await write(m, project, DIRECT, 2);
     const lines = readLines(m.root, project).length;
@@ -175,7 +179,8 @@ describe("history", () => {
       [first.id, "before"],
     ]);
     await expectCode(
-      () => m.store.lock(project, () => m.history.moveTo(project, "missing" as RecordId)),
+      () =>
+        m.store.lock(project, () => m.history.moveTo(project, brandString<RecordId>("missing"))),
       "unknown_record",
     );
   });
@@ -342,7 +347,7 @@ describe("history", () => {
       agentSecond.id,
     ]);
     await expectCode(
-      () => m.history.list({ project, before: "missing" as RecordId }),
+      () => m.history.list({ project, before: brandString<RecordId>("missing") }),
       "unknown_record",
     );
   });
