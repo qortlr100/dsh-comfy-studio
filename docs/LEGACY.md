@@ -54,12 +54,12 @@
 | `comfy`      | 5,786 | ComfyUI 연동                                      | 계획 4가 옮긴다(아래)                              |
 | `tools`      | 5,519 | 에이전트 도구 정의                                | 기능 컴포넌트의 연산이 된다(계획 2)                |
 | `llm`        | 2,489 | 프로바이더 추상화, OAuth                          | dsh                                                |
-| `media`      | 1,604 | ffmpeg, 받아쓰기, Blender, PNG 텍스트, 생성 정보  | 미정(`png-text.ts`는 4-0에서 같이 옮긴다)          |
+| `media`      | 1,604 | ffmpeg, 받아쓰기, Blender, PNG 텍스트, 생성 정보  | 미정(`png-text.ts`는 4-0에서 옮겼다)                |
 | `db`         | 1,063 | 스키마와 마이그레이션                             | 기록과 리듀서로 바뀐다                             |
-| `presets`    | 923   | 프리셋 순수 로직, 스킬 가져오기                   | 후보: dsh 스킬(`match.ts`는 4-0에서 같이 옮긴다)   |
+| `presets`    | 923   | 프리셋 순수 로직, 스킬 가져오기                   | 후보: dsh 스킬(`match.ts`는 4-0에서 옮겼다)         |
 | `chat`       | 897   | 턴 서비스, 턴 허브, SSE                           | dsh                                                |
 | `search`     | 772   | 웹 검색                                           | 후보: dsh 웹 검색                                  |
-| `storage`    | 562   | 로컬·S3 스토리지, SigV4                           | 미정(`sigv4.ts`·`keys.ts`는 4-0에서 같이 옮긴다)   |
+| `storage`    | 562   | 로컬·S3 스토리지, SigV4                           | 미정(`sigv4.ts`·`keys.ts`는 4-0에서 옮겼다)         |
 | `characters` | 377   | 캐릭터 순수 로직                                  | 기능 컴포넌트(계획 2)                              |
 | `mcp`        | 312   | MCP 클라이언트                                    | dsh                                                |
 | `agents`     | 226   | 역할 에이전트                                     | 후보: dsh 에이전트 프리셋과 서브에이전트           |
@@ -93,7 +93,7 @@
 
 `src/lib/comfy`는 23개 파일 5,786줄이고 테스트 파일 21개(5,299줄)가 옆에 있다. 파일마다 `lib/comfy` 밖에서 무엇을 **값으로** 가져오는지를 import 문에서 셌다(2026-11-25. `@/` 별칭과 상대 경로 모두, 다른 파일을 거쳐 닿는 것 포함).
 
-- **`runner.ts`와 `input-image.ts`를 뺀 21개 파일(5,108줄)은 보조 모듈 넷(263줄)만 같이 옮기면 앱 없이 선다.** 4-0이 옮기는 범위다.
+- **`runner.ts`와 `input-image.ts`를 뺀 21개 파일(5,108줄)은 보조 모듈 넷(263줄)만 같이 옮기면 앱 없이 선다.** 4-0이 옮긴 범위다. **옮겼다(2026-11-28)**: `packages/comfy`(`@cs/comfy`)에 있고 옮긴 테스트가 전부 통과한다. `lib/comfy`의 파일은 `packages/comfy/src/` 바로 아래에 같은 이름으로, 보조 모듈은 `src/support/`에 있다. 새 자리의 표와 원본과 달라진 곳은 `docs/archive/PLAN_4-0.md`에 있다.
 - `runner.ts`(657줄)는 앱 서비스 열한 개에 묶여 있어 옮기지 않고 4-2에서 프로젝트 계층에 맞춰 새로 쓴다. `input-image.ts`(21줄)는 4-2에서 다룬다.
 
 | 파일                                                                 | 줄 수 | `lib/comfy` 밖에서 값으로 가져오는 것                                              | 옮기는 단계 |
@@ -119,9 +119,9 @@
 
 옮길 때 볼 것:
 
-- **같이 옮길 보조 모듈 넷**: `media/png-text.ts`, `presets/match.ts`, `storage/sigv4.ts`, `storage/keys.ts`. 앞의 셋에는 테스트가 있다(`png-text.test.ts`, `match.test.ts`, `sigv4.test.ts`).
+- **같이 옮길 보조 모듈 넷**: `media/png-text.ts`, `presets/match.ts`, `storage/sigv4.ts`, `storage/keys.ts`. 앞의 셋에는 테스트가 있다(`png-text.test.ts`, `match.test.ts`, `sigv4.test.ts`). 옮기면서 하나가 더 있었다: `png-text.test.ts`가 `media/png-text.server.ts`(13줄, 압축된 텍스트 청크를 `node:zlib`로 푼다)를 가져오고, `embedded-graph.test.ts`가 픽스처 `media/__fixtures__/comfy-output.png`를 읽는다. 둘 다 같이 옮겼다.
 - **테스트**: 21개 가운데 18개가 4-0의 파일에 붙어 있다. `input-image.test.ts`, `runner.test.ts`, `runner.runpod.test.ts`는 4-2에서 다룬다.
-- **타입만 가져오는 곳**은 옮긴 패키지 안의 타입으로 바꾼다: `db/schema`(서버 종류 등), `generations.service`, `model-meta/types`, `attachments/media`.
+- **타입만 가져오는 곳**은 옮긴 패키지 안의 타입으로 바꾼다: `db/schema`(서버 종류 등), `generations.service`, `model-meta/types`, `attachments/media`. 4-0에서 `src/types.ts`에 모았다. `generations.service`의 생성 뷰는 옮기지 않고 진행 이벤트가 타입 인자로 받게 했다.
 - **걷어낼 것**: `@/` 경로 별칭(11개 파일)과 `import "server-only"`(6개 파일: `client.ts`, `runner.ts`, `input-image.ts`, `runpod/volume.ts`, `runpod/client.ts`, `modal/client.ts`). Next.js(`next/*`)를 가져오는 곳은 없다.
 - **서드파티 의존**: `zod`(7개 파일), `nanoid`(`modal/client.ts`, `runpod/client.ts`, `runner.ts`), `sharp`(`input-image.ts`).
 - 오류 메시지는 한국어다(`ComfyError`).

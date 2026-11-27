@@ -14,7 +14,8 @@
     "react/react-in-jsx-scope": "off",
     "react/hooks": "off",
     "react/rules-of-hooks": "error",
-    "typescript/no-misused-promises": "error"
+    "typescript/no-misused-promises": "error",
+    "eslint/no-underscore-dangle": ["error", { "allow": ["_meta"] }]
   },
   "ignorePatterns": ["**/lib/**", "**/build/**", ".worktree/**", ".dsh-home/**"]
 }
