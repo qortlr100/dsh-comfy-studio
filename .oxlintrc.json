@@ -1,9 +1,16 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["typescript", "unicorn", "oxc", "import", "promise", "node"],
+  "plugins": ["typescript", "unicorn", "oxc", "import", "promise", "node", "react"],
   "categories": {
     "correctness": "error",
     "suspicious": "error"
+  },
+  "rules": {
+    "import/no-empty-named-blocks": "off",
+    "unicorn/require-module-specifiers": "off",
+    "react/react-in-jsx-scope": "off",
+    "react/hooks": "off",
+    "react/rules-of-hooks": "error"
   },
   "ignorePatterns": ["**/lib/**", "**/build/**", ".worktree/**", ".dsh-home/**"]
 }
