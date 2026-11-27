@@ -10,6 +10,7 @@
  */
 import { basename } from "node:path";
 import { brandString } from "@deepseek-ai/dsh-brand";
+import type CsCatalog from "@cs/catalog";
 import { ProjectError } from "@cs/project";
 import type CsProject from "@cs/project";
 import type {
@@ -36,6 +37,7 @@ import {
   toWireOperation,
   toWireState,
   type WireAsset,
+  type WireCatalogEntry,
   type WireHistory,
   type WireOperation,
   type WireProject,
@@ -362,12 +364,25 @@ function humanOrigin(body: Record<string, unknown>, intent: string): RecordOrigi
 /** Reads and writes projects on behalf of the browser views. */
 export class ApiHandlers {
   private readonly project: CsProject;
+  private readonly catalog: () => CsCatalog | undefined;
   /** The create in flight, so the next one picks its title from a list that already holds this one. */
   private creating: Promise<unknown> = Promise.resolve();
 
-  /** @param project - the Project service every handler reads and writes through. */
-  constructor(project: CsProject) {
+  /**
+   * @param project - the Project service every handler reads and writes through.
+   * @param catalog - reads the generation catalog in use, or undefined while none is mounted.
+   */
+  constructor(project: CsProject, catalog: () => CsCatalog | undefined = () => undefined) {
     this.project = project;
+    this.catalog = catalog;
+  }
+
+  /**
+   * @returns the generation catalog as the views read it: every entry with its key, description, abilities and
+   *   facts; empty while no catalog is mounted. An entry whose server did not answer has facts null and a problem.
+   */
+  async listCatalog(): Promise<WireCatalogEntry[]> {
+    return (await this.catalog()?.summary()) ?? [];
   }
 
   /** @returns every project, newest first. */

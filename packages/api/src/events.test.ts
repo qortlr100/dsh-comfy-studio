@@ -2,16 +2,18 @@ import { EventEmitter } from "node:events";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { Context } from "@deepseek-ai/cordis";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
+import CsCatalog from "@cs/catalog";
 import type { ProjectEvent, ProjectId } from "@cs/project";
 import { defined, standIn } from "@cs/project/testing/support";
 import { EVENTS_PATH, ROUTES } from "./index.ts";
 import {
+  CATALOG_FRAME,
   frameOf,
   MAX_BUFFERED_BYTES,
   serveEventStream,
   type EventStreamSources,
 } from "./events.ts";
-import { asRecord, mountApi } from "./testing/support.ts";
+import { asRecord, mountApi, probeCatalogEntry } from "./testing/support.ts";
 
 type Handler = (request: IncomingMessage, response: ServerResponse) => void;
 
@@ -448,5 +450,55 @@ describe("ending a stream", () => {
     await f.context.fiber.dispose();
     await expect(first.until("event: never")).rejects.toThrow(/stream ended/);
     await expect(second.until("event: never")).rejects.toThrow(/stream ended/);
+  });
+});
+
+describe("catalog changes on the stream", () => {
+  it("writes a catalog frame for each change, and stops listening when the stream ends", async () => {
+    const sources = new FakeSources();
+    const catalogListeners = new Set<() => void>();
+    const url = await serve((request, response) => {
+      serveEventStream(PROJECT, request, response, {
+        subscribe: (project, listener) => sources.subscribe(project, listener),
+        keepaliveMs: sources.keepaliveMs,
+        subscribeCatalog: (listener) => {
+          catalogListeners.add(listener);
+          return () => {
+            catalogListeners.delete(listener);
+          };
+        },
+      });
+    });
+    const stream = await open(url);
+    await stream.until("event: ready");
+    expect(catalogListeners.size).toBe(1);
+    for (const listener of catalogListeners) listener();
+    const text = await stream.until(CATALOG_FRAME);
+    expect(text.endsWith("event: catalog\ndata: {}\n\n")).toBe(true);
+    stream.close();
+    await vi.waitFor(() => {
+      expect(catalogListeners.size).toBe(0);
+    });
+  });
+
+  it("tells an open stream when a catalog arrives, changes and goes away", async () => {
+    const { f, standIns, url } = await mounted();
+    const project = await f.newProject();
+    standIns.admit.mockReturnValue(owner);
+    const stream = await open(`${url}?project=${project}`);
+    await stream.until("event: ready");
+    const frames = async (count: number): Promise<void> => {
+      await stream.until(CATALOG_FRAME.repeat(count));
+    };
+
+    const catalog = f.context.plugin(CsCatalog, { factsTimeoutMs: 5000 });
+    await catalog.await();
+    await frames(1);
+    const remove = f.context.csCatalog.register(probeCatalogEntry("a"));
+    await frames(2);
+    remove();
+    await frames(3);
+    await catalog.dispose();
+    await frames(4);
   });
 });

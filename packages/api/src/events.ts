@@ -1,7 +1,8 @@
 /**
  * A project's changes as a server-sent event stream: one event per Project change, named by its kind (`record` for an
- * appended record, `update` for a record update, `line` for a move of the current position or the last step), and a
- * comment line every keep-alive interval so proxies keep the response open.
+ * appended record, `update` for a record update, `line` for a move of the current position or the last step), a
+ * `catalog` event with no data whenever the generation catalog changed, and a comment line every keep-alive interval
+ * so proxies keep the response open.
  *
  * @module @cs/api/events
  */
@@ -11,6 +12,8 @@ import type { ProjectEvent, ProjectId } from "@cs/project";
 /** What the stream needs from its owner. */
 export interface EventStreamSources {
   subscribe(projectId: ProjectId, listener: (event: ProjectEvent) => void): () => void;
+  /** Listen to changes of the generation catalog; absent when the owner has none to report. */
+  subscribeCatalog?(listener: () => void): () => void;
   /** Milliseconds between keep-alive comments. */
   keepaliveMs: number;
   /** Called once when the stream ends, whoever ended it. */
@@ -31,6 +34,11 @@ export const MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
 export function frameOf(event: ProjectEvent): string {
   return `event: ${event.kind}\ndata: ${JSON.stringify(event)}\n\n`;
 }
+
+/**
+ * The frame that says the generation catalog changed. It carries no data: a view reads the catalog anew.
+ */
+export const CATALOG_FRAME = "event: catalog\ndata: {}\n\n";
 
 /**
  * Serve one project's changes until the client disconnects or the owner ends the stream.
@@ -55,6 +63,7 @@ export function serveEventStream(
   });
   let ended = false;
   let unsubscribe: (() => void) | undefined;
+  let unsubscribeCatalog: (() => void) | undefined;
   let keepalive: NodeJS.Timeout | undefined;
   const end = (): void => {
     // The request and the response both close, and the owner may end the stream too; only the first call acts.
@@ -62,6 +71,7 @@ export function serveEventStream(
     ended = true;
     clearInterval(keepalive);
     unsubscribe?.();
+    unsubscribeCatalog?.();
     response.end();
     sources.onEnd?.();
   };
@@ -78,6 +88,9 @@ export function serveEventStream(
   if (ended) return end;
   unsubscribe = sources.subscribe(projectId, (event) => {
     write(frameOf(event));
+  });
+  unsubscribeCatalog = sources.subscribeCatalog?.(() => {
+    write(CATALOG_FRAME);
   });
   keepalive = setInterval(() => {
     write(": keepalive\n\n");

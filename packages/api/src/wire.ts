@@ -20,6 +20,12 @@ import type {
   RecordId,
 } from "@cs/project";
 
+/**
+ * One entry of the generation catalog, as `GET /api/cs/catalog` lists it: its key, description, optional abilities and
+ * facts; facts null and a problem when its server did not answer.
+ */
+export type { CatalogSummaryItem as WireCatalogEntry } from "@cs/catalog/types";
+
 /** An asset as the asset store describes it. */
 export interface WireAsset {
   id: AssetId;

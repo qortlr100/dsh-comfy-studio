@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { Context } from "@deepseek-ai/cordis";
 import type { ConnectionFetchRoute } from "@deepseek-ai/dsh-client-connection";
 import { onTestFinished } from "vitest";
+import type { CatalogEntry, GraphFacts } from "@cs/catalog";
 import CsProject, {
   type AssetId,
   type OperationSpec,
@@ -245,4 +246,30 @@ export { ROUTES };
  */
 export function asRecord(value: unknown): Record<string, unknown> {
   return standIn<Record<string, unknown>>(value);
+}
+
+/**
+ * A catalog entry that answers facts and never runs.
+ * @param target - the entry's target.
+ * @param facts - reads the facts; by default a reachable server named after the target.
+ * @returns the entry.
+ */
+export function probeCatalogEntry(
+  target: string,
+  facts: () => Promise<GraphFacts> = () =>
+    Promise.resolve({ label: `Probe ${target}`, kind: "probe", system: { version: "1" } }),
+): CatalogEntry {
+  return {
+    primitive: "graph",
+    provider: "probe",
+    target,
+    description: "A probe entry.",
+    facts,
+    validate: () => Promise.resolve([]),
+    run: () => ({
+      [Symbol.asyncIterator]: () => ({
+        next: () => Promise.reject(new Error("A probe entry does not run.")),
+      }),
+    }),
+  };
 }

@@ -14,6 +14,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@cs/catalog": "workspace:*",
     "@cs/project": "workspace:*",
     "@deepseek-ai/dsh-brand": "0.2.2-rc.5"
   },

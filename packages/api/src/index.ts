@@ -2,7 +2,9 @@
  * The view API. While a Connection service is mounted, the plugin registers authenticated Fetch routes under
  * `/api/cs/*`; while a web server is mounted beside it, it serves a project's changes as server-sent events at
  * `/cs/events`, admitting a request only when Connection admits it as the owner. Browser views read the project state
- * through these routes and write records through `csProject.run`, the same entry point the agent's tools use.
+ * through these routes and write records through `csProject.run`, the same entry point the agent's tools use. While a
+ * generation catalog (`csCatalog`) is mounted, `/api/cs/catalog` lists its entries and every stream says when it
+ * changed; without one the list is empty.
  *
  * @module @cs/api
  */
@@ -11,6 +13,7 @@ import { Service, type Context } from "@deepseek-ai/cordis";
 import type { ConnectionFetchRoute } from "@deepseek-ai/dsh-client-connection";
 import type {} from "@deepseek-ai/dsh-host-webserver";
 import z from "@deepseek-ai/schemastery";
+import type CsCatalog from "@cs/catalog";
 import type {} from "@cs/project";
 import type { ProjectId } from "@cs/project";
 import { answer, ApiHandlers, ApiRequestError, requireProject } from "./api.ts";
@@ -24,7 +27,7 @@ export {
   type OperationRequest,
   type RequestSurface,
 } from "./api.ts";
-export { frameOf, serveEventStream, type EventStreamSources } from "./events.ts";
+export { CATALOG_FRAME, frameOf, serveEventStream, type EventStreamSources } from "./events.ts";
 export type { WireProjectCover, WireProjectSummary } from "./summaries.ts";
 export {
   mentionedAssets,
@@ -33,6 +36,7 @@ export {
   toWireState,
   type ProjectAsset,
   type WireAsset,
+  type WireCatalogEntry,
   type WireHistory,
   type WireOperation,
   type WireProject,
@@ -75,6 +79,7 @@ export const ROUTES = {
   redo: "/api/cs/redo",
   acceptStale: "/api/cs/stale/accept",
   history: "/api/cs/history",
+  catalog: "/api/cs/catalog",
 } as const;
 
 /**
@@ -112,11 +117,31 @@ export default class CsApi extends Service {
   private readonly config: Config;
   /** The end function of every open event stream. */
   private readonly streams = new Set<() => void>();
+  /** The generation catalog while one is mounted. */
+  private catalog: CsCatalog | undefined;
+  /** What every open event stream wants to hear when the catalog changed. */
+  private readonly catalogListeners = new Set<() => void>();
 
   constructor(ctx: Context, config: Config) {
     super(ctx, "csApi");
     this.config = Config(config);
-    this.api = new ApiHandlers(ctx.csProject);
+    this.api = new ApiHandlers(ctx.csProject, () => this.catalog);
+    // The catalog is optional: the API serves projects without one. Its arrival and its departure are changes too.
+    ctx.inject(["csCatalog"], (cataloged) => {
+      cataloged.effect(() => {
+        const catalog = cataloged.csCatalog;
+        this.catalog = catalog;
+        const unlisten = catalog.onChanged(() => {
+          this.catalogChanged();
+        });
+        this.catalogChanged();
+        return () => {
+          unlisten();
+          if (this.catalog === catalog) this.catalog = undefined;
+          this.catalogChanged();
+        };
+      }, "csApi catalog");
+    });
     ctx.inject(["connection"], (connected) => {
       for (const route of this.fetchRoutes()) {
         connected.effect(() => {
@@ -198,7 +223,13 @@ export default class CsApi extends Service {
       post(ROUTES.redo, (body) => api.redo(body)),
       post(ROUTES.acceptStale, (body) => api.acceptStale(body)),
       post(ROUTES.history, (body) => api.listHistory(body)),
+      get(ROUTES.catalog, () => api.listCatalog()),
     ];
+  }
+
+  /** Tell every open stream that the catalog changed. */
+  private catalogChanged(): void {
+    for (const listener of this.catalogListeners) listener();
   }
 
   /**
@@ -243,6 +274,12 @@ export default class CsApi extends Service {
     }
     const end = serveEventStream(projectId, request, response, {
       subscribe: (id, listener) => this.ctx.csProject.subscribe(id, listener),
+      subscribeCatalog: (listener) => {
+        this.catalogListeners.add(listener);
+        return () => {
+          this.catalogListeners.delete(listener);
+        };
+      },
       keepaliveMs: this.config.keepaliveMs,
       onEnd: () => this.streams.delete(end),
     });

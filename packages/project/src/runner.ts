@@ -22,7 +22,7 @@ import type { OperationSpec } from "./operation-types.ts";
 import type { ReducerRegistry } from "./reducers.ts";
 import type { RecordLineInput, RecordStore } from "./record-store.ts";
 import type { Scheduler } from "./scheduler.ts";
-import { ProjectError } from "./shared.ts";
+import { OperationFailure, ProjectError } from "./shared.ts";
 import type {
   AssetId,
   OperationCheck,
@@ -371,7 +371,7 @@ export class Runner {
         });
       }
       return await this.finish(project, record, "failed", {
-        code: "operation_failed",
+        code: error instanceof OperationFailure ? error.code : "operation_failed",
         message: messageOf(error),
       });
     } finally {

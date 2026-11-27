@@ -118,7 +118,8 @@ export interface OperationSpec {
    */
   precondition?(request: RunRequest, state: ProjectState): Promise<void>;
   /**
-   * Run the operation. A throw fails the record with code `operation_failed` and the error's message.
+   * Run the operation. A throw fails the record with the error's message and the code `operation_failed`, or the
+   * code of a thrown `OperationFailure`.
    * @param context - the record, resolved inputs, parameters, state, and asset storage.
    * @returns the outputs and the report.
    */

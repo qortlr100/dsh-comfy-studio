@@ -10,6 +10,10 @@
       config:
         projectsFolder: !!js process.env.CS_PROJECTS_FOLDER || undefined
 
+    # The generation catalog: the places a generation request can run, registered by provider plugins.
+    - id: cs-catalog
+      name: "@cs/catalog"
+
     # The view API: the /api/cs/* routes and the /cs/events stream the browser views use.
     - id: cs-api
       name: "@cs/api"
