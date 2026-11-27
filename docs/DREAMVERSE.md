@@ -122,7 +122,7 @@ DreamVerse는 dsh 0.1.7-rc.1에서 갈라졌다. 서버 쪽 코드가 지금 쓰
 
 세션 프로젝션의 변화: 분기점에서는 열쇠별 상태 타입 표(`SessionProjectionStateMap`)와 `stateOf(session, key)`가 있었다. 0.2.2-rc.5에서는 서비스의 `stateOf(session, key)`가 deprecated이고 `unknown`을 돌려준다. 등록이 돌려주는 핸들의 `handle.stateOf(session)`을 쓰라고 되어 있다. 문서는 업스트림 `docs/subsystems/session-projection.md`다.
 
-- **한계**: 위 타입 검사는 타입이 맞는다는 것뿐이다. `@dv/project`는 2-0에서 `@cs/project`로 옮겨 실행했다(2026-11-27, 아래 "2-0에서 실행해 본 결과"). 나머지 13개 패키지는 **실행해 보지 않았다.** 이벤트의 의미나 실행 순서가 달라졌을 수 있다.
+- **한계**: 위 타입 검사는 타입이 맞는다는 것뿐이다. `@dv/project`는 2-0에서 `@cs/project`로(2026-11-27, 아래 "2-0에서 실행해 본 결과"), `@dv/api`는 2-2에서 `@cs/api`로(2026-11-28, 아래 "2-2에서 실행해 본 결과") 옮겨 실행했다. 나머지 12개 패키지는 **실행해 보지 않았다.** 이벤트의 의미나 실행 순서가 달라졌을 수 있다.
 - 시험 구성 탓에 난 오류 2건(`mime-types` 타입 없음, 패키지를 한 프로그램으로 묶어서 생긴 캐스트 오류)은 세지 않았다.
 
 **2-0에서 실행해 본 결과**(2026-11-27, `@dv/project` → `@cs/project`):
@@ -131,6 +131,12 @@ DreamVerse는 dsh 0.1.7-rc.1에서 갈라졌다. 서버 쪽 코드가 지금 쓰
 - 소스의 타입 검사에는 걸리지 않았지만 **시험 코드에서 더 나온 차이가 하나 있다**: 도구 실행 API다. 분기점에서는 `tools.execute({ callId, name, arguments, signal, agent })`로 호출 하나를 실행했다. 0.2.2-rc.5에서는 묶음(`calls: ToolCallBlock[]`)을 받고, 실행기를 따로 올려야 한다(`@deepseek-ai/dsh-tool-executor-native`). 프로젝트 계층의 소스는 도구를 정의만 하고 직접 실행하지 않으므로 소스는 고칠 것이 없었다.
 - 실제 dsh 안에서도 돈다(조합 시험): 서비스가 번들의 행으로 올라오고, 작업공간 등록부에 프로젝트가 생기고, 기록·상태·실행 취소·다시 실행이 되고, 연산 도구가 레지스트리에 등록된다.
 - 고친 내용과 dsh 쪽 사실은 `docs/DSH.md` "호스트 쪽"과 `docs/archive/PLAN_2-0.md`에 있다.
+**2-2에서 실행해 본 결과**(2026-11-28, `@dv/api` → `@cs/api`):
+
+- dsh와 어긋나는 곳은 없었다. `connection.fetch.register`, `webServer.register`, `connection.admit`이 0.2.2-rc.5에 그대로 있다. 실제 dsh에 로그인한 브라우저 페이지에서 라우트와 이벤트 스트림이 동작한다(조합 시험 `tests/integration/api.test.ts`).
+- 고친 것은 dsh가 아니라 우리 쪽 사정이다: `@dv/api`가 주입받던 `dvAssetPool`·`dvCanvasNodes`·`dvModels`와 타임라인 조각이 없어서, 에셋은 프로젝트 계층의 에셋 저장소에서 읽고 나머지는 뺐다.
+- 원본과 동작이 달라진 곳: 이벤트 스트림이 소유자만 받고, `connection`이 없으면 스트림을 열지 않는다(원본은 `connection`이 없으면 누구에게나 연다). 상세는 `docs/archive/PLAN_2-2.md`.
+
 - 화면 쪽은 import한 이름만 대조했다. 세 패키지가 0.2.2-rc.5에 없는 이름을 쓴다: `@dv/ui-composer`(`PromptChip`, `PromptContent`, `PromptChangeCause`, `PromptHostModel`, `ReferenceFaceOwner`, `MarkdownElement`, `MarkdownTableElement` 일곱 개), `@dv/ui-text-node`(`PromptContent`, `PromptHostModel` 등), `@dv/ui-mcp-presets`(포크가 더한 `@deepseek-ai/dsh-mcp-servers`). 포크 전용 확장점에 기대는 패키지다.
 
 ## 가져올 것, 바꿀 것, 가져오지 않을 것
@@ -138,7 +144,7 @@ DreamVerse는 dsh 0.1.7-rc.1에서 갈라졌다. 서버 쪽 코드가 지금 쓰
 | 대상                                                   | 판단             | 이유                                                                                                                     |
 | ------------------------------------------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `@dv/project`(기록, 실행기, 히스토리, 상태, 도구화)    | **가져왔다**(2-0) | 도메인과 무관한 틀이다. `packages/project`(`@cs/project`)가 됐다. 이름은 `.comfy-studio`, `cs_`, `csProject`로 바꿨고 영상 용어는 글과 `surface` 값에서 걷어냈다(`docs/DECISIONS.md` "확정"). |
-| `@dv/api`                                              | 가져온다         | 화면용 API의 모양이다. 영상 전용 라우트는 뺀다.                                                                          |
+| `@dv/api`                                              | **가져왔다**(2-2) | `packages/api`(`@cs/api`)가 됐다. 경로는 `/api/cs/…`와 `/cs/events`다. 에셋 가져오기, 카탈로그, 스킬 업로드 라우트와 타임라인에 기대는 부분은 뺐다(`docs/ARCHITECTURE.md` "화면용 API"). |
 | `@dv/models`(카탈로그 틀)                              | 틀만 가져온다    | 등록·조회·선언 병합 구조는 쓴다. 요청과 항목의 모양은 ComfyUI에 맞게 새로 정한다(`docs/ARCHITECTURE.md` "카탈로그 계약"). |
 | `@dv/generation`, `@dv/image-generate`                 | 참고             | 생성 컴포넌트를 만드는 틀이다. 프롬프트 기반이라 그래프 기반에 맞게 다시 쓴다.                                           |
 | `@dv/asset-pool`                                       | 가져와 고친다    | 에셋을 프로젝트 폴더에 내용 기준으로 저장하고 내려준다. 폴더·태그·검토 상태는 우리가 더한다.                             |

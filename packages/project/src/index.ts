@@ -737,6 +737,14 @@ export default class CsProject extends Service {
     };
   }
 
+  /**
+   * The asset store that reads go through, for callers outside the project layer such as the view API.
+   * @returns the registered asset store, or one that holds no asset while no plugin has registered one.
+   */
+  assets(): AssetStore {
+    return this.currentAssetStore();
+  }
+
   /** @returns the registered asset store, or {@link EMPTY_ASSET_STORE} while no plugin has registered one. */
   private currentAssetStore(): AssetStore {
     return this.assetStore ?? EMPTY_ASSET_STORE;
