@@ -144,7 +144,7 @@ src/client/*.tsx, *.module.css, strings.ts
 lib/client.js           브라우저 번들(빌드 결과, .gitignore)
 ```
 
-- **호스트 절반은 `.ts` 그대로 내보낸다**(1-1에서 정했다. `docs/DECISIONS.md` "전제"). 빌드하지 않는다. 그래서 지울 수 있는 문법만 쓰고(enum·생성자 매개변수 속성 금지) 상대 import에는 `.ts` 확장자를 붙인다. `@deepseek-ai/cordis`의 타입을 `import type`으로 쓰는 `src/index.ts`의 `apply`가 기동 때 불린다(**띄워 확인**, 2026-11-26).
+- **호스트 절반은 `.ts` 그대로 내보낸다**(1-1에서 정했다. `docs/DECISIONS.md` "확정", 2026-11-27). 빌드하지 않는다. 그래서 지울 수 있는 문법만 쓰고(enum·생성자 매개변수 속성 금지) 상대 import에는 `.ts` 확장자를 붙인다. `@deepseek-ai/cordis`의 타입을 `import type`으로 쓰는 `src/index.ts`의 `apply`가 기동 때 불린다(**띄워 확인**, 2026-11-26).
 - 호스트 절반만 있는 플러그인은 `exports["./client"]`와 `dsh.client`를 빼면 된다(1-0의 빈 플러그인이 그 모양이었다).
 - `dsh.client`가 있으면 `./client` export가 반드시 있어야 한다. 없으면 기동이 실패한다(**소스 확인**).
 - `dsh.client.inject`는 패키지 이름 목록이고 정보용이다. 실행 순서를 정하지 않는다. 순서는 Cordis가 `inject`에 적힌 **서비스**를 기다리는 것으로만 정해진다(**소스 확인**: 업스트림 `packages/client/AGENTS.md`).
@@ -178,7 +178,7 @@ return module.exports; } });
 
 ### CSS
 
-**CSS Modules로 싣는다**(1-1에서 정했다. `docs/DECISIONS.md` "전제"). `x.module.css`를 import하면 클래스 이름 표를 받는다.
+**CSS Modules로 싣는다**(1-1에서 정했다. `docs/DECISIONS.md` "확정", 2026-11-27). `x.module.css`를 import하면 클래스 이름 표를 받는다.
 
 ```tsx
 import styles from "./BuildProbe.module.css";

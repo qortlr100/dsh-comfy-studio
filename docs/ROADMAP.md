@@ -67,7 +67,7 @@
   - 확인한 것: `pnpm install` → `pnpm dsh:profile` → `pnpm dsh:start`로 dsh 웹이 뜨고 콘솔 오류가 0건이다. `pnpm -s dsh:config` 출력에 `# == @cs/bundle` 계층과 `cs-ui-shell` 행이 보인다.
   - 후속: 타입 기반 린트 규칙을 켤지(1-2), 무시된 설치 스크립트가 에이전트의 셸 도구에 주는 영향(1-3).
 - [x] **1-1 브라우저 절반과 브라우저 번들 빌드** — `scripts/build-client.ts`(`pnpm build`: esbuild로 dsh 로더 형식, 공유 모듈 열한 개만 external, 그 밖의 `@deepseek-ai/*` 값 import·React 하위 경로·맨 `.css`는 거절, CSS Modules는 lightningcss), `packages/ui-shell`에 브라우저 절반(`src/client/`)과 호스트·브라우저 두 타입 검사 프로그램, 타입용 dsh 패키지, 루트 `tsconfig.client.base.json`과 `types/css-modules.d.ts`, oxlint `react` 플러그인(2026-11-26). 상세는 `docs/archive/PLAN_1-1.md`.
-  - 정한 것(Claude가 고른 기본값이고 사용자가 확인하지 않았다. `docs/DECISIONS.md` "전제"): 호스트 절반은 `.ts` 그대로 내보낸다. CSS는 CSS Modules로 싣고 클래스 이름 무늬는 `cs-[hash]-[local]`이다. 패키지마다 `tsconfig.json`(호스트)과 `tsconfig.client.json`(브라우저)을 둔다. `pnpm dsh:start`가 띄우기 전에 빌드한다.
+  - 정한 것(Claude가 고르고 사용자가 2026-11-27에 확인했다. `docs/DECISIONS.md` "확정"): 호스트 절반은 `.ts` 그대로 내보낸다. CSS는 CSS Modules로 싣고 클래스 이름 무늬는 `cs-[hash]-[local]`이다. 패키지마다 `tsconfig.json`(호스트)과 `tsconfig.client.json`(브라우저)을 둔다. `pnpm dsh:start`가 띄우기 전에 빌드한다.
   - 확인한 것: TSX로 쓴 시험용 React 컴포넌트가 `sidebar.footer.action`에 그려지고 콘솔 오류가 0건이다. 브라우저 번들(4,191바이트)에 React가 없다. `inject`가 돌려준 값·콜백·`hooks`가 props로 와서 버튼으로 라이트·다크가 바뀐다. CSS Modules의 `<style data-plugin>`이 들어간다. dsh를 띄워 둔 채 다시 빌드하면 새로고침 없이 화면이 바뀐다.
   - 후속: 시험용 React 컴포넌트(`BuildProbe`)는 3-0에서 셸로 바꾼다. 슬롯 등록의 `store`·`locale` 칸은 띄워 보지 않았다(3-0). `pnpm build --watch`는 필요해지면 더한다.
 - [ ] **1-2 시험 틀** — Vitest(단위), dsh를 실제로 띄우는 조합 시험, `lint`·`test` 명령. 조합 시험은 두 가지를 갖춘다: 브라우저로 화면을 보는 것(`docs/DSH.md` "띄워서 확인하는 법"), 그리고 호스트 쪽 서비스를 부르는 것. 호스트 쪽은 화면용 API가 없는 동안에도 돼야 하므로 방법을 여기서 정한다(후보: `--patch`로 얹는 시험용 플러그인이 서비스를 부르고 결과를 파일로 남긴다. 미확인).
