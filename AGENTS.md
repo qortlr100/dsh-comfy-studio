@@ -80,7 +80,7 @@ Node.js 24.9.0 이상과 pnpm 10.34.8이 필요하다. 체크아웃(본 체크�
 | `pnpm build`               | 브라우저 절반이 있는 패키지마다 브라우저 번들(`lib/client.js`)을 만든다. dsh를 띄워 둔 채 돌리면 새로고침 없이 화면이 바뀐다. |
 | `pnpm dsh:start [옵션]`    | 프로필을 맞추고 브라우저 번들을 빌드한 뒤 dsh 웹을 띄운다. 옵션은 dsh에 그대로 넘어간다(예: `--no-open --port 8092`). |
 | `pnpm -s dsh:config`       | 프로필을 맞춘 뒤 합성된 구성을 찍는다(`--dump-config`). 마지막에 `# == @cs/bundle` 계층이 보여야 한다.               |
-| `pnpm typecheck`           | `tsc`로 타입을 검사한다: 루트 프로그램(`scripts/`), 그리고 패키지마다 호스트 프로그램과 브라우저 프로그램.           |
+| `pnpm typecheck`           | `tsc`로 타입을 검사한다: 루트 프로그램(`scripts/`, `tests/`, `vitest.config.ts`), 그리고 패키지마다 호스트 프로그램과 브라우저 프로그램. |
 | `pnpm lint`                | oxlint. 타입 기반 규칙이 켜져 있다(기다리지 않은 Promise, 좁히는 타입 단언 등).                                      |
 | `pnpm format:check`        | Prettier로 모양을 검사한다. 고치려면 `pnpm format`. Markdown은 대상이 아니다.                                        |
 | `pnpm test`                | 단위 시험(Vitest). 대상 파일 옆의 `*.test.ts`를 돈다. dsh를 띄우지 않는다.                                           |

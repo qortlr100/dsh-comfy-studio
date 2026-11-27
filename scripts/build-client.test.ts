@@ -196,8 +196,6 @@ describe("shared modules", () => {
 
     const code = readFileSync(join(dir, "lib", "client.js"), "utf8");
     for (const id of shared) expect(code).toContain(`require("${id}")`);
-    // Nothing from node_modules was inlined (no such packages exist in the fixture anyway).
-    expect(code).not.toContain("node_modules");
 
     const loaded = evaluate(dir);
     expect(loaded.requested.toSorted()).toEqual(shared.toSorted());

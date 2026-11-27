@@ -6,20 +6,19 @@
 //   export default async function (ctx, input) { … }       // the result travels as JSON
 
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { launchDsh, redactLoginUrls } from "./dsh.ts";
+import { launchDsh, redactLoginUrls, tempParent } from "./dsh.ts";
 import type { DshInstance, TestHome } from "./dsh.ts";
 import type { ProbeReport } from "./probe/index.ts";
 
 export interface HostScenarioOptions {
-  /** Travels to the scenario as JSON. */
+  /** Travels to the scenario as JSON, through a file. */
   input?: unknown;
   home?: TestHome;
   /** Placed before the probe's patch. */
   patches?: readonly string[];
-  /** How long to wait for the report after the URL line. Default 30_000. */
+  /** How long to wait for the report after the URL line. Default 20_000. */
   timeoutMs?: number;
 }
 
@@ -58,23 +57,43 @@ async function waitForReport(
 }
 
 function isProbeReport(value: unknown): value is ProbeReport {
-  return typeof value === "object" && value !== null && "ok" in value;
+  if (typeof value !== "object" || value === null || !("ok" in value)) return false;
+  if (value.ok === true) return true;
+  if (value.ok !== false || !("error" in value)) return false;
+  const error = value.error;
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "name" in error &&
+    typeof error.name === "string" &&
+    "message" in error &&
+    typeof error.message === "string"
+  );
 }
 
 export async function runHostScenario<T = unknown>(
   scenario: string | URL,
   options: HostScenarioOptions = {},
 ): Promise<T> {
-  const timeoutMs = options.timeoutMs ?? 30_000;
-  const dir = mkdtempSync(join(tmpdir(), "cs-dsh-test-scenario-"));
+  // With launchDsh's 20 s startup budget and 8 s stop budget this stays under the 60 s the
+  // integration project gives a test, so the cleanup below still runs when everything is slow.
+  const timeoutMs = options.timeoutMs ?? 20_000;
+  const dir = mkdtempSync(join(tempParent(), "cs-dsh-test-scenario-"));
   try {
     const report = join(dir, "report.json");
     const go = join(dir, "go");
     const patch = join(dir, "probe.patch.yml");
+    // The input goes through a file rather than the row's config: dsh's loader interprets
+    // config values (expressions, references), and the input must arrive as plain JSON.
+    let input: string | undefined;
+    if (options.input !== undefined) {
+      input = join(dir, "input.json");
+      writeFileSync(input, JSON.stringify(options.input));
+    }
     const row = {
       id: "cs-test-probe",
       name: PROBE_PATH,
-      config: { scenario: scenarioUrl(scenario), report, go, input: options.input },
+      config: { scenario: scenarioUrl(scenario), report, go, input },
     };
     // JSON is YAML too, so dsh reads this as is.
     writeFileSync(patch, `${JSON.stringify([{ insert: [row] }])}\n`);

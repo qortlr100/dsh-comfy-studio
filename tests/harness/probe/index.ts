@@ -5,7 +5,7 @@
 // dsh's Node loads this file directly: erasable syntax only, and only `node:` modules as values.
 
 import type { Context } from "@deepseek-ai/cordis";
-import { existsSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 
 interface ProbeConfig {
   /** File URL of the scenario module. */
@@ -14,7 +14,8 @@ interface ProbeConfig {
   report: string;
   /** Created by the harness once dsh printed its URL, that is once startup has settled. */
   go: string;
-  input?: unknown;
+  /** JSON file holding the scenario's input; absent when there is none. */
+  input?: string;
 }
 
 export type ProbeReport =
@@ -76,7 +77,9 @@ async function runScenario(ctx: Context, config: ProbeConfig): Promise<unknown> 
   }
   const inject: unknown = Reflect.get(module, "inject");
   const deps = Array.isArray(inject) ? inject.map(String) : [];
-  const run = (inner: Context): unknown => Reflect.apply(main, undefined, [inner, config.input]);
+  const input: unknown =
+    config.input === undefined ? undefined : JSON.parse(readFileSync(config.input, "utf8"));
+  const run = (inner: Context): unknown => Reflect.apply(main, undefined, [inner, input]);
 
   if (deps.length === 0) return await run(ctx);
   return await withServices(ctx, deps, run);

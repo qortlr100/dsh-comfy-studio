@@ -56,6 +56,9 @@ function runDshQuietly(home: string, args: readonly string[]): void {
   const result = spawnSync(dsh.command, dsh.args, {
     env: dshEnv(home),
     stdio: ["ignore", "ignore", "inherit"],
+    // These calls take under a second. The bound is for a stalled pnpm (network, store lock):
+    // this is a synchronous call, so without it the caller would hang with no way to time out.
+    timeout: 120_000,
   });
   if (result.error) throw result.error;
   if (result.status !== 0) {

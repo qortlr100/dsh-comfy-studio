@@ -73,7 +73,7 @@
 - [x] **1-2 시험 틀** — Vitest 5.1.2의 프로젝트 둘(`vitest.config.ts`): 단위 시험 `pnpm test`(대상 옆의 `*.test.ts`. 지금은 `scripts/build-client.test.ts`와 `tests/harness/redact.test.ts`)와 dsh를 실제로 띄우는 조합 시험 `pnpm test:integration`(`tests/integration/`). 조합 시험의 틀은 `tests/harness/`다: `launchDsh`(임시 home, 빈 포트, 정리), `openPage`(`playwright-core` 1.65.1, 첫 실행 창 닫기, 콘솔 오류 모으기), `runHostScenario`와 프로브 플러그인(호스트 쪽). `pnpm check`가 커밋 전 검사를 한 번에 돈다(2026-11-27). 상세는 `docs/archive/PLAN_1-2.md`.
   - 사용자가 정한 것: 타입 기반 린트 규칙을 켠다(`oxlint-tsgolint`, `docs/DECISIONS.md` "확정").
   - 정한 것: 호스트 쪽 조합 시험은 `--patch`로 얹는 프로브 플러그인이 시나리오 모듈을 dsh 프로세스 안에서 실행하고 결과를 파일로 돌려주는 방식이다(로드맵의 후보를 띄워 확인하고 골랐다). 시험은 띄울 때마다 새 임시 home을 쓰고 허용 목록의 환경 변수만 넘긴다(Claude가 고른 기본값. `docs/DECISIONS.md` "전제").
-  - 확인한 것: `pnpm test:integration`의 시험 4개가 약 7초에 통과한다(dsh 기동 → `@cs/ui-shell`의 시험용 요소가 슬롯에 그려짐 → 버튼으로 테마가 바뀜 → 콘솔 오류 0건. 시나리오가 `ctx.tools`를 불러 도구 이름을 돌려줌). 브라우저 콘솔 오류, 호스트 절반의 예외, 빠진 브라우저 번들을 하나씩 심어 시험이 실패하는 것을 봤다.
+  - 확인한 것: `pnpm test:integration`의 시험 6개가 약 7초에 통과한다(dsh 기동 → `@cs/ui-shell`의 시험용 요소가 슬롯에 그려짐 → 버튼으로 테마가 바뀜 → 콘솔 오류 0건. 시나리오가 `ctx.tools`를 불러 도구 이름을 돌려줌. `apply`가 던지는 행이 있으면 기동을 실패로 봄). 브라우저 콘솔 오류, 호스트 절반의 예외, 빠진 브라우저 번들을 하나씩 심어 시험이 실패하는 것을 봤다. 시험이 시간 초과나 신호로 끊겨도 dsh 프로세스와 임시 폴더가 남지 않는다.
   - 후속: 2-0의 완료 기준은 `runHostScenario`로 쓴다. 화면용 API를 HTTP로 부르는 시험은 2-2에서 더한다. 브라우저 절반의 React 컴포넌트를 DOM 흉내 환경에서 도는 단위 시험은 필요해지면 더한다. CI는 미정이다.
 - [ ] **1-3 실제 모델로 채팅 확인** — 1-1의 플러그인에 `docs/DSH.md` "채팅을 우측 탭으로 옮기는 코드"를 시험용으로 넣고 모델 키를 설정한 뒤, 우측 탭의 채팅에서 메시지·추론·도구 호출이 그려지고 전송과 중지가 되는지 본다. 브라우저를 닫아도 턴이 끝까지 도는지도 본다. 기본 프리셋의 셸 도구가 도는지도 본다(pnpm이 `node-pty` 등의 설치 스크립트를 돌리지 않은 상태다. `docs/DSH.md` "함정"). 시험용 코드는 3-0에서 제대로 만든다.
   - 완료 기준: 결과를 `docs/DSH.md`에 반영한다. 안 되는 것이 있으면 화면 구조(`docs/ARCHITECTURE.md` "화면 구조")를 사용자와 다시 정한다.

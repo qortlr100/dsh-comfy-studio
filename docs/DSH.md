@@ -613,15 +613,16 @@ expect(result.names).toContain("working_directory");
 ```
 
 - 시나리오는 dsh의 Node가 바로 읽는다. 지울 수 있는 문법만 쓰고 상대 import에 `.ts`를 붙인다. Vitest의 `expect`는 쓸 수 없다. 값을 돌려주고 시험에서 단언하거나, 시나리오 안에서 던진다(던지면 `runHostScenario`가 그 이름·메시지·스택으로 거절한다).
-- 입력과 결과는 JSON으로 건너간다.
+- 입력과 결과는 JSON으로(파일로) 건너간다.
 - 시나리오는 dsh가 주소 줄을 찍은 뒤(기동이 끝난 뒤)에 실행된다. 프로브의 `apply` 때는 다른 플러그인이 아직 실리는 중이다.
-- `inject`에 적은 서비스가 없으면 dsh는 오류 없이 기다리기만 한다. 틀이 `timeoutMs`(기본 30초) 뒤에 거절하고, 메시지의 dsh 출력에 `cs-test-probe: waiting for services …`가 보인다.
+- `inject`에 적은 서비스가 없으면 dsh는 오류 없이 기다리기만 한다. 틀이 `timeoutMs`(기본 20초) 뒤에 거절하고, 메시지의 dsh 출력에 `cs-test-probe: waiting for services …`가 보인다.
 - 시나리오가 워크스페이스 패키지를 import하면 dsh가 프로필을 거쳐 실은 것과 같은 모듈일 것이다(둘 다 `packages/` 아래의 실제 경로로 풀린다. **미확인**이고 2-0에서 처음 쓴다).
 
 알아 둘 것:
 
 - 시험 하나가 dsh를 한 번 띄운다. 띄우고 내리는 데 약 2초, 브라우저까지 열면 약 3.5초다(2026-11-27).
 - 끝나면 dsh와 브라우저 프로세스, 임시 폴더(`cs-dsh-test-*`)가 남지 않아야 한다. 틀이 `stop()`과 `close()`에서 정리하므로 시험은 `try`/`finally`로 둘을 반드시 부른다.
+- 시험이 시간 초과로 끊기면 Vitest가 워커를 신호로 죽여서 `finally`가 돌지 않는다. 그때는 `tests/harness/global-setup.ts`의 전역 정리가 남은 dsh를 죽이고 그 실행의 임시 폴더를 지운다. Vitest 자체를 Ctrl+C나 SIGTERM으로 끊어도 같다(**띄워 확인**, 2026-11-27). 브라우저는 워커가 죽을 때 같이 닫혔다(브라우저까지 연 채 시간 초과가 난 경우를 봤다).
 - 실제 모델이 있어야 하는 것(메시지, 도구 호출)은 이 틀로 보지 못한다. 키 없이 돈다.
 - 살아 있는 슬롯 트리는 dsh의 `cordis_inspect what:"client"`로 물어볼 수 있다고 업스트림 문서에 있다(미확인).
 
