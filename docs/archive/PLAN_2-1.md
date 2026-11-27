@@ -117,7 +117,7 @@ Claude가 고른 기본값이다. 사용자가 고른 세 안 아래의 세부�
 - `packages/catalog`(`@cs/catalog`): `src/types.ts`(계약 타입), `src/index.ts`(서비스 `ctx.csCatalog`), `src/rejected.ts`(`RequestRejected`, `NOT_QUEUED`), `src/testing/fake-provider.ts`(가짜 생성 프로바이더). 번들의 행은 `cs-catalog`다.
 - 프로젝트 계층에 더한 것: `OperationFailure`(연산이 기록의 실패 코드를 정한다), 에셋 리더의 `read`. `packages/project/CONTRACTS.md`에 적었다.
 - 화면용 API에 더한 것: `GET /api/cs/catalog`, 스트림의 `catalog` 이벤트. 카탈로그 서비스가 없어도 API는 뜬다.
-- 시험: 카탈로그 단위 시험 33개(서비스 16, 끝까지 도는 시험 17), 프로젝트 계층 1개, 화면용 API 5개를 더했다. 저장소 전체로 단위 시험 528개, 조합 시험 11개(카탈로그 1개 추가)가 통과한다. `pnpm -s dsh:config`에 `cs-catalog` 행이 보인다.
+- 시험: 카탈로그 단위 시험 34개(서비스 16, 끝까지 도는 시험 18), 프로젝트 계층 1개, 화면용 API 5개를 더했다. 저장소 전체로 단위 시험 529개, 조합 시험 11개(카탈로그 1개 추가)가 통과한다. `pnpm -s dsh:config`에 `cs-catalog` 행이 보인다.
 - **띄워 확인**(2026-11-28, 조합 시험): 실제 dsh에서 번들의 행이 서비스를 올리고, 프로바이더 플러그인이 등록한 항목이 로그인한 브라우저의 `GET /api/cs/catalog`에 보이고, 등록과 해제가 `EventSource`의 `catalog` 이벤트로 오고, 연산이 열쇠로 항목을 찾아 실행의 흐름을 끝까지 읽는다.
 - **확인하지 못한 것**: 실제 ComfyUI 서버와 서버리스 백엔드로는 돌리지 않았다. 계약이 실제 서버에 맞는지는 4-2가 프로바이더를 만들며 확인한다. 조합 시험의 프로필에는 에셋 저장소가 없어 출력 파일을 에셋으로 넣는 것은 단위 시험에서만 봤다.
 
@@ -152,6 +152,8 @@ Claude가 고른 기본값이다. 사용자가 고른 세 안 아래의 세부�
 | P3 `run`을 한 번만 순회한다는 규칙이 없다 | 계약에 적었다 |
 | P3 `RecordFailure`의 주석에 `discarded`가 없다 | 고쳤다 |
 | P3 `OperationFailure`를 `instanceof`로 알아본다(모듈이 두 벌 실리면 놓친다) | 그대로 둔다. 워크스페이스 링크는 한 벌로 풀린다. 달라지면 이름과 코드 모양으로 본다 |
+
+PR 리뷰 봇의 지적 하나(P2)를 고쳤다: 가짜 프로바이더의 `resume()`이 요청한 실행 id와 무관하게 마지막에 받은 그래프를 따라갔다. 실행 id로 그래프를 찾고, 모르는 id는 거절한다. 시험을 더했다.
 
 ### 남긴 것
 

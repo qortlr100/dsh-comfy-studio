@@ -505,4 +505,31 @@ describe("the fake provider keeps the rules of an entry", () => {
     expect(entry.runs).toEqual([]);
     expect(entry.cancelled).toEqual([]);
   });
+
+  it("resumes the run that the run ID names, and no run it does not know", async () => {
+    const entry = fakeGraphEntry({ resumable: true });
+    const resume = (run: string): AsyncIterable<GraphRunEvent> => {
+      if (entry.resume === undefined) throw new Error("The entry cannot resume.");
+      return entry.resume(run, optionsOf());
+    };
+    const first: Graph = { first: { class_type: "A", inputs: {} } };
+    const second: Graph = { second: { class_type: "B", inputs: {} } };
+    for (const graph of [first, second]) {
+      const kinds: string[] = [];
+      for await (const event of entry.run({ graph, media: [] }, optionsOf()))
+        kinds.push(event.kind);
+      expect(kinds.at(-1)).toBe("done");
+    }
+
+    const resumed: GraphRunEvent[] = [];
+    for await (const event of resume("fake-run-1")) resumed.push(event);
+
+    // The events follow the first run's graph, though the second was queued after it.
+    expect(resumed.map((event) => event.kind)).toEqual(["progress", "output", "done"]);
+    expect(resumed[0]).toMatchObject({ kind: "progress", node: "first" });
+    expect(resumed[1]).toMatchObject({ kind: "output", node: "first" });
+    await expect(resume("fake-run-9")[Symbol.asyncIterator]().next()).rejects.toThrow(
+      "no run fake-run-9",
+    );
+  });
 });

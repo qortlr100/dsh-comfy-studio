@@ -99,7 +99,8 @@ export function fakeGraphEntry(options: FakeGraphOptions = {}): FakeGraphEntry {
   const runs: GraphRequest[] = [];
   const uploads: FakeGraphEntry["uploads"] = [];
   const cancelled: string[] = [];
-  const queuedGraphs: Graph[] = [];
+  /** The graph the fake server accepted, by run ID, in the order the runs were queued. */
+  const queuedGraphs = new Map<string, Graph>();
   let counter = 0;
 
   /** Steps 5 to 8 of a run: progress, the failure, the abort check, the outputs and `done`. */
@@ -183,7 +184,7 @@ export function fakeGraphEntry(options: FakeGraphOptions = {}): FakeGraphEntry {
     counter += 1;
     const number = counter;
     const id = `fake-run-${String(number)}`;
-    queuedGraphs.push(graph);
+    queuedGraphs.set(id, graph);
     let handedOver = false;
     try {
       yield { kind: "queued", run: id, graph };
@@ -227,8 +228,11 @@ export function fakeGraphEntry(options: FakeGraphOptions = {}): FakeGraphEntry {
     run: runGraph,
   };
   if (options.resumable === true) {
-    entry.resume = (runId, runOptions) =>
-      finish(runId, `${runId}-resumed`, queuedGraphs.at(-1) ?? {}, runOptions);
+    entry.resume = async function* (runId, runOptions) {
+      const graph = queuedGraphs.get(runId);
+      if (graph === undefined) throw new Error(`The fake server has no run ${runId}.`);
+      yield* finish(runId, `${runId}-resumed`, graph, runOptions);
+    };
   }
   if (options.lookups === true) {
     entry.nodeCatalog = () => Promise.resolve({ FakeNode: { input: {}, output: [] } });
@@ -236,12 +240,8 @@ export function fakeGraphEntry(options: FakeGraphOptions = {}): FakeGraphEntry {
     entry.modelFileMetadata = () => Promise.resolve(null);
     entry.listRuns = (limit) =>
       Promise.resolve(
-        queuedGraphs
-          .map((graph, index) => ({
-            run: `fake-run-${String(index + 1)}`,
-            queuedAt: null,
-            graph,
-          }))
+        [...queuedGraphs]
+          .map(([run, graph]) => ({ run, queuedAt: null, graph }))
           .toReversed()
           .slice(0, limit),
       );
