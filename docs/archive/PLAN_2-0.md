@@ -1,6 +1,6 @@
 # 단계 계획 — 2-0 프로젝트 계층 이식
 
-`docs/ROADMAP.md` 2-0의 상세 계획이다. 브랜치는 `2-0-project-layer`다(2026-11-27).
+`docs/ROADMAP.md` 2-0의 상세 계획이다. 브랜치는 `2-0-project-layer`다(2026-11-27). 끝났다: 결과는 맨 아래 "한 것"부터 읽는다.
 
 ## 범위
 
@@ -34,9 +34,18 @@ DreamVerse `packages/dv/project/`의 모듈이다. 서비스 하나(`src/index.t
 | `grammar.ts`, `citations.ts` | 196, 34 | 입력 참조와 프롬프트 인용(`@[이름](…:<종류>/<id>)`)의 문법 | 없음 |
 | `subscriptions.ts`, `sessions.ts`, `shared.ts` | 57, 34, 43 | 변경 구독, 세션별 도구 호출 보류, 오류 클래스 | 없음 |
 
-## 정할 것 — 안
+## 사용자가 정한 것
 
-`docs/DECISIONS.md` "미정"이고 로드맵 2-0의 "정할 것"이다. **사용자가 확인하기 전에는 구현을 시작하지 않는다.** 안을 만들 때 쓴 사실은 DreamVerse 소스와 설치된 dsh 0.2.2-rc.5 패키지에서 읽었다(**소스 확인**, 2026-11-27).
+`docs/DECISIONS.md` "미정"이고 로드맵 2-0의 "정할 것"이었다. 2026-11-27에 아래 안을 보이고 사용자가 골랐다. 구현은 그 뒤에 시작했다.
+
+| 무엇 | 고른 답 |
+| --- | --- |
+| 이름(기록 디렉터리, 도구 접두사, 서비스 이름) | cs 계열: `.comfy-studio/`, `cs_`, `ctx.csProject` |
+| 영상 전용 용어를 어디까지 걷어낼지 | 글과 `surface`만 |
+| 새 프로젝트의 폴더 | 홈 폴더 아래: `<사용자 홈>/comfy-studio-projects/<이름>` |
+| Claude가 고른 나머지 기본값("고른 것") | 그대로 진행 |
+
+아래 세 절은 그때 보인 안이다. 안을 만들 때 쓴 사실은 DreamVerse 소스와 설치된 dsh 0.2.2-rc.5 패키지에서 읽었다(**소스 확인**, 2026-11-27).
 
 ### 1. 이름: 기록 디렉터리, 도구 접두사, 서비스 이름
 
@@ -82,12 +91,12 @@ DreamVerse는 `<문서 폴더>/deepseek-harness/DreamVerse/<이름>`에 만든�
 
 ## 고른 것
 
-Claude가 고른 기본값이다. 위 "정할 것"과 함께 사용자에게 보인다.
+Claude가 고른 기본값이다. 위 셋과 함께 사용자에게 보였고 사용자가 "그대로 진행"을 골랐다(`docs/DECISIONS.md` "확정").
 
 | 무엇 | 고른 것 | 이유 | 뒤집으면 |
 | --- | --- | --- | --- |
 | 패키지 | `packages/project`, `@cs/project`. 호스트 절반만 있다. 번들 행 id는 `cs-project` | `docs/ARCHITECTURE.md` "패키지 구성(가칭)"의 이름이다 | 이름만 바꾼다 |
-| 코드 모양 | 이 저장소의 규칙으로 다시 맞춘다: Prettier(세미콜론, 큰따옴표, 폭 100), 지울 수 있는 문법만(생성자 매개변수 속성 8곳을 필드 선언으로 푼다) | 호스트 절반은 Node가 `.ts`를 바로 실행한다(`docs/DSH.md` "플러그인 패키지 하나의 모양"). 포맷 검사가 `pnpm check`에 들어 있다 | DreamVerse와의 줄 단위 diff는 포기한다. 고친 것을 받아 올 때는 모듈 단위로 읽어 옮긴다 |
+| 코드 모양 | 이 저장소의 규칙으로 다시 맞춘다: Prettier(세미콜론, 큰따옴표, 폭 100), 지울 수 있는 문법만(생성자 매개변수 속성을 필드 선언으로 푼다. 소스 9곳과 시험 3곳이었다) | 호스트 절반은 Node가 `.ts`를 바로 실행한다(`docs/DSH.md` "플러그인 패키지 하나의 모양"). 포맷 검사가 `pnpm check`에 들어 있다 | DreamVerse와의 줄 단위 diff는 포기한다. 고친 것을 받아 올 때는 모듈 단위로 읽어 옮긴다 |
 | 시험의 자리 | `tests/x.spec.ts` → `src/x.test.ts`(대상 옆). 시험 지원과 시험용 플러그인은 `src/testing/`에 둔다 | 1-2에서 정한 자리다(`pnpm test`가 `packages/*/src/**/*.test.ts`를 돈다) | Vitest 설정의 `include`를 바꾼다 |
 | dsh 패키지 의존 | 값으로 쓰는 dsh 패키지를 `dependencies`에 `0.2.2-rc.5`로 고정한다. `@deepseek-ai/cordis` 4.1.0과 `@deepseek-ai/schemastery` 3.19.0은 `peerDependencies`와 `devDependencies`에 둔다 | DreamVerse의 구성이다. Cordis는 dsh가 실은 것과 같은 모듈이어야 서비스가 걸린다 | 띄워 봐서 모듈이 둘로 갈리면 구성을 고친다(아래 "확인할 위험") |
 | 에셋 저장소가 없을 때 | 서비스가 **빈 저장소**로 대신한다(`has`는 거짓, 나머지는 `unknown_asset`으로 던진다). DreamVerse는 요약을 만들 때도 던진다 | 에셋 기능 컴포넌트는 2-3에서 온다. 그때까지 프로젝트 요약 도구와 상태 메시지가 "No asset store"로 죽으면 프로젝트에 묶인 채팅의 모든 단계가 실패한다. 에셋이 없으면 출력도 없으므로 요약은 그대로 맞다 | 2-3에서 에셋 저장소가 등록되면 쓰이지 않는 길이다. 지워도 된다 |
@@ -145,3 +154,52 @@ Claude가 고른 기본값이다. 위 "정할 것"과 함께 사용자에게 보
 | C | 번들 행, 조합 시험과 시나리오 | 지휘 세션 |
 | D | 구현과 독립된 리뷰(diff와 이 문서만 준다) | 상위 서브 에이전트 하나 |
 | E | 문서: `THIRD_PARTY_NOTICES.md`, `docs/DECISIONS.md`, `docs/ARCHITECTURE.md`, `docs/DSH.md`, `docs/DREAMVERSE.md`, `docs/ROADMAP.md`, `AGENTS.md` | 지휘 세션 |
+
+## 한 것
+
+커밋은 묶음마다 하나다.
+
+| 묶음 | 한 것 |
+| --- | --- |
+| A, C | `packages/project`를 만들고 소스와 시험을 스크립트로 복사해 이름을 바꿨다(34개 파일과 `CONTRACTS.md`). 생성자 매개변수 속성 12곳을 필드 선언으로 풀었다. dsh에 맞추는 네 곳과 새 프로젝트 폴더, 빈 에셋 저장소를 고쳤다. 번들에 `cs-project` 행을 넣고 조합 시험을 썼다. `THIRD_PARTY_NOTICES.md`를 만들었다 |
+| B | 영상 용어를 걷어냈다: 에이전트가 읽는 글, `surface`, `label`, 주석과 예시, 시험의 가짜 연산·컴포넌트 이름(`shot.render` → `image.generate`, `timeline` → `batch`, `take` → `variant`, `clip` → `item` 등 한 가지 대응), `CONTRACTS.md` |
+| 린트 | 옮긴 코드가 이 저장소의 린트(타입 기반 규칙 포함)를 통과하게 고쳤다(아래 "계획과 달라진 점") |
+| E | 문서 |
+
+## 계획과 달라진 점
+
+- **dsh와의 차이가 하나 더 있었다.** 도구 실행 API다. 0.2.2-rc.5의 `tools.execute`는 호출 하나가 아니라 묶음(`calls`)을 받고, 실행기를 플러그인(`@deepseek-ai/dsh-tool-executor-native`)이 준다. 소스는 도구를 정의만 하므로 고칠 것이 없었고, 시험의 호출부 네 곳을 공용 도우미(`src/testing/workspaces.ts`의 `mountTools`·`callTool`)로 바꿨다. 그 실행기를 `@cs/project`의 `devDependencies`에 더했다.
+- **시험의 서비스 흉내도 바꿨다.** 턴 번호를 주던 가짜 `sessionProjections`는 가짜 `agents`(`turnBoundaryOf`)가 됐다.
+- **기본 폴더를 보는 시험은 다시 썼다.** 문서 폴더 규칙을 흉내 내던 시험을 홈 폴더 규칙의 시험으로 바꿨다(`src/folders.test.ts`). 시험 수는 113개 그대로다.
+- **린트.** 옮긴 코드는 이 저장소의 린트에서 109건이 걸렸다(타입 단언 59건, 제자리 정렬 15건 등). 소스의 것은 동작이 같은 형태로 고쳤고(`toSorted`, 의미 없는 `void` 제거, 좁히기), 타입 단언 가운데 고칠 수 없는 12곳은 이유를 적고 그 줄에서만 규칙을 껐다(자기가 쓴 파일을 읽는 곳, 도구 레지스트리가 스키마로 검증한 값 등). 시험의 타입 단언은 `src/testing/support.ts`의 도우미 셋으로 모았다: `defined`(없으면 던진다), `instanceof`로 좁히기, `standIn`(dsh API에 넘기는 가짜와 시험이 만든 JSON의 모양. 단언은 이 한 곳에만 있다). 린트 설정(`.oxlintrc.json`)은 바꾸지 않았다.
+- **조합 시험이 하나 늘었다.** `CS_PROJECTS_FOLDER`가 번들의 행을 거쳐 서비스에 닿는지를 본다. 그러려고 `runHostScenario`에 `env` 옵션을 더했다.
+- **루트 `devDependencies`에 셋을 더했다**: `@cs/project`(시나리오가 타입과 값을 가져온다), `@deepseek-ai/dsh-session`·`@deepseek-ai/dsh-session-projection`(시나리오의 `ctx.sessions`·`ctx.sessionProjections` 타입).
+
+## 확인한 것
+
+2026-11-27, 이 브랜치에서 돌렸다.
+
+- `pnpm check`의 검사(빌드, 타입, 린트, 포맷, 단위 시험 139개 가운데 프로젝트 계층 116개: 옮긴 113개와 새로 쓴 3개)가 통과한다.
+- `pnpm test:integration`의 시험 8개가 통과한다. 프로젝트 계층의 둘(`tests/integration/project.test.ts`)이 실제 dsh 안에서 본 것:
+  - 번들의 행으로 서비스가 올라오고 시나리오가 `inject: ["csProject"]`로 받는다.
+  - 폴더를 프로젝트로 만들면 dsh 작업공간 등록부에 생기고 `.comfy-studio/records.jsonl`의 첫 줄이 `proj.create`다.
+  - 시험용 연산을 두 번 실행하면 기록 줄이 늘고 리듀서의 상태에 둘 다 보인다. 실행 취소하면 하나, 다시 실행하면 둘이고 그 사이 기록 파일의 줄 수는 그대로다.
+  - 연산의 도구(`cs_probe_note_add`)와 프로젝트 도구 여덟 개가 dsh의 도구 레지스트리에 있다.
+  - 작업 폴더가 그 폴더인 채팅 세션의 프로젝트가 그 프로젝트다. `csProjectSight` 프로젝션이 등록돼 있고 새 세션의 초기 상태를 준다.
+  - 시나리오가 값으로 가져온 `@cs/project`가 dsh가 실은 것과 같은 모듈이다.
+  - 새 프로젝트 폴더는 dsh 프로세스의 홈(시험에서는 임시 폴더) 아래 `comfy-studio-projects/`에 생기고, `CS_PROJECTS_FOLDER`를 주면 그 폴더에 생긴다.
+- `pnpm -s dsh:config`의 `# == @cs/bundle` 아래에 `cs-project` 행이 보인다.
+
+## 리뷰
+
+구현과 독립된 리뷰를 상위 모델에게 맡겼다(이식 커밋과 이 문서, 원본 소스, 설치된 dsh 0.2.2-rc.5의 타입 선언만 줬다). 원본을 같은 Prettier 설정으로 맞춰 모듈마다 비교한 결과 **소스의 동작 차이는 계획한 것뿐**이었다(매개변수 속성 풀기, `toSorted`·`toReversed`, 비교 함수, `EEXIST` 좁히기, 이름 바꾸기, dsh에 맞춘 네 곳, 빈 에셋 저장소). P1·P2는 없었고 P3 다섯 건을 이렇게 처리했다.
+
+| 지적 | 처리 |
+| --- | --- |
+| 에이전트가 읽는 글에 제품 이름이 남아 있다(이식 커밋 시점) | 용어를 걷어낸 커밋에서 고쳤다 |
+| 고지 파일이 그 커밋에 없는 변경(`label`, `surface`)을 적었다 | 같은 브랜치의 뒤 커밋에서 맞춰졌다 |
+| Node의 `homedir()`가 던지면 `CS_PROJECTS_FOLDER`를 알려 주는 오류가 나오지 않는다 | `try`/`catch`로 감싸 같은 안내 오류를 던지게 했다. 시험에 그 경우를 더했다 |
+| `CS_PROJECTS_FOLDER`가 빈 문자열이면 서비스가 뜨지 않는다 | 번들의 행을 `… \|\| undefined`로 바꿔 빈 값을 없는 것으로 본다. 조합 시험에 그 경우를 더했다 |
+| 고친 `agent/pre-step` 리스너를 도는 시험이 없다(원본에도 없었다) | 단위 시험 셋을 새로 썼다(`src/project-updates-listener.test.ts`): 묶인 세션의 단계에 상태 메시지가 붙는다, 프로젝트가 없는 세션은 그대로다, 레지스트리가 프로젝션을 거절하면 그대로다 |
+
+확인하지 못한 것(모델 키가 있어야 한다. 1-3): 연산 도구가 에이전트의 도구 목록에 들어가는지, 프로젝트 상태·갱신 메시지가 실제 턴에 붙는지, 턴 번호가 기록에 남는지, 이미지 출력이 첨부로 모델에게 가는지.

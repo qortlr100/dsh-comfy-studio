@@ -122,15 +122,22 @@ DreamVerse는 dsh 0.1.7-rc.1에서 갈라졌다. 서버 쪽 코드가 지금 쓰
 
 세션 프로젝션의 변화: 분기점에서는 열쇠별 상태 타입 표(`SessionProjectionStateMap`)와 `stateOf(session, key)`가 있었다. 0.2.2-rc.5에서는 서비스의 `stateOf(session, key)`가 deprecated이고 `unknown`을 돌려준다. 등록이 돌려주는 핸들의 `handle.stateOf(session)`을 쓰라고 되어 있다. 문서는 업스트림 `docs/subsystems/session-projection.md`다.
 
-- **한계**: 타입이 맞는다는 것뿐이다. **실행해 보지 않았다.** 이벤트의 의미나 실행 순서가 달라졌을 수 있다. 프리셋 밖에서 `tools` 서비스에 등록한 도구가 0.2.2-rc.5의 에이전트에게 보이는지도 모른다. 2-0에서 처음 띄운다.
+- **한계**: 위 타입 검사는 타입이 맞는다는 것뿐이다. `@dv/project`는 2-0에서 `@cs/project`로 옮겨 실행했다(2026-11-27, 아래 "2-0에서 실행해 본 결과"). 나머지 13개 패키지는 **실행해 보지 않았다.** 이벤트의 의미나 실행 순서가 달라졌을 수 있다.
 - 시험 구성 탓에 난 오류 2건(`mime-types` 타입 없음, 패키지를 한 프로그램으로 묶어서 생긴 캐스트 오류)은 세지 않았다.
+
+**2-0에서 실행해 본 결과**(2026-11-27, `@dv/project` → `@cs/project`):
+
+- 위 5건을 고친 뒤 옮긴 단위 시험 113개가 전부 통과했다. 시험 가운데 넷(`agent-tools`, `proj-tools`, `project-updates`, 시험용 플러그인)은 실제 Cordis `Context`에 dsh 0.2.2-rc.5의 `tools`·`systemPrompt` 플러그인을 올려 돈다.
+- 소스의 타입 검사에는 걸리지 않았지만 **시험 코드에서 더 나온 차이가 하나 있다**: 도구 실행 API다. 분기점에서는 `tools.execute({ callId, name, arguments, signal, agent })`로 호출 하나를 실행했다. 0.2.2-rc.5에서는 묶음(`calls: ToolCallBlock[]`)을 받고, 실행기를 따로 올려야 한다(`@deepseek-ai/dsh-tool-executor-native`). 프로젝트 계층의 소스는 도구를 정의만 하고 직접 실행하지 않으므로 소스는 고칠 것이 없었다.
+- 실제 dsh 안에서도 돈다(조합 시험): 서비스가 번들의 행으로 올라오고, 작업공간 등록부에 프로젝트가 생기고, 기록·상태·실행 취소·다시 실행이 되고, 연산 도구가 레지스트리에 등록된다.
+- 고친 내용과 dsh 쪽 사실은 `docs/DSH.md` "호스트 쪽"과 `docs/archive/PLAN_2-0.md`에 있다.
 - 화면 쪽은 import한 이름만 대조했다. 세 패키지가 0.2.2-rc.5에 없는 이름을 쓴다: `@dv/ui-composer`(`PromptChip`, `PromptContent`, `PromptChangeCause`, `PromptHostModel`, `ReferenceFaceOwner`, `MarkdownElement`, `MarkdownTableElement` 일곱 개), `@dv/ui-text-node`(`PromptContent`, `PromptHostModel` 등), `@dv/ui-mcp-presets`(포크가 더한 `@deepseek-ai/dsh-mcp-servers`). 포크 전용 확장점에 기대는 패키지다.
 
 ## 가져올 것, 바꿀 것, 가져오지 않을 것
 
 | 대상                                                   | 판단             | 이유                                                                                                                     |
 | ------------------------------------------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `@dv/project`(기록, 실행기, 히스토리, 상태, 도구화)    | 가져온다         | 도메인과 무관한 틀이다. 위 5건을 고친다. 이름(`.dreamverse`, `dv_`, `dvProject`)은 2-0의 단계 계획 문서에서 안을 만들어 사용자가 확인한다. |
+| `@dv/project`(기록, 실행기, 히스토리, 상태, 도구화)    | **가져왔다**(2-0) | 도메인과 무관한 틀이다. `packages/project`(`@cs/project`)가 됐다. 이름은 `.comfy-studio`, `cs_`, `csProject`로 바꿨고 영상 용어는 글과 `surface` 값에서 걷어냈다(`docs/DECISIONS.md` "확정"). |
 | `@dv/api`                                              | 가져온다         | 화면용 API의 모양이다. 영상 전용 라우트는 뺀다.                                                                          |
 | `@dv/models`(카탈로그 틀)                              | 틀만 가져온다    | 등록·조회·선언 병합 구조는 쓴다. 요청과 항목의 모양은 ComfyUI에 맞게 새로 정한다(`docs/ARCHITECTURE.md` "카탈로그 계약"). |
 | `@dv/generation`, `@dv/image-generate`                 | 참고             | 생성 컴포넌트를 만드는 틀이다. 프롬프트 기반이라 그래프 기반에 맞게 다시 쓴다.                                           |
