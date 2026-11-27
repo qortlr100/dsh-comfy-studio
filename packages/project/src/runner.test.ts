@@ -54,6 +54,15 @@ function operation(
 }
 
 /**
+ * @param role - an input role.
+ * @param asset - an asset.
+ * @returns a run input that gives the asset to the role.
+ */
+function assetInput(role: string, asset: AssetId): RunRequest["inputs"][number] {
+  return { role, ref: { asset } };
+}
+
+/**
  * A run request with test defaults.
  * @param project - the project.
  * @param name - the operation name.
@@ -467,6 +476,67 @@ describe("Runner", () => {
     });
     expect(second.outputs).toEqual(first.outputs);
     expect(second.record?.started_at).toBeUndefined();
+  });
+
+  it("reuses a deterministic call only when each role gets the same assets in the same order", async () => {
+    const m = startModules();
+    const project = await createTestProject(m);
+    let calls = 0;
+    m.runner.registerOperation(
+      operation({
+        name: "asset.crop",
+        component: "asset",
+        deterministic: true,
+        inputs: {
+          image: { type: "image", description: "The image.", many: true },
+          mask: { type: "image", description: "The mask." },
+        },
+        execute: (context) => {
+          calls += 1;
+          const made = context.importAsset(Buffer.from(`made ${String(calls)}`), {
+            mime: "image/png",
+            name: "made.png",
+          });
+          return Promise.resolve({ outputs: [made] });
+        },
+      }),
+    );
+    const a = m.assets.add("asset a");
+    const b = m.assets.add("asset b");
+    const c = m.assets.add("asset c");
+    const run = (inputs: RunRequest["inputs"]) =>
+      m.runner.run(request(project, "asset.crop", userOrigin(), { params: { seed: 1 }, inputs }));
+    const first = await run([
+      assetInput("image", a),
+      assetInput("image", b),
+      assetInput("mask", c),
+    ]);
+    // The same assets, with the roles named in another order: the same call.
+    const sameCall = await run([
+      assetInput("mask", c),
+      assetInput("image", a),
+      assetInput("image", b),
+    ]);
+    expect(calls).toBe(1);
+    expect(sameCall.record?.cost).toEqual({ wall_seconds: 0, reused: true });
+    expect(sameCall.outputs).toEqual(first.outputs);
+
+    // The same assets in other roles, or in another order within a role: other calls, which execute.
+    const swappedRoles = await run([
+      assetInput("image", a),
+      assetInput("image", c),
+      assetInput("mask", b),
+    ]);
+    const swappedOrder = await run([
+      assetInput("image", b),
+      assetInput("image", a),
+      assetInput("mask", c),
+    ]);
+    expect(calls).toBe(3);
+    expect(swappedRoles.record?.cost?.reused).toBe(false);
+    expect(swappedOrder.record?.cost?.reused).toBe(false);
+    expect(swappedRoles.outputs).not.toEqual(first.outputs);
+    expect(swappedOrder.outputs).not.toEqual(first.outputs);
   });
 
   it("writes no record for a read-only operation", async () => {

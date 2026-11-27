@@ -151,7 +151,7 @@ Owner: agent D.
 
 `projReducer` (Project's own slice) follows its JSDoc. Staleness in detail, for each record R in order:
 
-The producers of an input are the record in `created_by[resolved_asset]` and, for a version ref, the record that created that version (`createdBy` of its kind; none while the kind is not registered).
+The producers of an input are the record in `created_by[resolved_asset]`, for a `{record, output}` ref also the record it names (a later record may have output the same asset again and taken the `created_by` entry) and, for a version ref, the record that created that version (`createdBy` of its kind; none while the kind is not registered).
 
 1. Each output asset of R when R is `done`: `created_by[asset] = R.id`.
 2. Each ID X in `R.supersedes`: `superseded[X] = R.id`; then every earlier record with an input produced by X, or by a record already stale through X, gets `stale[consumer] = R.id` unless it carries a stale acceptance.
@@ -197,7 +197,7 @@ Owner: agent B.
 
 1. Read the record; a record that a write discarded before it started ends `cancelled` / `discarded` at once. Its operation must still be registered, else the final update is `failed` / `operation_failed`.
 2. An input with `resolved_asset: null` (a producer that did not finish `done`) whose role is not in `spec.pendingInputRoles` → `failed` / `input_failed`. Inputs of those roles reach `execute` with `resolved_asset: null`; the record's current form fills it once the producer is done.
-3. Deterministic reuse: when `spec.deterministic` and an earlier record has the same `operation` and `operation_version`, status `done`, `cost.reused` not true, equal params (canonical JSON with sorted keys) and the same sorted list of `resolved_asset` values: one update `{status: 'done', finished_at, outputs: <its outputs>, cost: {wall_seconds: 0, reused: true}}`.
+3. Deterministic reuse: when `spec.deterministic` and an earlier record has the same `operation` and `operation_version`, status `done`, `cost.reused` not true, equal params (canonical JSON with sorted keys) and the same `resolved_asset` values by role (the roles compared in sorted order, the assets of one role in the order the call gave them, so the same assets in other roles or in another order are another call): one update `{status: 'done', finished_at, outputs: <its outputs>, cost: {wall_seconds: 0, reused: true}}`.
 4. Otherwise update `{status: 'running', started_at}`; compute `state = reducers.stateAt(project, record.parents[0])`; create a scratch directory (`mkdtemp(join(tmpdir(), 'cs-operation-'))`); call `spec.execute(context)` with `importAsset` bound to `assets.importAsset(source, meta, record.id)`.
 5. Success → `{status: 'done', finished_at, outputs, cost: {wall_seconds: <measured, rounded to ms>, reused: false}, report}` (omit `report` when undefined). A throw while `signal` is aborted → `cancelled` / `stopped`, or `cancelled` / `discarded` when a discard aborted it; any other throw → `failed` / `operation_failed` with the error's message. Remove the scratch directory in every case.
 
@@ -282,6 +282,7 @@ Each test file builds modules with `startModules()` and projects with `createTes
 - `computes each registered slice from the records of the effective chain`: a test reducer counting records of its component; its slice and the `records` of the `proj` slice match the chain.
 - `refuses a second reducer for a key`: `reducer_exists`.
 - `marks consumers of a superseded record stale`: A outputs X, B consumes X, C supersedes A → `stale[B] = C`, `superseded[A] = C`, `created_by[X] = A`.
+- `marks the consumer of a record's output stale when that record is superseded, though a later record output the same asset`: A outputs X, B consumes `A#0`, C outputs X again, D supersedes A → `created_by[X] = C`, `stale[B] = D`; a consumer that names the asset X is not stale.
 - `keeps a record fresh after proj.stale_accept`: after the accept record, `stale[B]` is gone and stays gone after a later unrelated record.
 - `registers one owner per reference kind and lists the kinds in registration order`: `kind_exists`; a remover removes only its own registration.
 - `resolves version references through their reference kind, on the slice of its owner`: a test kind on the `test_bible` slice; null without the owner's reducer, for an unregistered kind and for an asset.
@@ -305,6 +306,7 @@ Each test file builds modules with `startModules()` and projects with `createTes
 - `adds the records an operation replaces to the record's supersedes`: `spec.supersedes` receives the params and the current state; its records follow `request.supersedes` without repeats.
 - `fails the record when execute throws`: `failed` / `operation_failed` with the message; `run` resolves.
 - `reuses outputs of an identical deterministic call`: second call `done` with `cost.reused: true`, execute not called.
+- `reuses a deterministic call only when each role gets the same assets in the same order`: the same inputs with the roles named in another order are reused; the same assets in other roles, or in another order within a role, execute again.
 - `writes no record for a read-only operation`: the file is unchanged; `report` is returned.
 - `records a setting outside the history without a step, and folds it whatever the current position`: after an undo, an `outsideHistory` call keeps `{tip, at}`, emits no `line` event and leaves the history list unchanged; its component's slice holds the choice, also after a redo; a setting of a component without a reducer changes no slice.
 - `refuses an operation whose name does not start with its component key`.

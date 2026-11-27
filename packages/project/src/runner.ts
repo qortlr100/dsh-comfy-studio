@@ -91,15 +91,17 @@ function canonicalJson(value: unknown): string {
 }
 
 /**
- * The sorted `resolved_asset` values of a record's inputs, as one text, for comparing two calls.
+ * The `resolved_asset` values of a record's inputs by role, as one text, for comparing two calls. The roles are in
+ * sorted order, so the order in which a call names its roles does not matter; the assets of one role keep the order
+ * the call gave them. Two calls that give the same assets to different roles, or to one role in another order, are
+ * different calls: an operation's inputs are not interchangeable.
  * @param inputs - the record's inputs.
- * @returns the joined list.
+ * @returns the canonical text.
  */
 function resolvedAssetsKey(inputs: RecordInput[]): string {
-  return inputs
-    .map((input) => String(input.resolved_asset))
-    .toSorted((a, b) => (a < b ? -1 : a > b ? 1 : 0))
-    .join(",");
+  const byRole: Record<string, string[]> = {};
+  for (const input of inputs) (byRole[input.role] ??= []).push(String(input.resolved_asset));
+  return canonicalJson(byRole);
 }
 
 /**
@@ -605,7 +607,7 @@ export class Runner {
   }
 
   /**
-   * The outputs of an earlier executed record with the same operation, version, params and resolved assets.
+   * The outputs of an earlier executed record with the same operation, version, params and resolved assets by role.
    * @param project - the project.
    * @param record - the pending record.
    * @returns the earlier record's outputs, or null when there is none.

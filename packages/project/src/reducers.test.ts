@@ -162,6 +162,30 @@ describe("reducers", () => {
     expect(slice.stale).toEqual({ [b.id]: c.id, [d.id]: c.id, [later.id]: c.id });
   });
 
+  it("marks the consumer of a record's output stale when that record is superseded, though a later record output the same asset", async () => {
+    const m = startModules();
+    const project = await createTestProject(m);
+    const x = m.assets.add("variant x");
+    const a = await append(m, project, { ...GENERATE, outputs: [x] });
+    // B names output 0 of A; C repeats A and gives the same asset, as a reused deterministic call does.
+    const b = await append(m, project, {
+      ...INSERT,
+      inputs: [{ role: "reference", ref: { record: a.id, output: 0 }, resolved_asset: x }],
+    });
+    const c = await append(m, project, { ...GENERATE, outputs: [x] });
+    const byAsset = await append(m, project, { ...INSERT, inputs: [uses(x)] });
+    const d = await append(m, project, {
+      ...GENERATE,
+      outputs: [m.assets.add("variant x2")],
+      supersedes: [a.id],
+    });
+    const slice = projSlice(m, project);
+    expect(slice.created_by[x]).toBe(c.id);
+    // The input that names A is stale; the input that names the asset reads it from C, which stands.
+    expect(slice.stale).toEqual({ [b.id]: d.id });
+    expect(slice.stale[byAsset.id]).toBeUndefined();
+  });
+
   it("keeps a record fresh after proj.stale_accept", async () => {
     const m = startModules();
     const project = await createTestProject(m);

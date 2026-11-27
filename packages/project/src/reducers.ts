@@ -64,8 +64,8 @@ function acceptedRecords(records: ProjectRecord[]): Set<string> {
 }
 
 /**
- * The records an input was produced by: the record that created its resolved asset, and for a version reference, the
- * record that created that version.
+ * The records an input was produced by: the record that created its resolved asset, for a `{record, output}`
+ * reference the record it names, and for a version reference, the record that created that version.
  * @param input - one input of a record.
  * @param created_by - the asset → record map of the slice.
  * @param versionCreator - the version lookup.
@@ -80,6 +80,10 @@ function producersOf(
   const assetProducer =
     input.resolved_asset === null ? undefined : created_by[input.resolved_asset];
   if (assetProducer !== undefined) producers.push(assetProducer);
+  // A `{record, output}` reference names its producer itself. The asset's entry may belong to a later record that
+  // output the same asset again, such as a reused deterministic call, and superseding the named record must still
+  // reach this input.
+  if ("record" in input.ref && input.ref.record !== assetProducer) producers.push(input.ref.record);
   const versionProducer =
     "asset" in input.ref || "record" in input.ref ? null : versionCreator(input.ref);
   if (versionProducer !== null) producers.push(versionProducer);
@@ -178,8 +182,9 @@ function reduceProj(
  *   replaces the entry);
  * - `superseded`: each ID in a record's `supersedes` → that record;
  * - `stale`: a record R is stale when one of its inputs was produced by a record that is superseded or stale; the
- *   producer of an input is the record that created its `resolved_asset`, and for a version reference also the record
- *   that created that version (`createdBy` of its reference kind); the value is the
+ *   producer of an input is the record that created its `resolved_asset`, for a `{record, output}` reference also the
+ *   record it names, and for a version reference also the record that created that version (`createdBy` of its
+ *   reference kind); the value is the
  *   superseding record (or the record that made the producer stale). When a record supersedes another, every earlier
  *   record that is (transitively) downstream of the superseded one becomes stale.
  *   A `proj.stale_accept` record with `params.record` removes that record's mark and keeps it removed for the rest of
