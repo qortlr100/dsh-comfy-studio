@@ -28,6 +28,7 @@
     "esbuild": "0.28.2",
     "lightningcss": "1.33.0",
     "oxlint": "1.95.0",
+    "oxlint-tsgolint": "7.0.2009",
     "playwright-core": "1.65.1",
     "prettier": "3.10.1",
     "typescript": "6.0.3",

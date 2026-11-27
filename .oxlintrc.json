@@ -5,12 +5,16 @@
     "correctness": "error",
     "suspicious": "error"
   },
+  "options": {
+    "typeAware": true
+  },
   "rules": {
     "import/no-empty-named-blocks": "off",
     "unicorn/require-module-specifiers": "off",
     "react/react-in-jsx-scope": "off",
     "react/hooks": "off",
-    "react/rules-of-hooks": "error"
+    "react/rules-of-hooks": "error",
+    "typescript/no-misused-promises": "error"
   },
   "ignorePatterns": ["**/lib/**", "**/build/**", ".worktree/**", ".dsh-home/**"]
 }

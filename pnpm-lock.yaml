@@ -29,6 +29,9 @@ importers:
       oxlint:
         specifier: 1.95.0
         version: 1.95.0(oxlint-tsgolint@7.0.2009)
+      oxlint-tsgolint:
+        specifier: 7.0.2009
+        version: 7.0.2009
       playwright-core:
         specifier: 1.65.1
         version: 1.65.1
@@ -10302,7 +10305,6 @@ snapshots:
       '@oxlint-tsgolint/linux-x64': 7.0.2009
       '@oxlint-tsgolint/win32-arm64': 7.0.2009
       '@oxlint-tsgolint/win32-x64': 7.0.2009
-    optional: true
 
   oxlint@1.95.0(oxlint-tsgolint@7.0.2009):
     optionalDependencies:

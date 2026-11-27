@@ -9,9 +9,32 @@
 - Vitest로 도는 단위 시험과 `pnpm test`
 - dsh를 실제로 띄우는 조합 시험과 `pnpm test:integration`: 브라우저로 화면을 보는 것, 호스트 쪽 서비스를 부르는 것
 - 조합 시험이 쓰는 틀(`tests/harness/`)
-- 타입 기반 린트 규칙을 켤지(로드맵의 "정할 것")
+- 타입 기반 린트 규칙을 켤지(로드맵의 "정할 것". 아래 "사용자가 정한 것")
 
 범위 밖: 실제 모델이 있어야 하는 시험(1-3), 브라우저 절반의 React 컴포넌트를 DOM 흉내 환경(jsdom 등)에서 도는 단위 시험(필요해지면 더한다. 지금은 조합 시험이 실제 브라우저로 본다), CI(`docs/DECISIONS.md` "미정").
+
+## 사용자가 정한 것
+
+`docs/DECISIONS.md` "미정"이자 로드맵 1-2의 "정할 것"이었다. 2026-11-27에 안을 보이고 사용자가 골랐다.
+
+| 무엇 | 고른 답 | 보인 안 |
+| --- | --- | --- |
+| 타입 기반 린트 규칙을 켤지 | 켠다 | 켠다(권함) / 켜지 않는다 / 켜되 타입 단언 규칙은 끈다 |
+
+안을 만들 때 쓴 사실(2026-11-27, 이 저장소에서 돌려 봤다):
+
+- `oxlint-tsgolint` 7.0.2009가 oxlint 1.95.0과 지금의 `tsconfig`(TypeScript 6.0.3)로 돈다. `pnpm lint`가 0.25초에서 0.38초가 됐다.
+- 지금 범주(`correctness`, `suspicious`) 그대로 켜면 기다리지 않은 Promise(`no-floating-promises`), Promise가 아닌 값의 `await`(`await-thenable`), 객체를 문자열로 만드는 것(`no-base-to-string`, `restrict-template-expressions`), 좁히는 타입 단언(`no-unsafe-type-assertion`)을 잡는다(표본 코드로 봤다).
+- `no-misused-promises`(`forEach`에 async 콜백 등)는 범주에 없어 따로 켜야 한다.
+- 기존 코드에서는 `scripts/build-client.ts`의 타입 단언 4건이 걸렸다.
+- 업스트림 dsh는 켜고 쓴다(`oxlint-tsgolint` 7.0.2001, **소스 확인**).
+
+한 것:
+
+- `.oxlintrc.json`에 `options.typeAware: true`와 `typescript/no-misused-promises: error`를 넣었다. `oxlint-tsgolint`는 루트 devDependency다.
+- `scripts/build-client.ts`의 4건은 단언을 타입 가드(`isRecord`)와 구조 분해로 바꿨다. 동작은 같다(단위 시험 19개가 그대로 통과한다).
+- 규칙을 끈 곳은 둘이고 둘 다 이유를 주석으로 적었다: `tests/harness/host.ts`의 `parsed.value as T`(부르는 쪽이 결과 타입을 정하는 API다), `tests/harness/browser.ts`의 `preserve-caught-error`(원래 오류에 토큰이 든 주소가 있어 `cause`로 달지 않는다).
+- 설정으로 켠 뒤 표본 코드로 다시 봤다: 기다리지 않은 Promise와 `forEach`의 async 콜백이 오류가 된다.
 
 ## 고른 것
 
@@ -149,7 +172,8 @@ export function openPage(url: string, options?: OpenPageOptions): Promise<PageSe
 | 파일 | 내용 |
 | --- | --- |
 | `vitest.config.ts` | 프로젝트 둘: `unit`(패키지의 `src/**/*.test.ts(x)`, `scripts/**/*.test.ts`, `tests/harness/**/*.test.ts`)과 `integration`(`tests/integration/**/*.test.ts`, 시험 한도 60초, `global-setup.ts`) |
-| `package.json` | `test`, `test:integration`, `check`. devDependency: `vitest` 5.1.2, `playwright-core` 1.65.1, 타입용 `@deepseek-ai/cordis` 4.1.0·`@deepseek-ai/dsh-tools` 0.2.2-rc.5 |
+| `package.json` | `test`, `test:integration`, `check`. devDependency: `vitest` 5.1.2, `playwright-core` 1.65.1, `oxlint-tsgolint` 7.0.2009, 타입용 `@deepseek-ai/cordis` 4.1.0·`@deepseek-ai/dsh-tools` 0.2.2-rc.5 |
+| `.oxlintrc.json`, `scripts/build-client.ts` | 타입 기반 규칙을 켜고 걸린 단언 4건을 고쳤다 |
 | `tsconfig.json` | 루트 프로그램이 `tests/`와 `vitest.config.ts`도 검사한다 |
 | `tests/harness/dsh.ts` | `createTestHome`, `launchDsh`, `redactLoginUrls` |
 | `tests/harness/host.ts`, `tests/harness/probe/index.ts` | `runHostScenario`와 프로브 플러그인 |
