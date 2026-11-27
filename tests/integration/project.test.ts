@@ -8,9 +8,11 @@ import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { tempParent } from "../harness/dsh.ts";
 import { runHostScenario } from "../harness/host.ts";
+import type { ProjectFolderResult } from "./scenarios/project-folder.ts";
 import type { ProjectLifecycleResult } from "./scenarios/project-lifecycle.ts";
 
 const SCENARIO = new URL("./scenarios/project-lifecycle.ts", import.meta.url);
+const FOLDER_SCENARIO = new URL("./scenarios/project-folder.ts", import.meta.url);
 
 const PROJECT_TOOLS = [
   "cs_proj_create",
@@ -99,6 +101,19 @@ describe("project layer", () => {
       expect(result.newFolder).toBe(join(result.home, "comfy-studio-projects", "probe"));
     } finally {
       rmSync(folder, { recursive: true, force: true, maxRetries: 3 });
+    }
+  });
+
+  test("CS_PROJECTS_FOLDER moves the folder of new projects", async () => {
+    const parent = mkdtempSync(join(tempParent(), "cs-dsh-test-projects-"));
+    try {
+      // The bundle's row hands the variable to the plugin as `projectsFolder`.
+      const result = await runHostScenario<ProjectFolderResult>(FOLDER_SCENARIO, {
+        env: { CS_PROJECTS_FOLDER: join(parent, "configured") },
+      });
+      expect(result.folder).toBe(join(parent, "configured", "probe"));
+    } finally {
+      rmSync(parent, { recursive: true, force: true, maxRetries: 3 });
     }
   });
 });
