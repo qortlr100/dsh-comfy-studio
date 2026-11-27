@@ -91,6 +91,16 @@ importers:
         specifier: workspace:*
         version: link:../ui-shell
 
+  packages/comfy:
+    dependencies:
+      zod:
+        specifier: 4.6.6
+        version: 4.6.6
+    devDependencies:
+      '@types/node':
+        specifier: 24.19.2
+        version: 24.19.2
+
   packages/project:
     dependencies:
       '@deepseek-ai/dsh-agent':

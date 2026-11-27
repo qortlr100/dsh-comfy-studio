@@ -27,7 +27,7 @@
 | 스타일           | 직접 쓴 CSS(우리 클래스에만 적용) + dsh 색 토큰 `--dsw-alias-*`                                                                                                   | 다크 모드가 토큰으로 따라온다. CSS Modules(`*.module.css`)로 싣는다(`docs/DSH.md` "CSS").                                                                           |
 | 브라우저 번들    | esbuild 0.28.2로 CJS 본문을 만들어 dsh 로더 형식으로 감싼다. CSS Modules는 lightningcss 1.33.0(`scripts/build-client.ts`)                                                                                       | 업스트림 빌드 프리셋은 npm에 없다. 형식은 `docs/DSH.md` "브라우저 번들 형식"에 있다.                                                                                |
 | 브라우저 쪽 타입 | dsh 패키지를 `0.2.2-rc.5`로 devDependency 고정(타입만 가져온다), `@types/react` 18                                                                                | 이 패키지들의 npm `latest`는 옛 버전이다. 어느 패키지가 필요한지는 `docs/DSH.md` "타입을 얻는 패키지"에 있다.                                              |
-| 생성 백엔드      | ComfyUI HTTP·WebSocket, Comfy Cloud, RunPod Serverless(+ 네트워크 볼륨 S3), Modal 게이트웨이                                                                      | 기존 `lib/comfy`를 옮긴다(`docs/LEGACY.md`).                                                                                                               |
+| 생성 백엔드      | ComfyUI HTTP·WebSocket, Comfy Cloud, RunPod Serverless(+ 네트워크 볼륨 S3), Modal 게이트웨이                                                                      | 기존 `lib/comfy`를 `@cs/comfy`로 옮겼다(4-0. `docs/LEGACY.md`).                                                                                                               |
 | LLM              | dsh가 관리한다: DeepSeek, 내장 프로바이더 목록(`anthropic`, `openai` 등), 사용자 지정 API(OpenAI Chat Completions, OpenAI Responses, Anthropic Messages, Gemini)  | 우리 코드에 LLM SDK를 두지 않는다.                                                                                                                         |
 | 저장             | 프로젝트는 폴더 + 추가 전용 기록 파일(`<프로젝트 폴더>/.comfy-studio/records.jsonl`), 대화·설정·자격 증명은 dsh(`$DSH_HOME`)                                      | 프로젝트를 넘는 데이터의 자리는 설계 과제다(아래 "데이터가 사는 곳").                                                                                      |
 | 테스트           | Vitest 5.1.2(단위, `pnpm test`), dsh를 실제로 띄우는 조합 시험(`pnpm test:integration`, 틀은 `tests/harness/`), 헤드리스 Chromium(`playwright-core` 1.65.1)으로 화면 확인 | 기존 `lib/comfy` 테스트가 Vitest다. 호스트 쪽 서비스는 프로브 플러그인이 시나리오 모듈을 dsh 안에서 실행해 확인한다(`docs/DSH.md` "띄워서 확인하는 법"). |
@@ -265,7 +265,7 @@ packages/
   project/           @cs/project       프로젝트 계층(2-0)
   api/               @cs/api           화면용 API(2-2)
   catalog/           카탈로그 계약(타입과 서비스 정의)
-  comfy/             ComfyUI 연동 라이브러리(서버 종류별 클라이언트, 그래프, 프로토콜). dsh에 의존하지 않는다
+  comfy/             @cs/comfy         ComfyUI 연동 라이브러리(4-0): 서버 종류별 클라이언트, 그래프와 패치, 프로토콜, 모델 계열. dsh에 의존하지 않는다. 플러그인이 아니라 번들의 행이 없다
   comfy-provider/    카탈로그에 등록하는 생성 프로바이더, 실행기
   <이름>/            기능 컴포넌트 하나에 패키지 하나
   ui-kit/            자체 부품과 화면 공용 브라우저 코드

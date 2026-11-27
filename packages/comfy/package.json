@@ -1,0 +1,20 @@
+{
+  "name": "@cs/comfy",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "ComfyUI integration library: API-format graphs and fields, graph patches and validation, response parsers, model families, the node catalog, and the backends behind one interface (ComfyUI local and Comfy Cloud, RunPod Serverless, a Modal gateway). No dsh dependency. Ported from the earlier ComfyStudio app.",
+  "exports": {
+    "./*": "./src/*.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "zod": "4.6.6"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2"
+  }
+}
