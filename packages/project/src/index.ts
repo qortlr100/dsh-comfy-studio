@@ -323,13 +323,17 @@ export default class CsProject extends Service {
 
   protected [Service.init](): void {
     if (this.config.projectsFolder === undefined) {
-      const home = homedir();
-      if (!isAbsolute(home)) {
-        throw new Error(
-          "csProject: the home directory does not resolve on this host, so new projects have no folder. " +
-            "Set CS_PROJECTS_FOLDER (Config.projectsFolder) to the folder that holds them.",
-        );
+      const unresolved =
+        "csProject: the home directory does not resolve on this host, so new projects have no folder. " +
+        "Set CS_PROJECTS_FOLDER (Config.projectsFolder) to the folder that holds them.";
+      let home: string;
+      try {
+        home = homedir();
+      } catch (error) {
+        // Node throws when the account has neither HOME nor a user database entry.
+        throw new Error(unresolved, { cause: error });
       }
+      if (!isAbsolute(home)) throw new Error(unresolved);
       this.projectsFolder = join(home, DEFAULT_PROJECTS_FOLDER);
       return;
     }

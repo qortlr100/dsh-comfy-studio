@@ -11,11 +11,15 @@ import CsProject, { DEFAULT_PROJECTS_FOLDER } from "./index.ts";
 import { tempRoot } from "./testing/support.ts";
 import { provideChatServices } from "./testing/workspaces.ts";
 
-const home = vi.hoisted(() => ({ folder: "" }));
+const home = vi.hoisted((): { folder: string | null } => ({ folder: "" }));
 
 vi.mock("node:os", async (importOriginal) => ({
   ...(await importOriginal<typeof import("node:os")>()),
-  homedir: () => home.folder,
+  // `null` stands for an account without a home directory, for which Node's `homedir` throws.
+  homedir: () => {
+    if (home.folder === null) throw new Error("ENOENT: no such file or directory, uv_os_homedir");
+    return home.folder;
+  },
 }));
 
 const contexts: Context[] = [];
@@ -73,6 +77,8 @@ describe("the projects folder", () => {
     home.folder = "";
     const missing = load({});
     await expect(missing.fiber.await()).rejects.toThrow(/Set CS_PROJECTS_FOLDER/);
+    home.folder = null;
+    await expect(load({}).fiber.await()).rejects.toThrow(/Set CS_PROJECTS_FOLDER/);
     await expect(load({ projectsFolder: "" }).fiber.await()).rejects.toThrow(
       /must be an absolute path/,
     );

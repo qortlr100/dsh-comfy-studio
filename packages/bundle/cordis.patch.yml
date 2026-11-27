@@ -4,8 +4,8 @@
       name: "@cs/ui-shell"
 
     # The project layer. New project folders go to CS_PROJECTS_FOLDER (an absolute path) when it
-    # is set, else to comfy-studio-projects in the home directory.
+    # is set and not empty, else to comfy-studio-projects in the home directory.
     - id: cs-project
       name: "@cs/project"
       config:
-        projectsFolder: !!js process.env.CS_PROJECTS_FOLDER
+        projectsFolder: !!js process.env.CS_PROJECTS_FOLDER || undefined

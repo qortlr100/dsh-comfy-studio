@@ -112,6 +112,13 @@ describe("project layer", () => {
         env: { CS_PROJECTS_FOLDER: join(parent, "configured") },
       });
       expect(result.folder).toBe(join(parent, "configured", "probe"));
+
+      // An empty variable counts as unset: the default folder in the home directory.
+      const fallback = await runHostScenario<ProjectFolderResult>(FOLDER_SCENARIO, {
+        env: { CS_PROJECTS_FOLDER: "" },
+      });
+      expect(fallback.folder).toMatch(/[\\/]comfy-studio-projects[\\/]probe$/);
+      expect(fallback.folder.startsWith(homedir())).toBe(false);
     } finally {
       rmSync(parent, { recursive: true, force: true, maxRetries: 3 });
     }
