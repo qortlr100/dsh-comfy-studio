@@ -67,6 +67,7 @@ import { Sessions } from "./sessions.ts";
 import { Subscriptions } from "./subscriptions.ts";
 import type {
   AssetId,
+  AssetReader,
   AssetStore,
   ComponentStates,
   ProjectLine,
@@ -734,6 +735,20 @@ export default class CsProject extends Service {
     this.assetStore = store;
     return () => {
       if (this.assetStore === store) this.assetStore = null;
+    };
+  }
+
+  /**
+   * The read side of the asset store, for callers outside the project layer such as the view API. It offers no way to
+   * import: assets enter a project through an operation run only.
+   * @returns a reader over the registered asset store, or over one that holds no asset while no plugin has registered
+   *   one; it follows later registrations.
+   */
+  assets(): AssetReader {
+    return {
+      has: (asset) => this.currentAssetStore().has(asset),
+      get: (asset) => this.currentAssetStore().get(asset),
+      url: (asset) => this.currentAssetStore().url(asset),
     };
   }
 

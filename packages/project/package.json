@@ -10,6 +10,8 @@
     "./types": "./src/types.ts",
     "./grammar": "./src/grammar.ts",
     "./folder": "./src/folder.ts",
+    "./testing/support": "./src/testing/support.ts",
+    "./testing/workspaces": "./src/testing/workspaces.ts",
     "./package.json": "./package.json"
   },
   "scripts": {

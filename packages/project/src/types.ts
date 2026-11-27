@@ -448,6 +448,9 @@ export type ProjectShown =
       base: number;
     };
 
+/** The read side of the {@link AssetStore}: what a caller outside the project layer may ask about an asset. */
+export type AssetReader = Pick<AssetStore, "has" | "get" | "url">;
+
 /** What a subscriber learns about a project change. */
 export type ProjectEvent =
   | { kind: "record"; record: ProjectRecord }

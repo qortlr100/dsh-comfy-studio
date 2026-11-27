@@ -9,3 +9,7 @@
       name: "@cs/project"
       config:
         projectsFolder: !!js process.env.CS_PROJECTS_FOLDER || undefined
+
+    # The view API: the /api/cs/* routes and the /cs/events stream the browser views use.
+    - id: cs-api
+      name: "@cs/api"

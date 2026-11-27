@@ -442,7 +442,7 @@ dsh가 싣고 오는 언어는 영어, 중국어, 일본어, 스페인어, 프�
 
 ## 호스트 쪽
 
-DreamVerse의 서버 쪽 패키지가 dsh에서 가져다 쓰는 것이다. 전부 0.2.2-rc.5에 있고 타입이 맞는다(타입 검사로 확인, 차이 5건은 `docs/DREAMVERSE.md`). 이 가운데 프로젝트 계층(`@cs/project`, 2-0)이 쓰는 것은 실행해 봤다: 플러그인·서비스, 도구 등록, 세션별 상태(프로젝션), 시스템 프롬프트의 절, 작업공간 읽고 쓰기(표 아래 "프로젝트 계층을 옮기며 알게 된 것"). 나머지 줄은 타입까지만 봤다. 쓰는 법은 업스트림 문서를 본다.
+DreamVerse의 서버 쪽 패키지가 dsh에서 가져다 쓰는 것이다. 전부 0.2.2-rc.5에 있고 타입이 맞는다(타입 검사로 확인, 차이 5건은 `docs/DREAMVERSE.md`). 이 가운데 프로젝트 계층(`@cs/project`, 2-0)과 화면용 API(`@cs/api`, 2-2)가 쓰는 것은 실행해 봤다: 플러그인·서비스, 도구 등록, 세션별 상태(프로젝션), 시스템 프롬프트의 절, 작업공간 읽고 쓰기, 브라우저가 부를 HTTP 라우트(표 아래 "프로젝트 계층을 옮기며 알게 된 것"과 "화면용 API를 옮기며 알게 된 것"). 나머지 줄은 타입까지만 봤다. 쓰는 법은 업스트림 문서를 본다.
 
 | 하려는 것                       | dsh 패키지와 이름                                                                                                   | 업스트림 문서                                              |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
@@ -479,6 +479,15 @@ DreamVerse의 서버 쪽 패키지가 dsh에서 가져다 쓰는 것이다. 전�
 - **선택 서비스 읽기**: `ctx.get("이름")`은 주입하지 않은 서비스도 읽고, 없으면 `undefined`다(`ctx.이름`은 던진다. **시험 확인**).
 - **서비스 클래스**: `Service`를 상속한 클래스를 기본 export로 두고 `static inject`와 `static Config`를 주면 행으로 실린다. `protected [Service.init]()`은 동기 함수여도 된다. 워크스페이스 패키지가 값으로 가져온 `@deepseek-ai/cordis`는 dsh가 실은 것과 같은 모듈이다(pnpm 저장소에 4.1.0 사본이 하나다). 서비스가 걸리고 다른 플러그인이 `inject`로 받는다(**띄워 확인**).
 - **패키지 의존**: 호스트 절반이 값으로 쓰는 dsh 패키지는 그 패키지의 `dependencies`에 `0.2.2-rc.5`로 적는다(pnpm은 적지 않은 패키지를 풀어 주지 않는다). `@deepseek-ai/dsh`가 끌고 온 것과 같은 사본으로 풀린다.
+
+화면용 API를 옮기며 알게 된 것(2-2, 2026-11-28. **띄워 확인**은 조합 시험 `tests/integration/api.test.ts`다):
+
+- **fetch 라우트**: `ctx.inject(["connection"], (inner) => inner.connection.fetch.register({ path, methods, requestBody: "buffered", fetch }))`로 `/api/…` 아래의 정확 일치 경로를 등록한다. `fetch`는 Fetch `Request`를 받아 `Response`를 돌려준다. 메서드는 `GET`·`HEAD`·`POST`뿐이다. `register`가 돌려주는 정리 함수는 `Promise`를 준다. 로그인한 페이지의 `fetch("/api/cs/…")`가 닿고(같은 출처라 쿠키가 실린다), 쿠키 없는 요청은 401이다(**띄워 확인**).
+- **소유자만 닿는다**: dsh의 공용 처리기가 정확 일치 라우트를 부르기 전에 Peer의 `principal.kind`가 `owner`인지 보고 아니면 403을 준다(**소스 확인**: 업스트림 `packages/client/connection/src/rpc-host.ts`의 `createSharedFetchHandler`).
+- **날 HTTP 라우트**: `ctx.webServer.register({ kind: "exact" | "prefix", path, handler(req, res) })`. 응답을 열어 둘 수 있어서 이벤트 스트림(SSE)에 쓴다. **dsh가 인증해 주지 않는다.** 처리기 안에서 `ctx.connection.admit({ headers: req.headers })`를 불러 `{ rejection: 401 | 403 }`이면 그 상태로 끝내고, `{ peer }`면 `peer.principal.kind`를 본다. `requestRejection(…)`은 같은 검사의 거절 상태만 준다(소유자인지는 알려 주지 않는다). `admit`은 Host·Origin과 쿠키(또는 API 자격 증명)를 보고 이미 있는 Peer를 돌려줄 뿐 새 Peer를 만들지 않는다(**소스 확인**: 업스트림 `rpc-host.ts`). 라우트를 빼도(`register`가 준 정리 함수) 이미 열어 둔 응답은 닫히지 않으므로, 플러그인이 내려갈 때 자기가 연 응답을 직접 끝내야 한다(**시험 확인**: `packages/api/src/events.test.ts`).
+- **이벤트 스트림**: 로그인한 페이지의 `new EventSource("/cs/events?…")`가 열리고 이벤트가 실시간으로 온다(**띄워 확인**: 연산을 실행하자 `record`·`update`·`line`이 도착했다). 헤더는 `content-type: text/event-stream`, `cache-control: no-store, no-transform`, `x-accel-buffering: no`이고 조용할 때 주석 줄을 보낸다. 리버스 프록시 뒤에서 끊기지 않는지는 보지 않았다(1-5).
+- **조합 시험에 시험용 기능 컴포넌트를 얹는 법**: 호스트 플러그인 파일(`tests/integration/fixtures/memo-component.ts`)을 패치 행의 `name`에 절대 경로로 적어 `launchDsh({ patches })`로 띄운다. 모듈의 `inject`와 `apply`가 번들의 플러그인과 같게 돈다.
+- **페이지 안에서 부르기**: 시험 프로그램은 DOM 타입 없이 검사되므로(`lib`가 ES2024뿐이다) 페이지에서 돌릴 코드는 문자열로 써서 `page.evaluate<결과 타입>(문자열)`로 넘긴다.
 
 ## 에이전트 프리셋
 
@@ -682,7 +691,8 @@ expect(result.names).toContain("working_directory");
 - 서드파티 패키지가 같이 실린 브라우저 번들, 공유 모듈의 하위 경로(`zod/v4` 등), 플러그인이 내려갈 때 로더가 우리 `<style>`을 지우는 것, 호스트 절반을 고쳤을 때 다시 실리는지.
 - **에이전트 프리셋.** 우리 프리셋을 넣어 띄우는 것, 프리셋 밖에서 등록한 도구가 에이전트에게 보이는지, 기본 제공 프리셋을 끄는 것.
 - 무시된 설치 스크립트(`node-pty` 등)가 에이전트의 셸 도구에 주는 영향("함정").
-- DreamVerse의 서버 쪽 코드 가운데 프로젝트 계층 밖의 것을 0.2.2-rc.5에서 실행하는 것(프로젝트 계층은 2-0에서 옮겨 돌렸다. `@dv/api`는 2-2, 에셋은 2-3).
+- DreamVerse의 서버 쪽 코드 가운데 프로젝트 계층과 화면용 API 밖의 것을 0.2.2-rc.5에서 실행하는 것(프로젝트 계층은 2-0, `@dv/api`는 2-2에서 옮겨 돌렸다. 에셋은 2-3).
+- 이벤트 스트림이 리버스 프록시 뒤에서 버퍼링 없이 흐르는지(1-5). dsh가 도는 중에 우리 서비스가 다시 실릴 때 브라우저가 스트림을 다시 잇는지.
 - 프로젝트 계층이 에이전트의 실제 턴에서 하는 일: 연산 도구가 에이전트의 도구 목록에 들어가는지, `agent/pre-step`에서 프로젝트 상태·갱신 메시지가 붙는지, 턴 번호가 기록에 남는지(모델 키가 있어야 한다. 1-3).
 - 가운데에 입력창을 끼운 첫 화면, `@` 메뉴에 우리 항목 추가.
 - `ctx.credentials`와 `ctx.storageDomain`을 저장소 밖 플러그인에서 쓰는 것(`ctx.tools`를 읽는 것은 1-2에서 확인했다).

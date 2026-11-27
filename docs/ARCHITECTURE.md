@@ -1,6 +1,6 @@
 # 아키텍처
 
-만들 구조를 적는다. 만들어진 것은 프로젝트 계층뿐이므로(2-0, 2026-11-27) 각 절에서 **정해진 것**과 **설계 과제**를 구분한다. 근거가 된 조사는 `docs/DSH.md`·`docs/DREAMVERSE.md`·`docs/LEGACY.md`에, 결정의 출처는 `docs/DECISIONS.md`에, 만드는 순서는 `docs/ROADMAP.md`에 있다. 낱말의 뜻은 `AGENTS.md` "용어"를 따른다.
+만들 구조를 적는다. 만들어진 것은 프로젝트 계층(2-0, 2026-11-27)과 화면용 API(2-2, 2026-11-28)뿐이므로 각 절에서 **정해진 것**과 **설계 과제**를 구분한다. 근거가 된 조사는 `docs/DSH.md`·`docs/DREAMVERSE.md`·`docs/LEGACY.md`에, 결정의 출처는 `docs/DECISIONS.md`에, 만드는 순서는 `docs/ROADMAP.md`에 있다. 낱말의 뜻은 `AGENTS.md` "용어"를 따른다.
 
 ## 목표와 제약
 
@@ -45,7 +45,7 @@
 │  프로젝트 목록│  (갤러리, 워크플로, 검토 …)  │  그 밖의 우리 탭        │
 │  [우리]       │  [우리]                      │  [dsh + 우리]           │
 └───────────────┴──────────────────────────────┴─────────────────────────┘
-      │ 슬롯에 등록(브라우저 절반)            │ HTTP `/api/cs/…` · 이벤트 스트림 (경로는 가칭)
+      │ 슬롯에 등록(브라우저 절반)            │ HTTP `/api/cs/…` · 이벤트 스트림 `/cs/events`
       ▼                                        ▼
 dsh 호스트 (Node, Cordis)
   dsh 코어   LLM 프로바이더 · 세션 · 도구 루프 · MCP · 스킬 · 예약 · 자격 증명 · 저장소 · 웹 서버
@@ -73,7 +73,7 @@ DreamVerse의 구조를 가져온다. 원본 설명은 DreamVerse 저장소의 `
 
 네 계층 옆에 셋이 더 있다.
 
-- **화면용 API**(`@dv/api`): 화면이 프로젝트를 읽고 바꾸는 유일한 길이다.
+- **화면용 API**(`@dv/api` → 우리 `@cs/api`, 2-2): 화면이 프로젝트를 읽고 바꾸는 유일한 길이다.
 - **화면**(`@dv/ui-*`): 가운데 뷰와 우측 패널 탭이다.
 - **번들**(`@dv/bundle`): 위 패키지들의 플러그인 행과 에이전트 프리셋을 모은 프로필 계층이다.
 
@@ -111,7 +111,7 @@ export function apply(ctx: Context): void {
 | 히스토리 | `undo(id)`, `redo(id)`, `moveTo(id, record)`, `line(id)`(`{ tip, at }`), `listHistory(query)` |
 | 읽기 | `getState(id)`(리듀서마다의 조각), `getRecord`, `listRecords`, `subscribe(id, listener)` |
 | 채팅 세션의 프로젝트 | `sessionProject(sessionId)`: 세션의 작업 폴더가 프로젝트 폴더인 프로젝트 |
-| 에셋 | `registerAssetStore(store)`: 에셋 기능 컴포넌트(2-3)가 등록한다. 그때까지는 아무 에셋도 없는 빈 저장소가 대신한다 |
+| 에셋 | `registerAssetStore(store)`: 에셋 기능 컴포넌트(2-3)가 등록한다. 그때까지는 아무 에셋도 없는 빈 저장소가 대신한다. 프로젝트 계층 밖에서 읽을 때는 `assets()`(`has`·`get`·`url`만 있다. 화면용 API가 쓴다) |
 
 - `origin`은 누가(`actor`: `user`·`agent`·`system`), 어디서(`surface`: `chat`·`view`·`api`·`history`), 어느 세션·턴·도구 호출에서, 왜(`intent`) 했는지다. 기록마다 남는다. `view`는 우리 화면에서 한 사용자 동작이다.
 - 프로젝트 폴더의 `.comfy-studio/`에 `records.jsonl`(기록 줄과 갱신 줄, 추가만 한다)과 `line.json`(히스토리의 끝 `tip`과 현재 위치 `at`)이 있다. 이 디렉터리는 프로젝트 계층만 읽고 쓴다.
@@ -140,7 +140,7 @@ export function apply(ctx: Context): void {
 
 ## 두 계약
 
-계획 2가 먼저 정해야 하는 것이다. 이 둘이 정해져야 계획 3(화면)과 계획 4(Comfy 연결)가 따로 갈 수 있다. **둘 다 아직 설계하지 않았다.**
+계획 2가 먼저 정해야 하는 것이다. 이 둘이 정해져야 계획 3(화면)과 계획 4(Comfy 연결)가 따로 갈 수 있다. 화면용 API는 2-2에서 만들었다. **카탈로그 계약은 아직 설계하지 않았다.**
 
 ### 카탈로그 계약
 
@@ -164,21 +164,44 @@ export function apply(ctx: Context): void {
 5. 기존 `ComfyBackend` 인터페이스(네 서버 종류에서 이미 쓰이고 있다)를 카탈로그 아래의 내부 인터페이스로 그대로 둘 수 있는가.
 6. 기존 규칙 "`/prompt` 검증 실패는 기록을 남기지 않는다"를 어떻게 지키는가. 위 흐름에서는 `pending` 기록이 구현 실행(서버 제출)보다 먼저 추가된다. 서버 검증을 사전 조건 단계로 올릴지, 제출 전에 실패한 기록을 실행으로 세지 않을지를 정한다.
 
-### 화면용 API
+### 화면용 API — `@cs/api`
 
-DreamVerse는 dsh의 `connection` 서비스에 fetch 라우트를, `webServer`에 이벤트 스트림과 파일 라우트를 건다. 이 모양을 가져온다.
+2-2에서 DreamVerse `@dv/api`를 옮겼다(`packages/api`, 호스트 절반만 있다). 서비스는 `ctx.csApi`이고 번들의 행은 `cs-api`다. 화면이 프로젝트를 읽고 바꾸는 유일한 길이다. 아래의 동작은 단위 시험과 조합 시험으로 확인했다(**띄워 확인**, 2026-11-28: 실제 dsh에 로그인한 브라우저 페이지에서 `fetch`와 `EventSource`로 불렀다).
 
-| DreamVerse 경로                                         | 하는 일                          |
-| ------------------------------------------------------- | -------------------------------- |
-| `/api/dv/state`                                         | 현재 상태를 JSON 문서 하나로     |
-| `/api/dv/operations`, `/api/dv/operation`, `/api/dv/operation/check` | 연산 목록, 실행, 사전 확인 |
-| `/api/dv/history`, `/api/dv/undo`, `/api/dv/redo`       | 기록 한 쪽, 실행 취소, 다시 실행 |
-| `/api/dv/projects` 와 `/rename`·`/delete`·`/summary`·`/untitled` | 프로젝트 관리, 새 프로젝트의 폴더 경로 |
-| `/api/dv/assets/import`, `/dv/assets`                   | 에셋 가져오기, 파일 내려주기     |
-| `/api/dv/models`                                        | 카탈로그                         |
-| `/dv/events`                                            | 기록 추가·갱신·현재 위치 이동의 스트림 |
+| 경로 | 메서드 | 요청 | 응답 |
+| --- | --- | --- | --- |
+| `/api/cs/projects` | GET | — | `WireProject[]`(`{id, title, created_at, path}`), 최신순 |
+| `/api/cs/projects` | POST | `{title, surface?}` 또는 `{folder, session}` | `ProjectInfo`. 앞의 것은 프로젝트 폴더 안에 새 폴더를 만들고, 뒤의 것은 채팅 세션의 폴더를 프로젝트로 만든다. 같은 제목이 있으면 번호를 붙인다 |
+| `/api/cs/projects/untitled` | POST | `{name}` | `{path}`: 프로젝트 폴더 안의 새 빈 폴더(프로젝트가 없는 채팅이 쓸 폴더) |
+| `/api/cs/projects/summary` | GET | `project?` | `WireProjectSummary[]`(`{project, cover, edited_at}`). 표지는 끝난 기록의 첫 이미지 출력이다 |
+| `/api/cs/projects/rename` | POST | `{project, title}` | `{title}`(겹치면 ` 2`, ` 3` …) |
+| `/api/cs/projects/delete` | POST | `{project}` | `{ok}`. 목록에서 빼고 폴더는 남긴다 |
+| `/api/cs/state` | GET | `project` | `WireState`(`{project, head, tip, components, assets}`): 현재 위치 `head`, 히스토리의 끝 `tip`, 리듀서마다의 조각, 현재 상태가 가리키는 에셋 |
+| `/api/cs/operations` | GET | — | `WireOperation[]`: `readOnly`가 아닌 연산의 선언(`name`, `label?`, `description`, `inputs`, `params`, `outputs` …) |
+| `/api/cs/operation` | POST | `{project, operation, inputs?, params?, intent?, surface?, session?, based_on?, supersedes?}`. `inputs`는 `[{role, ref}]` | 기록(`ProjectRecord`). 끝났거나, 끝나지 않은 기록을 입력으로 받았으면 `pending` |
+| `/api/cs/operation/check` | POST | 위와 같다 | `{problems}`. 아무것도 쓰지 않고, 지금 실행하면 거절될 문장을 준다 |
+| `/api/cs/undo` | POST | `{project, to?}` | `{tip, at}`. `to`를 주면 그 단계로 간다 |
+| `/api/cs/redo` | POST | `{project}` | `{tip, at}` |
+| `/api/cs/stale/accept` | POST | `{project, record, session?, surface?}` | `proj.stale_accept` 기록 |
+| `/api/cs/history` | POST | `{project, actor?, component?, operation?, kind?, status?, session?, turn?, tool_call?, records?, before?, limit?}` | `WireHistory`(`{entries, assets}`). `limit`은 1~200, 기본 50 |
+| `/cs/events?project=<id>` | GET | — | `text/event-stream`: `ready` 뒤에 `record`(기록 추가), `update`(기록 갱신), `line`(현재 위치나 끝이 바뀜) |
 
-우리 경로 접두사(가칭 `/api/cs/…`, `/cs/events`)와 인증(dsh 세션 쿠키를 그대로 타는지)은 2-2에서 정한다.
+- **쓰는 요청은 전부 프로젝트 계층의 연산 실행을 지난다.** `actor: "user"`로 부르고, 기록의 `surface`는 요청의 `surface`가 `chat`이면 `chat`, 그 밖은 `view`다. `session`을 주면 그 채팅 세션이 기록에 남는다.
+- **오류**는 라우트와 스트림이 같은 본문 `{error, code, ...details}`로 답한다: `invalid_params`·`invalid_inputs`·`input_not_ready`·`read_only_operation`(400), `unknown_project`·`unknown_record`·`unknown_operation`·`unknown_asset`(404), 그 밖의 프로젝트 계층 거절(409. 예: `nothing_to_undo`), `internal_error`(500. 호스트 로그에도 남는다). 인증에서 걸린 요청(401·403)은 dsh가 답하는 꼴이라 이 본문이 아니다.
+- 제목과 폴더 이름은 제어 문자가 없고 200바이트 이하여야 한다. 만들기는 한 번에 하나씩 처리되어 동시에 온 같은 제목도 서로 다른 번호를 받는다. 읽기 전용 연산은 이 API로 실행하지 못한다.
+- **인증은 dsh의 것을 그대로 탄다.** fetch 라우트는 dsh `connection` 서비스의 정확 일치 라우트라, dsh가 Host·Origin과 브라우저 세션 쿠키를 검사한 뒤에 부르고 소유자만 닿는다. 이벤트 스트림은 `webServer`의 날 라우트라 요청마다 `connection.admit`으로 같은 검사를 하고 소유자일 때만 연다. `connection`이 없으면 스트림 라우트를 등록하지 않는다. 쿠키 없는 요청은 둘 다 401이다(**띄워 확인**). 플러그인이 내려가면 열린 스트림을 모두 끝내고(브라우저의 `EventSource`가 다시 잇는다), 읽지 않는 클라이언트의 버퍼가 4MiB를 넘어도 끝낸다.
+- **화면은 상태를 들고 있지 않는다.** 스트림에 이벤트가 오면 `/api/cs/state`를 다시 읽는다. 상태는 통째로 온다(부분 갱신 라우트는 없다).
+- **에셋**은 프로젝트 계층에 등록된 에셋 저장소에서 읽는다(`ctx.csProject.assets()`). 항목은 `{id, mime, name, url}`이고 상태의 `assets`에는 `made_by`(만든 연산)가 붙는다. 에셋 기능 컴포넌트(2-3)가 생기기 전에는 빈 저장소라 늘 `[]`이다.
+- 브라우저가 받는 JSON의 타입은 `@cs/api/wire`에 있다(`WireState`, `WireOperation`, `WireHistory`, `WireProject`, `ProjectAsset`). 브라우저 절반은 `import type`으로 가져다 쓴다.
+- 설정(번들의 `cs-api` 행): `keepaliveMs`(15000, 1000 이상. 스트림이 조용할 때 주석 줄을 보내는 간격).
+
+DreamVerse의 라우트 가운데 아직 없는 것과 생길 곳:
+
+| DreamVerse 경로 | 하는 일 | 우리 쪽 |
+| --- | --- | --- |
+| `/api/dv/assets/import`, `/dv/assets` | 에셋 가져오기, 파일 내려주기 | 에셋 기능 컴포넌트와 함께(2-3) |
+| `/api/dv/models`, `/api/dv/tasks`, 스트림의 `models` 이벤트 | 카탈로그 | 카탈로그 계약이 정해진 뒤(2-1 이후) |
+| `/api/dv/skills`, `/api/dv/skills/upload` | 스킬 묶음 업로드 | 가져오지 않는다. 스킬 관리를 dsh에 맡길지는 1-4가 정한다 |
 
 ## 화면 구조
 
@@ -240,7 +263,7 @@ DreamVerse처럼 기본 dsh 화면을 교체한다. 방법과 확인 결과는 `
 packages/
   bundle/            @cs/bundle        cordis.patch.yml의 행 모음(프로필 계층), 에이전트 프리셋
   project/           @cs/project       프로젝트 계층(2-0)
-  api/               화면용 API
+  api/               @cs/api           화면용 API(2-2)
   catalog/           카탈로그 계약(타입과 서비스 정의)
   comfy/             ComfyUI 연동 라이브러리(서버 종류별 클라이언트, 그래프, 프로토콜). dsh에 의존하지 않는다
   comfy-provider/    카탈로그에 등록하는 생성 프로바이더, 실행기
@@ -259,7 +282,6 @@ scripts/             프로필 만들기, 실행, 합성 구성 찍기(`dsh.ts`,
 | 접속·배포 구성                                                                        | 1-5         |
 | UI 언어(한국어 언어 팩 여부, 문자열을 로케일 사전으로 옮길지)                         | 1-6         |
 | 카탈로그 계약                                                                         | 2-1         |
-| 화면용 API의 경로와 인증                                                              | 2-2         |
 | 기존 관계형 데이터(폴더, 태그, 검토 상태, 배치)를 기록과 리듀서로 옮기는 모양         | 2-3         |
 | 프로젝트를 넘는 데이터의 자리                                                         | 2-3, 4-1    |
 | 화면에 쓸 제품 이름과 마크, 숨길 기본 요소, 프로젝트 하나에 둘 세션 수                | 3-0         |
