@@ -5,14 +5,15 @@
  */
 
 /**
- * The failure code of a record whose request the server refused, so that nothing was queued. A caller that runs an
- * entry inside an operation fails the record with this code (`OperationFailure` of `@cs/project`); what counts runs,
- * such as a generation list or a batch, leaves records with this code out.
+ * The failure code of a record whose request the server refused without executing it. A caller that runs an entry
+ * inside an operation fails the record with this code (`OperationFailure` of `@cs/project`) when the run rejects with
+ * {@link RequestRejected}; what counts runs, such as a generation list or a batch, leaves records with this code out.
  */
 export const NOT_QUEUED = "not_queued";
 
 /**
- * An entry's server refused a request, so nothing was queued. `run` rejects with it before any event.
+ * An entry's server refused a request without executing it. `run` rejects with it before any event when the server
+ * answers the submission itself, and after `queued` when the server only tells later, as a job queue does.
  */
 export class RequestRejected extends Error {
   /** Every reason the server gave, each one sentence the agent can read; never empty. */

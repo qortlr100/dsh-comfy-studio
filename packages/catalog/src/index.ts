@@ -170,19 +170,39 @@ export default class CsCatalog extends Service {
    */
   whileServing(primitives: readonly PrimitiveId[], start: () => () => void): () => void {
     let stop: (() => void) | null = null;
+    let syncing = false;
+    let again = false;
     // The registration starts with the first entry of one of the primitives and stops when the last one is removed.
     const sync = (): void => {
-      const serving = this.list().some((entry) => servesPrimitive(entry, primitives));
-      if (serving === (stop !== null)) return;
-      stop?.();
-      stop = serving ? start() : null;
+      // `start` or its disposer may itself change the catalog; that change is handled by this call, once they return.
+      if (syncing) {
+        again = true;
+        return;
+      }
+      syncing = true;
+      try {
+        do {
+          again = false;
+          const serving = this.list().some((entry) => servesPrimitive(entry, primitives));
+          if (serving && stop === null) {
+            stop = start();
+          } else if (!serving && stop !== null) {
+            const dispose = stop;
+            stop = null;
+            dispose();
+          }
+        } while (again);
+      } finally {
+        syncing = false;
+      }
     };
     sync();
     const unlisten = this.onChanged(sync);
     return () => {
       unlisten();
-      stop?.();
+      const dispose = stop;
       stop = null;
+      dispose?.();
     };
   }
 

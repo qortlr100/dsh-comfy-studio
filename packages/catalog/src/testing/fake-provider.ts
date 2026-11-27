@@ -22,6 +22,8 @@ export interface FakeGraphOptions {
   problems?: string[];
   /** When set, `run()` rejects with `RequestRejected(rejected)` before any event. */
   rejected?: string[];
+  /** When set, `run()` rejects with `RequestRejected(rejectedLate)` after `queued`, as a job queue does. */
+  rejectedLate?: string[];
   /** When set, `run()` rejects with `Error(failure)` after `queued` and one `progress`. */
   failure?: string;
   /** When set, `facts()` rejects with `Error(unreachable)`. */
@@ -45,7 +47,7 @@ export interface FakeGraphEntry extends CatalogEntry<"graph"> {
   readonly runs: GraphRequest[];
   /** Every asset the fake uploaded: the asset ID, the name it read and the byte length. */
   readonly uploads: Array<{ asset: AssetId; name: string; bytes: number }>;
-  /** The run IDs the fake server was asked to cancel. */
+  /** The run IDs the fake server was asked to cancel, each once. */
   readonly cancelled: string[];
 }
 
@@ -108,43 +110,62 @@ export function fakeGraphEntry(options: FakeGraphOptions = {}): FakeGraphEntry {
     runOptions: RunOptions,
   ): AsyncGenerator<GraphRunEvent> {
     const nodes = Object.keys(graph);
-    let asked = false;
+    let ended = false;
     // The server is asked once to cancel; whether it was still running decides what the iteration does next.
+    const cancel = (): void => {
+      if (!cancelled.includes(run)) cancelled.push(run);
+    };
     const checkAbort = (): void => {
       const signal = runOptions.signal;
       if (signal?.aborted !== true) return;
-      if (!asked) {
-        asked = true;
-        cancelled.push(run);
-      }
+      cancel();
       if (onAbort === "cancelled") {
+        ended = true;
         throw signal.reason instanceof Error ? signal.reason : new Error("aborted");
       }
     };
-    checkAbort();
-    yield { kind: "progress", node: nodes[0] ?? null, value: 1, max: 2 };
-    if (options.failure !== undefined) throw new Error(options.failure);
-    for (let index = 1; index <= outputCount; index += 1) {
+    try {
       checkAbort();
-      const name = `${prefix}-${String(index)}.png`;
-      const path = join(runOptions.dir, name);
-      writeFileSync(path, fakeOutput(name));
-      yield {
-        kind: "output",
-        node: nodes[nodes.length - 1] ?? "0",
-        name,
-        mime: "image/png",
-        path,
-        preview: false,
-      };
+      if (options.rejectedLate !== undefined) {
+        ended = true;
+        throw new RequestRejected(options.rejectedLate);
+      }
+      yield { kind: "progress", node: nodes[0] ?? null, value: 1, max: 2 };
+      if (options.failure !== undefined) {
+        ended = true;
+        throw new Error(options.failure);
+      }
+      for (let index = 1; index <= outputCount; index += 1) {
+        checkAbort();
+        const name = `${prefix}-${String(index)}.png`;
+        const path = join(runOptions.dir, name);
+        writeFileSync(path, fakeOutput(name));
+        yield {
+          kind: "output",
+          node: nodes[nodes.length - 1] ?? "0",
+          name,
+          mime: "image/png",
+          path,
+          preview: false,
+        };
+      }
+      ended = true;
+      yield { kind: "done" };
+    } finally {
+      // The caller left its loop before the run ended: a stop, like an abort.
+      if (!ended) cancel();
     }
-    yield { kind: "done" };
   }
 
   async function* runGraph(
     request: GraphRequest,
     runOptions: RunOptions,
   ): AsyncGenerator<GraphRunEvent> {
+    // A call that was stopped before it started submits nothing.
+    if (runOptions.signal?.aborted === true) {
+      const reason: unknown = runOptions.signal.reason;
+      throw reason instanceof Error ? reason : new Error("aborted");
+    }
     runs.push(request);
     if (options.rejected !== undefined) throw new RequestRejected(options.rejected);
     // Never change the caller's graph: the copy is what the "server" gets.
@@ -163,14 +184,21 @@ export function fakeGraphEntry(options: FakeGraphOptions = {}): FakeGraphEntry {
     const number = counter;
     const id = `fake-run-${String(number)}`;
     queuedGraphs.push(graph);
-    yield { kind: "queued", run: id, graph };
-    if (options.hold !== undefined) {
-      const aborted = whenAborted(runOptions.signal);
-      try {
-        await Promise.race([options.hold, aborted.promise]);
-      } finally {
-        aborted.stop();
+    let handedOver = false;
+    try {
+      yield { kind: "queued", run: id, graph };
+      if (options.hold !== undefined) {
+        const aborted = whenAborted(runOptions.signal);
+        try {
+          await Promise.race([options.hold, aborted.promise]);
+        } finally {
+          aborted.stop();
+        }
       }
+      handedOver = true;
+    } finally {
+      // The caller left its loop right after `queued`: the run is on the server and must be cancelled.
+      if (!handedOver && !cancelled.includes(id)) cancelled.push(id);
     }
     yield* finish(id, `fake-${String(number)}`, graph, runOptions);
   }
@@ -191,9 +219,9 @@ export function fakeGraphEntry(options: FakeGraphOptions = {}): FakeGraphEntry {
         system: { version: "0.0.0" },
       });
     },
-    validate(request) {
+    validate(draft) {
       const problems = [...(options.problems ?? [])];
-      if (Object.keys(request.graph).length === 0) problems.push("The graph has no nodes.");
+      if (Object.keys(draft.graph).length === 0) problems.push("The graph has no nodes.");
       return Promise.resolve(problems);
     },
     run: runGraph,

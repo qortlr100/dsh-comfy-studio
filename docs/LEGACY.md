@@ -221,4 +221,4 @@ project_files project_file_versions tags asset_tags presets preset_versions agen
 새 구조에서 그대로는 서지 않는 규칙이 둘 있다.
 
 - 첫째·둘째 규칙(직접 지우지 않는다, 직접 쓰지 않는다)은 기존 앱에서 에이전트의 도구가 우리가 만든 것뿐이라 지켜졌다. dsh의 기본 에이전트 프리셋은 셸과 파일 도구를 준다. 에이전트에게 무엇을 줄지는 미정이다(`docs/DECISIONS.md` "미정", `docs/DSH.md` "에이전트 프리셋").
-- "`/prompt` 검증 실패는 기록을 남기지 않는다"는 프로젝트 계층의 실행 흐름(`pending` 기록이 서버 제출보다 먼저 추가된다)과 순서가 맞지 않는다. 2-1에서 푼다(`docs/ARCHITECTURE.md` "카탈로그 계약"의 질문 6).
+- "`/prompt` 검증 실패는 기록을 남기지 않는다"는 프로젝트 계층의 실행 흐름(`pending` 기록이 서버 제출보다 먼저 추가된다)과 순서가 맞지 않는다. 2-1에서 사용자가 정했다: 큐에 넣지 않는 검증은 기록을 쓰기 전에 하고, 그래도 서버가 제출을 거절하면 기록은 `failed`로 남되 `not_queued`로 표시해 실행으로 세지 않는다(`docs/ARCHITECTURE.md` "카탈로그 계약").

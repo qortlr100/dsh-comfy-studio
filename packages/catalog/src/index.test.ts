@@ -204,7 +204,7 @@ describe("summary", () => {
     catalog.register(fakeGraphEntry({ target: "fine", label: "Fine" }));
     catalog.register({
       ...fakeGraphEntry({ target: "stuck" }),
-      facts: () => new Promise(() => undefined),
+      facts: () => new Promise<never>(() => undefined),
     });
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     onTestFinished(() => {
@@ -219,5 +219,33 @@ describe("summary", () => {
       facts: null,
       problem: "No answer within 1000 ms.",
     });
+  });
+});
+
+describe("whileServing with a consumer that changes the catalog itself", () => {
+  it("starts once when start registers an entry, and disposes once when the last entry leaves", async () => {
+    const catalog = await mount();
+    let starts = 0;
+    let stops = 0;
+    let removeOwn: (() => void) | undefined;
+    catalog.whileServing(["graph"], () => {
+      starts += 1;
+      // A change of the catalog from inside `start`: it must not start the consumer a second time.
+      removeOwn = catalog.register(fakeGraphEntry({ target: `own-${String(starts)}` }));
+      return () => {
+        stops += 1;
+        removeOwn?.();
+      };
+    });
+
+    const removeFirst = catalog.register(fakeGraphEntry({ target: "first" }));
+    expect(starts).toBe(1);
+    removeFirst();
+    // The consumer's own entry still serves the primitive.
+    expect(stops).toBe(0);
+    removeOwn?.();
+    expect(stops).toBe(1);
+    expect(starts).toBe(1);
+    expect(catalog.list()).toEqual([]);
   });
 });

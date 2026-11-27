@@ -27,14 +27,15 @@ export interface GraphNode {
 }
 
 /**
- * The generation primitives: one row per kind of request, with the facts an entry reports, the request, one event of
- * a run, and the entry fields that only this primitive has. The catalog declares only `graph`. A package that defines
- * another primitive declares its row through declaration merging:
- * `declare module "@cs/catalog" { interface PrimitiveTypes { <name>: { facts; request; event; entry } } }`.
+ * The generation primitives: one row per kind of request, with the facts an entry reports, the draft that `validate`
+ * checks, the request, one event of a run, and the entry fields that only this primitive has. The catalog declares
+ * only `graph`. A package that defines another primitive declares its row through declaration merging:
+ * `declare module "@cs/catalog" { interface PrimitiveTypes { <name>: { facts; draft; request; event; entry } } }`.
  */
 export interface PrimitiveTypes {
   graph: {
     facts: GraphFacts;
+    draft: GraphDraft;
     request: GraphRequest;
     event: GraphRunEvent;
     entry: GraphLookups;
@@ -83,8 +84,19 @@ export interface GraphRequest {
 }
 
 /**
- * One event of a graph run, in order: one `queued`, any number of `progress` and `output` events, then one `done`.
- * A run that fails rejects the iteration instead of yielding `done`.
+ * A graph request as it stands before its inputs are resolved to assets, which is what `validate` checks: the graph,
+ * and where the media inputs will go. A `GraphRequest` is one too.
+ */
+export interface GraphDraft {
+  graph: Graph;
+  /** The node inputs that a media input fills; the graph's literal there is a placeholder and is not judged. */
+  media: Array<Pick<GraphMediaInput, "node" | "input">>;
+}
+
+/**
+ * One event of a graph run, in order: one `queued`, any number of `progress` and `output` events, then one `done`,
+ * after which the iteration completes. A run that fails rejects the iteration instead of yielding `done`; an iteration
+ * that completes without `done` did not finish.
  */
 export type GraphRunEvent =
   /** The server accepted the run. `graph` is what was sent, with the uploaded names of the media inputs. */
@@ -92,8 +104,9 @@ export type GraphRunEvent =
   /** The node that is executing and, when it reports steps, how far it is; null where the server does not say. */
   | { kind: "progress"; node: string | null; value: number | null; max: number | null }
   /**
-   * One output file, written into the caller's directory. `preview` is true for a temporary output, which a run
-   * yields only when it saved none.
+   * One output file: `path` is a file directly inside the caller's directory, with a name no other output of the run
+   * has, complete when the event is yielded. `name` is the name to show, as the server gave it. `preview` is true for
+   * a temporary output, which a run yields only when it saved none.
    */
   | { kind: "output"; node: string; name: string; mime: string; path: string; preview: boolean }
   | { kind: "done" };
@@ -128,7 +141,10 @@ export interface GraphLookups {
 
 /** What a run needs from its caller. */
 export interface RunOptions {
-  /** An existing directory that the provider writes output files into. The caller owns and removes it. */
+  /**
+   * An existing directory that the provider writes output files into. The caller owns it and removes it after the
+   * iteration has ended; the provider writes nothing into it from then on.
+   */
   dir: string;
   /** Reads the assets that the request names. */
   assets: Pick<AssetStore, "get" | "read">;
@@ -142,55 +158,73 @@ export interface RunOptions {
  *
  * Entries must honor these semantics:
  * - `facts()` resolves with values read from the server and rejects when the server cannot be reached.
- * - `validate(request)` queues nothing. It resolves with every reason the request cannot run that the provider can
- *   tell without queuing, and with an empty list when it finds none. It must answer quickly, from what the provider
- *   already holds where it can: callers run it before they write a record, under the project lock. It rejects when it
- *   cannot tell because the server cannot be reached.
- * - `run(request, options)` starts when it is first iterated. It rejects with `RequestRejected` when the server
- *   refuses the request, in which case nothing was queued and no event was yielded. Otherwise it yields the events of
- *   the primitive in order, and rejects for a failure after `queued`. The provider alone tracks the run, decides that
- *   it finished and collects its outputs.
+ * - `validate(draft, signal)` queues nothing. It resolves with every reason the request cannot run that the provider
+ *   can tell without queuing, and with an empty list when it finds none. It does not judge the literal at an input
+ *   that `draft.media` names. Callers run it before they write a record, under the project lock, so it answers from
+ *   what the provider already holds (a cached node catalog): when it holds nothing it resolves with an empty list and
+ *   leaves the refusal to `run`, or rejects at once; it never waits on the server for long, and it stops when
+ *   `signal` aborts.
+ * - `run(request, options)` does nothing until it is iterated, and is iterated once. It rejects with
+ *   `RequestRejected` when the server refuses the request without executing it: before any event where the server
+ *   answers the submission itself, or after `queued` where the server only tells later (a job queue). Otherwise it
+ *   yields the events of the primitive in order, and rejects for a failure of the run. After `done` the iteration
+ *   completes; it never rejects then. The provider alone tracks the run, decides that it finished and collects its
+ *   outputs.
  * - Aborting `options.signal` asks the server to cancel. When the server has already finished the run, the iteration
  *   still yields the outputs and `done`; otherwise it rejects with an `Error` (the signal's reason when that is
- *   one). The caller tells a stop from a failure by its own signal, not by the error.
- * - Two outputs of one run may hold the same bytes; a caller must not take the files of a run to be distinct.
+ *   one) once the server's end state is known. A signal that is already aborted when the iteration starts submits
+ *   nothing. The caller tells a stop from a failure by its own signal, not by the error.
+ * - Ending the iteration early (`return()`: the caller left its loop) is a stop too: the provider asks the server to
+ *   cancel a run that has not finished. However the iteration ends, the provider releases what it holds for the run
+ *   (connections, the server's copy of the outputs where the server keeps one) and writes nothing more into
+ *   `options.dir`.
+ * - Two outputs of one run may hold the same bytes; a caller must not take the contents of a run's files to be
+ *   distinct.
  * - `resume(run, options)`, where present, follows a run that the server accepted earlier, with the events after
- *   `queued`.
+ *   `queued`, under the same rules.
+ * - Nothing an entry gives out holds a secret: the values of `facts()`, the problems of `validate`, the reasons of
+ *   `RequestRejected` and the messages of the errors it rejects with reach records on disk, the agent and the
+ *   browser. A provider strips credentials, keys and URLs that carry them before it reports a server's answer.
  */
-export type CatalogEntry<P extends PrimitiveId = PrimitiveId> = CatalogKey<P> &
-  PrimitiveTypes[P]["entry"] & {
-    /** What this entry is, for the agent and the user to choose between entries. */
-    description: string;
-    /**
-     * @returns the facts of this entry.
-     * @throws Error when the server cannot be reached.
-     */
-    facts(): Promise<PrimitiveTypes[P]["facts"]>;
-    /**
-     * Check one request without queuing it.
-     * @param request - the request as `run` would receive it.
-     * @returns the problems, each one sentence the agent can read; empty when none was found.
-     * @throws Error when the server cannot be reached.
-     */
-    validate(request: PrimitiveTypes[P]["request"]): Promise<string[]>;
-    /**
-     * Run one request.
-     * @param request - the request of the entry's primitive.
-     * @param options - the output directory, the asset reader and the stop signal.
-     * @returns the events of the run.
-     */
-    run(
-      request: PrimitiveTypes[P]["request"],
-      options: RunOptions,
-    ): AsyncIterable<PrimitiveTypes[P]["event"]>;
-    /**
-     * Follow a run that was accepted earlier, for example after a restart.
-     * @param run - the run ID of its `queued` event.
-     * @param options - the output directory, the asset reader and the stop signal.
-     * @returns the events of the run after `queued`.
-     */
-    resume?(run: string, options: RunOptions): AsyncIterable<PrimitiveTypes[P]["event"]>;
-  };
+export type CatalogEntry<P extends PrimitiveId = PrimitiveId> = P extends PrimitiveId
+  ? CatalogKey<P> & PrimitiveTypes[P]["entry"] & CatalogEntryMethods<P>
+  : never;
+
+/** The members every entry has; see {@link CatalogEntry} for what they must do. */
+export interface CatalogEntryMethods<P extends PrimitiveId> {
+  /** What this entry is, for the agent and the user to choose between entries. */
+  description: string;
+  /**
+   * @returns the facts of this entry.
+   * @throws Error when the server cannot be reached.
+   */
+  facts(): Promise<PrimitiveTypes[P]["facts"]>;
+  /**
+   * Check one request without queuing it.
+   * @param draft - the request before its inputs are resolved; a request serves as one.
+   * @param signal - stops the check.
+   * @returns the problems, each one sentence the agent can read; empty when none was found.
+   * @throws Error when the provider cannot tell and will not leave it to `run`.
+   */
+  validate(draft: PrimitiveTypes[P]["draft"], signal?: AbortSignal): Promise<string[]>;
+  /**
+   * Run one request.
+   * @param request - the request of the entry's primitive.
+   * @param options - the output directory, the asset reader and the stop signal.
+   * @returns the events of the run.
+   */
+  run(
+    request: PrimitiveTypes[P]["request"],
+    options: RunOptions,
+  ): AsyncIterable<PrimitiveTypes[P]["event"]>;
+  /**
+   * Follow a run that was accepted earlier, for example after a restart.
+   * @param run - the run ID of its `queued` event.
+   * @param options - the output directory, the asset reader and the stop signal.
+   * @returns the events of the run after `queued`.
+   */
+  resume?(run: string, options: RunOptions): AsyncIterable<PrimitiveTypes[P]["event"]>;
+}
 
 /** A filter of `csCatalog.list`: an entry matches when it equals every given field. */
 export type CatalogFilter = Partial<Pick<CatalogKey, "primitive" | "provider">>;

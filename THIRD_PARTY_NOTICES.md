@@ -9,9 +9,9 @@
 | 저장소      | https://github.com/fastvideo-project/dreamverse-harness                                      |
 | 커밋        | `ec0ac62760e3b7b2ba058941eaf6a15c3a16a3cf`                                                    |
 | 라이선스    | MIT                                                                                          |
-| 가져온 것   | `packages/dv/project/`의 `src/`, `tests/`, `CONTRACTS.md`. `packages/dv/api/`의 `src/` 가운데 `index.ts`, `api.ts`, `wire.ts`, `events.ts`, `summaries.ts`, `projects-admin.ts` |
-| 이 저장소의 자리 | `packages/project/`(`@cs/project`). 시험은 `src/*.test.ts`와 `src/testing/`으로 옮겼다. `packages/api/`(`@cs/api`) |
-| 가져온 때   | 2026-11-27(단계 2-0), 2026-11-28(단계 2-2)                                                   |
+| 가져온 것   | `packages/dv/project/`의 `src/`, `tests/`, `CONTRACTS.md`. `packages/dv/api/`의 `src/` 가운데 `index.ts`, `api.ts`, `wire.ts`, `events.ts`, `summaries.ts`, `projects-admin.ts`. `packages/dv/models/`의 `src/index.ts`와 `src/types.ts`의 틀 |
+| 이 저장소의 자리 | `packages/project/`(`@cs/project`). 시험은 `src/*.test.ts`와 `src/testing/`으로 옮겼다. `packages/api/`(`@cs/api`). `packages/catalog/`(`@cs/catalog`) |
+| 가져온 때   | 2026-11-27(단계 2-0), 2026-11-28(단계 2-2, 2-1)                                              |
 
 `packages/project/`에서 바꾼 것(상세는 `docs/archive/PLAN_2-0.md`):
 
@@ -31,6 +31,15 @@
 - 동작을 고친 곳: 이벤트 스트림은 Connection이 소유자로 받아들인 요청에만 열리고, Connection이 없으면 등록하지 않는다(원본은 Connection이 없으면 모든 요청에 연다). 플러그인이 내려가면 열린 스트림을 끝내고, 읽지 않는 클라이언트의 버퍼가 4MiB를 넘어도 끝낸다. 프로젝트 만들기는 한 번에 하나씩 처리한다(원본은 동시에 온 요청이 같은 제목을 받는다). 제목과 폴더 이름의 제어 문자와 200바이트 넘는 길이, 없는 폴더, 읽기 전용 연산의 실행은 400으로 거절한다(원본은 500이거나, 연산을 돌린 뒤 거절한다). 입력 역할은 `Map`으로 모은다.
 - 시험은 옮기지 않고 새로 썼다. 원본의 시험은 여기에 없는 영상 컴포넌트로 상태를 만든다.
 - 이 저장소의 코드 규칙: 지울 수 있는 TypeScript 문법만, Prettier, oxlint.
+
+`packages/catalog/`에서 가져온 것과 바꾼 것(상세는 `docs/archive/PLAN_2-1.md`):
+
+- 가져온 것은 틀이다: 서비스의 `register`·`get`·`list`·`onChanged`·`whileServing`과 요약을 만드는 방식(`catalog()` → `summary()`), 프리미티브마다의 타입 표(`PrimitiveTypes`)와 그것으로 항목의 타입을 정하는 방식.
+- 이름: `@dv/models` → `@cs/catalog`, `dvModels` → `csCatalog`, `ModelEntry` → `CatalogEntry`, `ModelKey` → `CatalogKey`.
+- 새로 정한 것: 열쇠(`primitive`, `provider`, `target`), `graph` 프리미티브의 요청·이벤트·사실·서버 조회, 항목의 `validate`·`run`·`resume`, 제출 거절(`RequestRejected`).
+- 가져오지 않은 것: 작업 구분(`TaskMap`)과 작업 이름의 표시 글, 에이전트 도구(`dv_models_list`, `dv_models_get`)와 모델 고르기 스킬, 항목의 프롬프트 스킬, 대화별 모델 선택(`selection.ts`), 모델 적재 제어, 렌더 타이밍 읽기.
+- 동작을 고친 곳: 열쇠의 부분에 `/`가 들어가도 서로 섞이지 않는다(원본은 `/`로 이어 붙인 글을 열쇠로 쓴다). 듣는 쪽이 던져도 등록과 다른 듣는 쪽이 그대로 간다(원본은 등록이 던진다). 요약은 닿지 못한 항목에 이유를 싣는다.
+- 시험은 옮기지 않고 새로 썼다.
 
 DreamVerse Harness는 DeepSeek Harness의 포크이고, 가져온 코드의 저작권 표기는 아래 두 줄이다.
 

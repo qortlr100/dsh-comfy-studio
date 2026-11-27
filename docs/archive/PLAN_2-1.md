@@ -78,8 +78,10 @@ Claude가 고른 기본값이다. 사용자가 고른 세 안 아래의 세부�
 - **열쇠**: `{ primitive, provider, target }`. 지금 프리미티브는 `graph` 하나이고, `target`은 프로바이더가 서버에 붙인 id다.
 - **항목**(`CatalogEntry<P>`): `description`, `facts()`, `validate(request)`, `run(request, { dir, assets, signal })`, 선택 `resume(run, options)`. `graph` 항목은 선택 조회 `nodeCatalog()`, `listModelFiles(folder)`, `modelFileMetadata(folder, file)`, `listRuns(limit)`을 더 가질 수 있다.
 - **요청**(`GraphRequest`): `graph`(보낼 그래프 전체)와 `media`(`{ node, input, asset }`의 목록).
-- **이벤트**(`GraphRunEvent`): `queued{run, graph}` → `progress{node, value, max}`* → `output{node, name, mime, path, preview}`* → `done`. 실패는 순회가 거절된다. 서버가 제출을 거절하면 이벤트 없이 `RequestRejected`로 거절된다.
+- **이벤트**(`GraphRunEvent`): `queued{run, graph}` → `progress{node, value, max}`* → `output{node, name, mime, path, preview}`* → `done`. 실패는 순회가 거절된다. 서버가 그래프를 실행하지 않고 거절하면 `RequestRejected`로 거절된다(제출에 바로 답하는 서버는 이벤트 없이, 작업 큐는 `queued` 뒤에).
 - **중지**: `signal`이 중지되면 프로바이더가 서버에 취소를 보낸다. 서버가 이미 끝냈으면 출력과 `done`까지 내고, 아니면 `Error`로 거절한다.
+- **순회의 끝**: `done` 뒤에 순회가 끝나고 그 뒤로는 거절하지 않는다. 부르는 쪽이 일찍 그만두면 프로바이더가 실행을 취소한다. 어떻게 끝나든 프로바이더는 쥔 것을 놓고 `dir`에 더 쓰지 않는다.
+- **검증**: `validate(draft, signal?)`는 입력이 풀리기 전의 요청(그래프와 미디어 입력의 자리)을 받는다.
 - **서비스**(`ctx.csCatalog`): `register(entry)`, `get(key)`, `list(filter?)`, `onChanged(listener)`, `whileServing(primitives, start)`, `summary()`.
 
 ## 시험
@@ -107,3 +109,53 @@ Claude가 고른 기본값이다. 사용자가 고른 세 안 아래의 세부�
 | C | 화면용 API 라우트와 이벤트, 조합 시험 | 지휘 세션 |
 | D | 구현과 독립된 리뷰 | 상위 서브 에이전트 하나 |
 | E | 문서 | 지휘 세션 |
+
+## 결과
+
+2026-11-28에 만들었다.
+
+- `packages/catalog`(`@cs/catalog`): `src/types.ts`(계약 타입), `src/index.ts`(서비스 `ctx.csCatalog`), `src/rejected.ts`(`RequestRejected`, `NOT_QUEUED`), `src/testing/fake-provider.ts`(가짜 생성 프로바이더). 번들의 행은 `cs-catalog`다.
+- 프로젝트 계층에 더한 것: `OperationFailure`(연산이 기록의 실패 코드를 정한다), 에셋 리더의 `read`. `packages/project/CONTRACTS.md`에 적었다.
+- 화면용 API에 더한 것: `GET /api/cs/catalog`, 스트림의 `catalog` 이벤트. 카탈로그 서비스가 없어도 API는 뜬다.
+- 시험: 카탈로그 단위 시험 33개(서비스 16, 끝까지 도는 시험 17), 프로젝트 계층 1개, 화면용 API 5개를 더했다. 저장소 전체로 단위 시험 528개, 조합 시험 11개(카탈로그 1개 추가)가 통과한다. `pnpm -s dsh:config`에 `cs-catalog` 행이 보인다.
+- **띄워 확인**(2026-11-28, 조합 시험): 실제 dsh에서 번들의 행이 서비스를 올리고, 프로바이더 플러그인이 등록한 항목이 로그인한 브라우저의 `GET /api/cs/catalog`에 보이고, 등록과 해제가 `EventSource`의 `catalog` 이벤트로 오고, 연산이 열쇠로 항목을 찾아 실행의 흐름을 끝까지 읽는다.
+- **확인하지 못한 것**: 실제 ComfyUI 서버와 서버리스 백엔드로는 돌리지 않았다. 계약이 실제 서버에 맞는지는 4-2가 프로바이더를 만들며 확인한다. 조합 시험의 프로필에는 에셋 저장소가 없어 출력 파일을 에셋으로 넣는 것은 단위 시험에서만 봤다.
+
+### 계획과 달라진 것
+
+| 계획 | 실제 | 이유 |
+| --- | --- | --- |
+| 요청의 미디어 입력을 프로바이더가 어떻게 읽는지 적지 않았다 | `run`의 옵션에 에셋 리더(`assets`)를 넣었다. 프로젝트 계층의 리더에 `read`를 더했다 | 프로바이더가 프로젝트 계층의 서비스를 주입하지 않게 했다 |
+| 거절한 기록은 "보고에" 큐에 가지 않았다고 적는다 | 기록의 실패 코드를 `not_queued`로 남긴다. 프로젝트 계층에 `OperationFailure`를 더했다 | 실패한 기록은 보고를 싣지 못한다. 오류 코드와 메시지만 싣는다 |
+| `validate(request)` | `validate(draft, signal?)`. `draft`는 그래프와 미디어 입력의 자리다 | 기록 전(`precondition`)에는 입력이 에셋으로 풀리지 않았다. 그 자리의 자리표시자를 프로바이더가 판단하면 미디어 입력이 있는 호출이 전부 거절된다(리뷰) |
+| `RequestRejected`는 `queued` 전에만 | `queued` 뒤에도 된다 | 작업 큐는 제출이 늘 성공하고 그래프의 거절을 나중에 알려 준다. 그것도 실행으로 세지 않아야 한다(리뷰) |
+| 출력을 받는 대로 에셋에 넣는다 | `done` 뒤에 넣는다 | 중간에 실패한 실행이 기록 없는 에셋을 남긴다(리뷰) |
+| 항목의 선택 메서드 이름을 요약에 싣는 것은 계획에 없었다 | `summary()`의 `abilities` | 화면이 서버마다 되는 것을 알아야 한다(준비 점검, 실행 기록 가져오기) |
+
+### 리뷰에서 나온 것
+
+구현과 독립된 리뷰(상위 등급)를 한 번 받았다. 계약을 실제 ComfyUI 실행과 서버리스 실행에 대어 보고, 의심 가는 곳은 시험을 써서 재현했다.
+
+| 지적 | 처리 |
+| --- | --- |
+| P1 순회가 어떻게 끝나는지 계약이 말하지 않는다(부르는 쪽이 일찍 그만둘 때, 끝난 뒤의 쓰기, 출력 경로) | 계약에 적고 가짜 프로바이더가 지키게 했다: 일찍 그만두면 취소, 끝난 뒤 `dir`에 쓰지 않음, 출력 경로는 `dir` 바로 아래의 겹치지 않는 파일. 시험 넷을 더했다 |
+| P2 `done` 뒤의 오류와 출력 뒤의 실패가 기록 없는 에셋을 남긴다 | 계약: `done` 뒤에는 거절하지 않는다. 본이 되는 시험: 출력을 모아 `done` 뒤에 넣는다. 시험을 더했다 |
+| P2 `validate`가 시간 한도 없이 프로젝트 잠금 안에서 돈다 | 계약: 가진 것으로 답하고, 없으면 빈 목록을 주거나 바로 거절한다. `signal`을 받는다 |
+| P2 서버리스는 `queued` 전에 거절할 수 없다 | `queued` 뒤의 `RequestRejected`를 허용했다. 가짜 프로바이더의 `rejectedLate`와 시험 |
+| P2 미디어 입력과 `validate`의 관계가 없다 | `GraphDraft`를 더했다. 본이 되는 시험이 자리를 넘긴다 |
+| P2 메시지와 사실에 비밀값이 없어야 한다는 규칙이 없다 | 계약에 적었다 |
+| P2 `THIRD_PARTY_NOTICES.md`가 갱신되지 않았다 | 갱신했다(문서 커밋) |
+| P3 `whileServing`의 재진입(`start`가 항목을 등록하면 두 번 시작한다) | 고쳤다. 시험을 더했다 |
+| P3 프리미티브를 하나 더하면 카탈로그의 타입 검사가 깨진다 | `CatalogEntry`를 프리미티브마다 따로 풀리는 타입으로 바꿨다. 둘째 프리미티브를 선언해 확인했다 |
+| P3 이미 중지된 신호로도 가짜 프로바이더가 제출한다 | 고쳤다. 계약에 적었다 |
+| P3 본이 되는 시험의 `precondition`이 그냥 `Error`를 던져 화면용 API에서 500이 된다 | `ProjectError("invalid_params", …)`로 바꿨다 |
+| P3 `run`을 한 번만 순회한다는 규칙이 없다 | 계약에 적었다 |
+| P3 `RecordFailure`의 주석에 `discarded`가 없다 | 고쳤다 |
+| P3 `OperationFailure`를 `instanceof`로 알아본다(모듈이 두 벌 실리면 놓친다) | 그대로 둔다. 워크스페이스 링크는 한 벌로 풀린다. 달라지면 이름과 코드 모양으로 본다 |
+
+### 남긴 것
+
+- 재시작 후 이어받기(4-2). 계약에 `resume`은 있지만 실행 id가 기록의 끝(보고)에만 남고, 프로젝트 계층은 재시작 때 끝나지 않은 기록을 끝낸다.
+- 실행을 구현하며 정할 것(4-2): `docs/ARCHITECTURE.md` "카탈로그 계약"의 "정하지 않은 것".
+- 카탈로그를 읽는 에이전트 도구(2-3).
+- 연산의 `outputs` 선언에는 개수가 없다. 한 실행이 여러 출력을 내면 기록의 `outputs`에 그대로 여럿이 실린다(2-3이 선언을 어떻게 쓸지 정한다).

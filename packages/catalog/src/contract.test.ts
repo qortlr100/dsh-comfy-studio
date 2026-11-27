@@ -4,11 +4,12 @@
  *
  * - The operation exists only while the catalog serves the `graph` primitive (`csCatalog.whileServing`).
  * - `precondition` finds the entry the call's key names and refuses the call with the entry's `validate` problems
- *   before any record is written.
- * - `execute` builds the request, iterates `entry.run`, imports each output file as an asset of the record, and
- *   keeps the run ID, the sent graph and the progress count in the report.
- * - A server refusal (`RequestRejected`) fails the record with the code `NOT_QUEUED`; what counts runs leaves those
- *   records out.
+ *   before any record is written, as a `ProjectError` so that the view API answers it as a refusal.
+ * - `execute` builds the request, iterates `entry.run` to its end, and only after `done` imports the output files
+ *   as assets of the record, so that a run that fails halfway leaves no asset behind. It keeps the run ID, the
+ *   sent graph and the progress count in the report.
+ * - A server refusal (`RequestRejected`, before or after `queued`) fails the record with the code `NOT_QUEUED`;
+ *   what counts runs leaves those records out.
  * - Stopping the call aborts the signal the entry receives; the entry decides whether the run was cancelled or had
  *   already finished.
  */
@@ -16,9 +17,10 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Context } from "@deepseek-ai/cordis";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 import CsProject, {
   OperationFailure,
+  ProjectError,
   type AssetId,
   type OperationContext,
   type OperationSpec,
@@ -28,7 +30,13 @@ import CsProject, {
 } from "@cs/project";
 import { MemoryAssets, defined, standIn, tempRoot, userOrigin } from "@cs/project/testing/support";
 import { chatProject, provideChatServices } from "@cs/project/testing/workspaces";
-import CsCatalog, { NOT_QUEUED, RequestRejected, type Graph, type GraphRequest } from "./index.ts";
+import CsCatalog, {
+  NOT_QUEUED,
+  RequestRejected,
+  type Graph,
+  type GraphRequest,
+  type GraphRunEvent,
+} from "./index.ts";
 import { fakeGraphEntry, fakeOutput, type FakeGraphEntry } from "./testing/fake-provider.ts";
 
 /** An asset store that stores the bytes of a file when the source is a path (`MemoryAssets` stores the path text). */
@@ -115,6 +123,11 @@ async function mount() {
     summarize: (record) => `Generated ${String(record.outputs.length)} image(s).`,
     precondition: async (request) => {
       const { provider, target, graph } = request.params;
+      // The inputs are not resolved to assets yet. The draft says where they will go, so that the provider does not
+      // judge the placeholder the graph holds there.
+      const media = (request.inputs ?? [])
+        .filter((input) => input.role === "image")
+        .map(() => ({ node: "1", input: "image" }));
       const key = {
         primitive: "graph",
         provider: textOf(provider),
@@ -122,13 +135,13 @@ async function mount() {
       } as const;
       const entry = csCatalog.get(key);
       if (entry === undefined) {
-        throw new Error(
+        throw new ProjectError(
+          "invalid_params",
           `There is no catalog entry ${key.primitive}/${key.provider}/${key.target}.`,
         );
       }
-      // The inputs are not resolved yet, so the request for validation has no media: it holds the params only.
-      const problems = await entry.validate(requestOf({ graph }, []));
-      if (problems.length > 0) throw new Error(problems.join(" "));
+      const problems = await entry.validate({ graph: requestOf({ graph }, []).graph, media });
+      if (problems.length > 0) throw new ProjectError("invalid_params", problems.join(" "));
     },
     execute: async (call: OperationContext) => {
       const entry = defined(
@@ -145,7 +158,8 @@ async function mount() {
       let run = "";
       let sent: Graph = {};
       let progress = 0;
-      const outputs: AssetId[] = [];
+      let done = false;
+      const files: Array<Extract<GraphRunEvent, { kind: "output" }>> = [];
       try {
         for await (const event of entry.run(requestOf(call.params, images), {
           dir: call.scratchDir,
@@ -159,9 +173,9 @@ async function mount() {
           } else if (event.kind === "progress") {
             progress += 1;
           } else if (event.kind === "output") {
-            outputs.push(
-              call.importAsset({ path: event.path }, { mime: event.mime, name: event.name }),
-            );
+            files.push(event);
+          } else {
+            done = true;
           }
         }
       } catch (error) {
@@ -169,6 +183,11 @@ async function mount() {
         if (error instanceof RequestRejected) throw new OperationFailure(NOT_QUEUED, error.message);
         throw error;
       }
+      if (!done) throw new Error("The run ended without finishing.");
+      // The files stay in the scratch directory until this call returns; nothing is imported for a failed run.
+      const outputs = files.map((file) =>
+        call.importAsset({ path: file.path }, { mime: file.mime, name: file.name }),
+      );
       return { outputs, report: { run, graph: sent, progress } };
     },
   };
@@ -262,7 +281,10 @@ describe("a generation operation over the catalog", () => {
     f.registerEntry(entry);
     const before = f.csProject.listRecords(f.project).length;
 
-    await expect(f.run(entry)).rejects.toThrow("No checkpoint is loaded. Too many steps.");
+    const refusal = f.run(entry);
+    await expect(refusal).rejects.toThrow("No checkpoint is loaded. Too many steps.");
+    // A refusal the view API answers with 400, not an unexpected failure.
+    await expect(refusal).rejects.toMatchObject({ name: "ProjectError", code: "invalid_params" });
 
     expect(f.csProject.listRecords(f.project)).toHaveLength(before);
     expect(entry.runs).toEqual([]);
@@ -309,6 +331,58 @@ describe("a generation operation over the catalog", () => {
     expect(record.status).toBe("failed");
     expect(record.error).toEqual({ code: "operation_failed", message: "The node crashed." });
     expect(record.outputs).toEqual([]);
+  });
+
+  it("fails the record with NOT_QUEUED when a job queue reports the refusal after queued", async () => {
+    const f = await mount();
+    const entry = fakeGraphEntry({ rejectedLate: ["Node 4 has no such checkpoint."] });
+    f.registerEntry(entry);
+
+    const result = await f.run(entry);
+
+    const record = defined(result.record);
+    expect(record.status).toBe("failed");
+    expect(record.error).toEqual({ code: NOT_QUEUED, message: "Node 4 has no such checkpoint." });
+    expect(f.assets.files.size).toBe(0);
+  });
+
+  it("imports nothing for a run that fails after it yielded an output", async () => {
+    const f = await mount();
+    const entry = fakeGraphEntry({ outputs: 2 });
+    // The second output never arrives: the run fails between the two.
+    const run = entry.run.bind(entry);
+    entry.run = async function* (request, options) {
+      let outputs = 0;
+      for await (const event of run(request, options)) {
+        if (event.kind === "output" && ++outputs === 2) throw new Error("The server went away.");
+        yield event;
+      }
+    };
+    f.registerEntry(entry);
+
+    const result = await f.run(entry);
+
+    expect(defined(result.record).status).toBe("failed");
+    expect(defined(result.record).outputs).toEqual([]);
+    expect(f.assets.files.size).toBe(0);
+  });
+
+  it("passes the places of the media inputs to validate, before the inputs are resolved", async () => {
+    const f = await mount();
+    const entry = fakeGraphEntry();
+    const validate = vi.spyOn(entry, "validate");
+    f.registerEntry(entry);
+    const image = f.assets.importAsset(f.project, Buffer.from("source pixels"), {
+      mime: "image/png",
+      name: "source.png",
+    });
+
+    await f.run(entry, { images: [image] });
+
+    expect(validate).toHaveBeenCalledWith({
+      graph: graphOf(),
+      media: [{ node: "1", input: "image" }],
+    });
   });
 
   it("ends the record cancelled when the call stops while the run is held and the server cancels", async () => {
@@ -379,5 +453,56 @@ describe("a generation operation over the catalog", () => {
       "fake-1-3.png",
     ]);
     expect(defined(result.record).outputs).toEqual(result.outputs);
+  });
+});
+
+/** Options of a run outside any operation: a scratch directory and no assets. */
+function optionsOf(signal?: AbortSignal) {
+  return {
+    dir: tempRoot(),
+    assets: new MemoryAssets(),
+    ...(signal === undefined ? {} : { signal }),
+  };
+}
+
+describe("the fake provider keeps the rules of an entry", () => {
+  it("cancels the run when the caller leaves its loop before the run ended", async () => {
+    const entry = fakeGraphEntry({ outputs: 2 });
+    const kinds: string[] = [];
+    for await (const event of entry.run({ graph: graphOf(), media: [] }, optionsOf())) {
+      kinds.push(event.kind);
+      if (event.kind === "output") break;
+    }
+    expect(kinds).toEqual(["queued", "progress", "output"]);
+    expect(entry.cancelled).toEqual(["fake-run-1"]);
+  });
+
+  it("cancels the run when the caller leaves right after queued", async () => {
+    const entry = fakeGraphEntry();
+    for await (const event of entry.run({ graph: graphOf(), media: [] }, optionsOf())) {
+      expect(event.kind).toBe("queued");
+      break;
+    }
+    expect(entry.cancelled).toEqual(["fake-run-1"]);
+  });
+
+  it("cancels nothing for a run that was read to its end", async () => {
+    const entry = fakeGraphEntry();
+    const kinds: string[] = [];
+    for await (const event of entry.run({ graph: graphOf(), media: [] }, optionsOf())) {
+      kinds.push(event.kind);
+    }
+    expect(kinds).toEqual(["queued", "progress", "output", "done"]);
+    expect(entry.cancelled).toEqual([]);
+  });
+
+  it("submits nothing when the signal is aborted before the iteration starts", async () => {
+    const entry = fakeGraphEntry();
+    const controller = new AbortController();
+    controller.abort(new Error("stopped early"));
+    const events = entry.run({ graph: graphOf(), media: [] }, optionsOf(controller.signal));
+    await expect(events[Symbol.asyncIterator]().next()).rejects.toThrow("stopped early");
+    expect(entry.runs).toEqual([]);
+    expect(entry.cancelled).toEqual([]);
   });
 });
