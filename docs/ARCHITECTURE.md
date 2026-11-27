@@ -1,6 +1,6 @@
 # 아키텍처
 
-만들 구조를 적는다. 아직 코드가 없으므로(2026-11-25) 각 절에서 **정해진 것**과 **설계 과제**를 구분한다. 근거가 된 조사는 `docs/DSH.md`·`docs/DREAMVERSE.md`·`docs/LEGACY.md`에, 결정의 출처는 `docs/DECISIONS.md`에, 만드는 순서는 `docs/ROADMAP.md`에 있다. 낱말의 뜻은 `AGENTS.md` "용어"를 따른다.
+만들 구조를 적는다. 만들어진 것은 프로젝트 계층뿐이므로(2-0, 2026-11-27) 각 절에서 **정해진 것**과 **설계 과제**를 구분한다. 근거가 된 조사는 `docs/DSH.md`·`docs/DREAMVERSE.md`·`docs/LEGACY.md`에, 결정의 출처는 `docs/DECISIONS.md`에, 만드는 순서는 `docs/ROADMAP.md`에 있다. 낱말의 뜻은 `AGENTS.md` "용어"를 따른다.
 
 ## 목표와 제약
 
@@ -29,7 +29,7 @@
 | 브라우저 쪽 타입 | dsh 패키지를 `0.2.2-rc.5`로 devDependency 고정(타입만 가져온다), `@types/react` 18                                                                                | 이 패키지들의 npm `latest`는 옛 버전이다. 어느 패키지가 필요한지는 `docs/DSH.md` "타입을 얻는 패키지"에 있다.                                              |
 | 생성 백엔드      | ComfyUI HTTP·WebSocket, Comfy Cloud, RunPod Serverless(+ 네트워크 볼륨 S3), Modal 게이트웨이                                                                      | 기존 `lib/comfy`를 옮긴다(`docs/LEGACY.md`).                                                                                                               |
 | LLM              | dsh가 관리한다: DeepSeek, 내장 프로바이더 목록(`anthropic`, `openai` 등), 사용자 지정 API(OpenAI Chat Completions, OpenAI Responses, Anthropic Messages, Gemini)  | 우리 코드에 LLM SDK를 두지 않는다.                                                                                                                         |
-| 저장             | 프로젝트는 폴더 + 추가 전용 기록 파일, 대화·설정·자격 증명은 dsh(`$DSH_HOME`)                                                                                     | 프로젝트를 넘는 데이터의 자리는 설계 과제다(아래 "데이터가 사는 곳").                                                                                      |
+| 저장             | 프로젝트는 폴더 + 추가 전용 기록 파일(`<프로젝트 폴더>/.comfy-studio/records.jsonl`), 대화·설정·자격 증명은 dsh(`$DSH_HOME`)                                      | 프로젝트를 넘는 데이터의 자리는 설계 과제다(아래 "데이터가 사는 곳").                                                                                      |
 | 테스트           | Vitest 5.1.2(단위, `pnpm test`), dsh를 실제로 띄우는 조합 시험(`pnpm test:integration`, 틀은 `tests/harness/`), 헤드리스 Chromium(`playwright-core` 1.65.1)으로 화면 확인 | 기존 `lib/comfy` 테스트가 Vitest다. 호스트 쪽 서비스는 프로브 플러그인이 시나리오 모듈을 dsh 안에서 실행해 확인한다(`docs/DSH.md` "띄워서 확인하는 법"). |
 | 린트·포맷        | oxlint 1.95.0(타입 기반 규칙은 `oxlint-tsgolint` 7.0.2009), Prettier 3.10.1                                                                                       | 사용자가 골랐다(2026-11-26). Prettier 설정은 기존 저장소의 것이고 Markdown은 대상이 아니다. 타입 기반 린트 규칙을 켰다(사용자가 정함, 2026-11-27. 기다리지 않은 Promise 등을 잡는다. `docs/archive/PLAN_1-2.md` "사용자가 정한 것"). oxlint의 `react` 플러그인을 켰다(규칙 넷은 `docs/archive/PLAN_1-1.md` "린트 규칙"). |
 
@@ -66,7 +66,7 @@ DreamVerse의 구조를 가져온다. 원본 설명은 DreamVerse 저장소의 `
 
 | 계층                        | DreamVerse                                             | 역할                                                                                                                                             |
 | --------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1. 프로젝트 계층            | `@dv/project`                                          | 기능 컴포넌트가 연산과 리듀서를 등록하는 곳이다. 기록 파일의 유일한 작성자다. 연산을 에이전트 도구로 내놓고, 히스토리(실행 취소·다시 실행)를 관리하고, 프로젝트 상태를 에이전트에게 알린다. |
+| 1. 프로젝트 계층            | `@dv/project` → 우리 `@cs/project`(2-0)                | 기능 컴포넌트가 연산과 리듀서를 등록하는 곳이다. 기록 파일의 유일한 작성자다. 연산을 에이전트 도구로 내놓고, 히스토리(실행 취소·다시 실행)를 관리하고, 프로젝트 상태를 에이전트에게 알린다. |
 | 2. 카탈로그와 생성 프로바이더 | `@dv/models` + 프로바이더 플러그인                   | "무엇으로 생성할 수 있는가"의 목록이다. 생성 프로바이더가 항목을 등록하고 기능 컴포넌트가 그것으로 생성한다. 우리 쪽 생성 프로바이더는 Comfy 연결(계획 4)이 만든다. |
 | 3. 기능 컴포넌트            | `@dv/asset-pool`, `@dv/character`, `@dv/shot-render` … | 능력 하나씩을 소유하는 플러그인이다. 자기 데이터(상태 조각과 리듀서), 자기 연산, 에이전트가 읽는 자기 설명을 가진다.                             |
 | 4. 작업 절차(스킬)          | `@dv/workflow-story`                                   | 기능 컴포넌트의 도구를 어떤 순서로 부를지를 스킬로 적는다. DreamVerse는 이 계층을 "workflows"라고 부르지만 여기서는 ComfyUI 워크플로와 헷갈리지 않게 "작업 절차"라고 부른다. |
@@ -84,6 +84,40 @@ DreamVerse의 구조를 가져온다. 원본 설명은 DreamVerse 저장소의 `
 3. **기능 컴포넌트는 다른 기능 컴포넌트의 연산을 이름으로 부르지 않는다.** 작업 절차는 기능 컴포넌트를 도구로만 부른다.
 4. **바꿔 끼울 수 있는 능력만 계약으로 뺀다.** 구현이 둘 이상일 때만 계약 패키지와 구현 패키지로 나눈다.
 5. **에이전트가 읽는 글은 주인과 함께 둔다.** 도구 하나의 쓰는 법은 그 연산의 설명에, 여러 기능 컴포넌트에 걸친 절차는 스킬에, 매 턴 바뀌는 프로젝트 상태는 프로젝트 계층의 상태 메시지에 둔다.
+
+### 프로젝트 계층 — `@cs/project`
+
+2-0에서 DreamVerse `@dv/project`를 옮겼다(`packages/project`, 호스트 절반만 있다). 서비스는 `ctx.csProject`다. 모듈마다의 함수·규칙·오류·시험 목록은 `packages/project/CONTRACTS.md`에 있다. 아래의 동작은 단위 시험과 조합 시험으로 확인했다(**띄워 확인**, 2026-11-27).
+
+기능 컴포넌트가 쓰는 법(전부 `ctx.effect` 안에서 등록하고 돌려받은 함수로 뺀다):
+
+```ts
+import type {} from "@cs/project";                    // ctx.csProject의 타입
+declare module "@cs/project" {
+  interface ComponentStates { note?: { texts: string[] } }   // 자기 상태 조각을 선언 병합으로 더한다
+}
+export const inject = ["csProject"];
+export function apply(ctx: Context): void {
+  ctx.effect(() => ctx.csProject.registerComponent("note"));          // 열쇠가 먼저다
+  ctx.effect(() => ctx.csProject.registerReducer("note", reducer));   // initial(), reduce(slice, record), agentSummary?()
+  ctx.effect(() => ctx.csProject.registerOperation(spec));            // 이름은 "<열쇠>.<동사>". 도구 cs_note_add가 같이 생긴다
+}
+```
+
+| 하려는 것 | 부르는 것 |
+| --- | --- |
+| 프로젝트 만들기, 목록, 이름 바꾸기, 빼기 | `newProjectFolder(name)` → `createProject(folder, title, origin)`, `listProjects()`, `openProject(id)`, `renameProject(id, title)`, `removeProject(id)`(파일은 지우지 않는다) |
+| 프로젝트를 바꾸기 | `run({ ...origin, project, operation, params, inputs })`. 유일한 변경 길이다. 미리 물어보는 것은 `check(request)` |
+| 히스토리 | `undo(id)`, `redo(id)`, `moveTo(id, record)`, `line(id)`(`{ tip, at }`), `listHistory(query)` |
+| 읽기 | `getState(id)`(리듀서마다의 조각), `getRecord`, `listRecords`, `subscribe(id, listener)` |
+| 채팅 세션의 프로젝트 | `sessionProject(sessionId)`: 세션의 작업 폴더가 프로젝트 폴더인 프로젝트 |
+| 에셋 | `registerAssetStore(store)`: 에셋 기능 컴포넌트(2-3)가 등록한다. 그때까지는 아무 에셋도 없는 빈 저장소가 대신한다 |
+
+- `origin`은 누가(`actor`: `user`·`agent`·`system`), 어디서(`surface`: `chat`·`view`·`api`·`history`), 어느 세션·턴·도구 호출에서, 왜(`intent`) 했는지다. 기록마다 남는다. `view`는 우리 화면에서 한 사용자 동작이다.
+- 프로젝트 폴더의 `.comfy-studio/`에 `records.jsonl`(기록 줄과 갱신 줄, 추가만 한다)과 `line.json`(히스토리의 끝 `tip`과 현재 위치 `at`)이 있다. 이 디렉터리는 프로젝트 계층만 읽고 쓴다.
+- 에이전트에게 가는 것: 연산마다의 도구 `cs_<연산 이름>`, 프로젝트 도구 여덟 개(`cs_proj_create`, `_rename`, `_state`, `_history_list`, `_undo`, `_redo`, `_stale_accept`, `_wait`), 시스템 프롬프트의 `cs:project` 절(규칙만), 대화에 덧붙는 프로젝트 상태 메시지와 갱신 메시지. 도구가 에이전트의 목록에 실제로 들어가는지와 메시지가 턴에 붙는지는 모델 키가 없어 **미확인**이다(1-3).
+- 설정(번들의 `cs-project` 행): `projectsFolder`(새 프로젝트 폴더를 둘 곳. 환경 변수 `CS_PROJECTS_FOLDER`에서 읽고, 없거나 비어 있으면 `<사용자 홈>/comfy-studio-projects`), `cpuConcurrency`(4), `gpuConcurrency`(1), `promptSectionOrder`(4900).
+- 프로젝트 규칙 절은 DreamVerse의 것을 뜻 그대로 옮겼다("모든 호출은 바로 히스토리의 단계다. 사용자가 변경을 승인하지 않는다"). 기존 앱의 "제안 후 승인"(삭제, 그래프 패치)과 맞추는 일은 기능 컴포넌트를 만드는 2-3에서 한다.
 
 ### 변경 하나가 흐르는 길
 
@@ -179,8 +213,8 @@ DreamVerse처럼 기본 dsh 화면을 교체한다. 방법과 확인 결과는 `
 
 | 데이터                                                    | 자리                                                                                                              | 상태                                   |
 | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| 프로젝트 내용(에셋, 생성, 배치, 검토 결과 …)              | 프로젝트 폴더 안의 기록 파일과 에셋 파일. DreamVerse는 `<프로젝트 폴더>/.dreamverse/records.jsonl`이다.            | 구조는 가져온다. 디렉터리 이름은 미정(2-0) |
-| 프로젝트 자체                                             | dsh 작업공간(등록된 폴더) 하나가 프로젝트 하나다. 기록 디렉터리가 있는 작업공간이 프로젝트다.                      | DreamVerse 방식을 가져온다. 새 프로젝트 폴더를 어디에 만들지는 미정(2-0) |
+| 프로젝트 내용(에셋, 생성, 배치, 검토 결과 …)              | 프로젝트 폴더 안의 기록 파일 `<프로젝트 폴더>/.comfy-studio/records.jsonl`·`line.json`과 에셋 파일                 | 기록은 2-0에서 만들었다. 에셋 파일은 2-3 |
+| 프로젝트 자체                                             | dsh 작업공간(등록된 폴더) 하나가 프로젝트 하나다. 기록 디렉터리가 있는 작업공간이 프로젝트다. 새 프로젝트의 폴더는 `<사용자 홈>/comfy-studio-projects/<이름>`(`CS_PROJECTS_FOLDER`로 바꾼다) | 2-0에서 만들었다. 목록은 dsh 작업공간 등록부(home 안)에 있고 파일은 home 밖에 있다 |
 | 대화(세션 로그)                                           | dsh(`$DSH_HOME`)                                                                                                  | dsh. 프로젝트 하나에 둘 세션 수는 미정(3-0) |
 | LLM 프로바이더·모델 설정                                  | dsh(프로필의 `cordis.patch.yml`)                                                                                  | dsh                                    |
 | 비밀값                                                    | dsh 자격 증명 저장소(`$DSH_HOME/.credentials.yaml`). 설정에는 참조만 둔다.                                         | dsh. 플러그인에서 쓰는 법은 미확인(4-1) |
@@ -205,7 +239,7 @@ DreamVerse처럼 기본 dsh 화면을 교체한다. 방법과 확인 결과는 `
 ```
 packages/
   bundle/            @cs/bundle        cordis.patch.yml의 행 모음(프로필 계층), 에이전트 프리셋
-  project/           프로젝트 계층
+  project/           @cs/project       프로젝트 계층(2-0)
   api/               화면용 API
   catalog/           카탈로그 계약(타입과 서비스 정의)
   comfy/             ComfyUI 연동 라이브러리(서버 종류별 클라이언트, 그래프, 프로토콜). dsh에 의존하지 않는다
@@ -224,7 +258,6 @@ scripts/             프로필 만들기, 실행, 합성 구성 찍기(`dsh.ts`,
 | 에이전트 프리셋에 넣을 도구(셸·파일 도구를 줄지, 기본 제공 프리셋을 끌지)             | 1-4         |
 | 접속·배포 구성                                                                        | 1-5         |
 | UI 언어(한국어 언어 팩 여부, 문자열을 로케일 사전으로 옮길지)                         | 1-6         |
-| 기록 디렉터리 이름, 도구 접두사, 서비스 이름, 새 프로젝트 폴더의 위치                 | 2-0         |
 | 카탈로그 계약                                                                         | 2-1         |
 | 화면용 API의 경로와 인증                                                              | 2-2         |
 | 기존 관계형 데이터(폴더, 태그, 검토 상태, 배치)를 기록과 리듀서로 옮기는 모양         | 2-3         |

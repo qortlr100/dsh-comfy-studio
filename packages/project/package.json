@@ -1,0 +1,42 @@
+{
+  "name": "@cs/project",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Project layer: projects as dsh workspace folders, the append-only record store with one history line, undo and redo, the operation runner and scheduler, the reducer registry, and the agent tool of every operation. Ported from DreamVerse @dv/project (MIT).",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./types": "./src/types.ts",
+    "./grammar": "./src/grammar.ts",
+    "./folder": "./src/folder.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-agent": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-attachment": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-brand": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-llm": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-session": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-session-persistence": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-session-projection": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-system-prompt": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-tools": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-util-values": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-workspace": "0.2.2-rc.5",
+    "zod": "4.6.6"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.1.0",
+    "@deepseek-ai/schemastery": "3.19.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.1.0",
+    "@deepseek-ai/dsh-tool-executor-native": "0.2.2-rc.5",
+    "@deepseek-ai/schemastery": "3.19.0",
+    "@types/node": "24.19.2"
+  }
+}

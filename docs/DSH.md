@@ -99,6 +99,7 @@ pnpm exec dsh --profile comfy-studio --no-open --port 8092
 - 합성된 구성은 203행이다(`dsh-base`와 `dsh-web-app`이 202행. 2026-11-26에 이 저장소의 틀로 다시 셌다). `--dump-config`는 행 묶음마다 어느 계층의 것인지 `# == <번들 이름>` 머리 줄을 찍는다(우리 번들의 행은 `# == @cs/bundle` 아래에 나왔다). 자주 볼 행 id: `llm-pi-ai`, `llm-deepseek`, `credentials`, `storage`, `storage-json`, `storage-domain`, `schedule`, `mcp-manager`, `skill`, `subagent`, `web-search-deepseek`, `webserver`, `web-runtime`, `connection`, `locale`, `ui-theme`, `ui-layout`, `ui-sidebar`, `ui-sidebar-right`, `ui-conversation`, `ui-settings`, `agent-preset-registry`, `preset-standard`.
 - 패치의 행 `name`은 패키지 이름 말고 **파일 경로**여도 된다. 절대 경로나 `./`·`../`로 시작하는 경로(그 패치 파일의 위치 기준)를 dsh가 `file://` 주소로 바꿔 불러온다(**소스 확인**: 업스트림 `packages/boot/app-boot/src/index.ts`의 `anchorInsertedPluginNames`). `.ts` 파일의 절대 경로를 적은 `--patch`로 프로필에 설치하지 않은 플러그인이 실린다(**띄워 확인**, 2026-11-27. 조합 시험의 프로브가 이렇게 실린다).
 - 패치 파일의 내용은 JSON이어도 된다(JSON은 YAML이다. **띄워 확인**, 2026-11-27).
+- 행의 `config` 값에 `!!js <식>`을 쓰면 dsh가 띄울 때 그 식을 계산한다. 번들의 `cs-project` 행이 `projectsFolder: !!js process.env.CS_PROJECTS_FOLDER || undefined`로 환경 변수를 읽는다(**띄워 확인**, 2026-11-27: 변수를 주면 그 값이, 없거나 비어 있으면 값이 없는 것으로 넘어간다). 기본 제공 번들도 같은 꼴을 쓴다(**소스 확인**).
 - 행을 지우는 키는 없다. 끄려면 그 `id`에 `disabled: true`를 준다(**소스 확인**).
 - **행의 `apply`가 던져도 dsh는 뜬다.** `dsh: warning: 1 entry did not activate`와 그 행의 스택을 찍고 계속 간다. 필수 플러그인이 못 뜰 때만(예: 브라우저 번들이 없을 때의 `modules`) `dsh: startup failed: …`로 종료 코드 1이다(**띄워 확인**, 2026-11-27). 그래서 조합 시험의 `launchDsh`는 출력에 `did not activate`가 있으면 실패로 본다.
 - 기동은 주소 줄까지 약 1.2초다. SIGTERM을 받으면 정리하고 약 0.8초 뒤 종료 코드 0으로 끝나고(정리 한도는 5초, **소스 확인**), SIGINT는 종료 코드 130이다. 웹 프로필은 자식 프로세스를 두지 않았다(**띄워 확인**, 2026-11-27).
@@ -441,7 +442,7 @@ dsh가 싣고 오는 언어는 영어, 중국어, 일본어, 스페인어, 프�
 
 ## 호스트 쪽
 
-DreamVerse의 서버 쪽 패키지가 dsh에서 가져다 쓰는 것이다. 전부 0.2.2-rc.5에 있고 타입이 맞는다(타입 검사로 확인, 차이 5건은 `docs/DREAMVERSE.md`). 이 가운데 실행해 본 것은 `ctx.tools`를 읽는 것 하나다(표 아래). 쓰는 법은 업스트림 문서를 본다.
+DreamVerse의 서버 쪽 패키지가 dsh에서 가져다 쓰는 것이다. 전부 0.2.2-rc.5에 있고 타입이 맞는다(타입 검사로 확인, 차이 5건은 `docs/DREAMVERSE.md`). 이 가운데 프로젝트 계층(`@cs/project`, 2-0)이 쓰는 것은 실행해 봤다: 플러그인·서비스, 도구 등록, 세션별 상태(프로젝션), 시스템 프롬프트의 절, 작업공간 읽고 쓰기(표 아래 "프로젝트 계층을 옮기며 알게 된 것"). 나머지 줄은 타입까지만 봤다. 쓰는 법은 업스트림 문서를 본다.
 
 | 하려는 것                       | dsh 패키지와 이름                                                                                                   | 업스트림 문서                                              |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
@@ -466,6 +467,19 @@ DreamVerse의 서버 쪽 패키지가 dsh에서 가져다 쓰는 것이다. 전�
 - `ctx.tools.definitions()`는 등록된 도구의 정의(`name` 등)를 준다. 플러그인의 `apply` 때는 0개였고 기동이 끝난 뒤에는 5개였다(`working_directory`, `team_task_create`·`_list`·`_get`·`_update`). 에이전트 프리셋이 주는 도구(`tool-bash`, `tool-fs` 등)는 이 전역 목록에 없었다. 등록·해제 때 `tools/change` 이벤트가 난다(**소스 확인**).
 - 스택에서 플러그인의 `apply`는 `new apply (…)`로 보인다.
 
+프로젝트 계층을 옮기며 알게 된 것(2-0, 2026-11-27. **띄워 확인**은 조합 시험 `tests/integration/project.test.ts`, **시험 확인**은 실제 Cordis `Context`와 dsh 플러그인을 올리는 단위 시험이다):
+
+- **세션 프로젝션**: `ctx.sessionProjections.register(정의)`는 `Promise<ProjectionHandle<S>>`를 준다. 상태는 그 핸들의 `handle.stateOf(session)`으로 읽는다. 정의의 타입은 `ProjectionDefinition<K, S>`(인자 둘)이고, 클라이언트로 내보내지 않는 호스트 전용 단위는 `wire`를 빼면 된다. 레지스트리의 `stateOf(session, key)`는 deprecated이고 `unknown`을 준다(등록됐는지 밖에서 볼 때만 쓴다). 실제 dsh에서 등록하고 새 세션의 초기 상태를 읽었다(**띄워 확인**).
+- **`agent/pre-step`**: 에이전트 루프가 단계에 들어가기 전에 부르는 waterfall 이벤트다. 에이전트를 `this`로 넘겨 부른다(`ctx.waterfall(agent, "agent/pre-step", payload, next)`). 리스너는 `await next()`로 받은 결정(`{ kind: "enter", messages }` 또는 `{ kind: "reject" }`)의 `messages`를 바꿔 돌려준다. 프로젝트 계층의 리스너가 프로젝트 상태 메시지를 끼워 넣는 것을 이 꼴로 불러 봤다(**시험 확인**: `packages/project/src/project-updates-listener.test.ts`. 프로젝션 레지스트리와 에이전트는 흉내다. 실제 턴에서는 미확인).
+- **턴 번호**: `ctx.get("agents")?.turnBoundaryOf(session).lastTurn`. 0이면 첫 턴 전이다. `turnBoundary` 프로젝션을 열쇠로 읽던 길은 없어졌다(**시험 확인**은 흉내 낸 `agents`로 했다. 실제 턴에서는 미확인).
+- **도구 실행**: `ctx.tools.execute`는 호출 하나가 아니라 묶음을 받는다: `{ calls: [{ type: "tool-call", id, name, arguments: <JSON 문자열> }], signal, agent? }` → `{ results: [{ callId, result }] }`. 실행기는 `tools` 서비스에 들어 있지 않고 플러그인이 준다(`@deepseek-ai/dsh-tool-executor-native`. 실행기가 없으면 `execute`가 거절한다고 타입 선언의 주석에 있다, **소스 확인**). 시험에서 도구를 부르려면 `dsh-tools`와 함께 이 플러그인을 올린다(**시험 확인**: `packages/project/src/testing/workspaces.ts`의 `mountTools`·`callTool`).
+- **등록한 도구의 자리**: `ctx.inject(["tools"], (child) => child.tools.register(정의))`로 등록한 도구가 `ctx.tools.definitions()`의 전역 목록에 나온다(**띄워 확인**). 전역 등록은 에이전트 범위가 물려받는다고 타입 선언의 주석에 있다("Restrictions across the scope chain intersect over inherited global and ancestor tools", **소스 확인**). 프리셋의 에이전트가 실제로 그 도구를 받는지는 **미확인**이다(1-3).
+- **작업공간**: `ctx.workspaceRegistry`의 `resolveByPath`·`create`·`list`·`get`과 작업공간의 `setTitle`이 플러그인에서 된다. 임시 home에서 폴더 하나를 작업공간으로 등록하고 목록에서 다시 읽었다(**띄워 확인**). 작업공간에 세션을 붙이는 `attachSession`은 부르기만 했고 붙었는지는 보지 않았다(프로젝트 계층은 실패를 경고로만 남긴다).
+- **세션 만들기(호스트)**: `ctx.sessions.create(undefined, { meta: { cwd } })`가 작업 폴더가 `cwd`인 세션을 만든다. 헤더의 `cwd`로 그 세션의 프로젝트를 찾는다(**띄워 확인**).
+- **선택 서비스 읽기**: `ctx.get("이름")`은 주입하지 않은 서비스도 읽고, 없으면 `undefined`다(`ctx.이름`은 던진다. **시험 확인**).
+- **서비스 클래스**: `Service`를 상속한 클래스를 기본 export로 두고 `static inject`와 `static Config`를 주면 행으로 실린다. `protected [Service.init]()`은 동기 함수여도 된다. 워크스페이스 패키지가 값으로 가져온 `@deepseek-ai/cordis`는 dsh가 실은 것과 같은 모듈이다(pnpm 저장소에 4.1.0 사본이 하나다). 서비스가 걸리고 다른 플러그인이 `inject`로 받는다(**띄워 확인**).
+- **패키지 의존**: 호스트 절반이 값으로 쓰는 dsh 패키지는 그 패키지의 `dependencies`에 `0.2.2-rc.5`로 적는다(pnpm은 적지 않은 패키지를 풀어 주지 않는다). `@deepseek-ai/dsh`가 끌고 온 것과 같은 사본으로 풀린다.
+
 ## 에이전트 프리셋
 
 dsh 웹(`dsh-web-app` 번들)에서 에이전트가 가질 도구·스킬·페르소나는 **에이전트 프리셋**이 정한다. 에이전트가 프로젝트 폴더를 기록 밖에서 고칠 수 있는지가 여기서 갈리므로(`AGENTS.md` "꼭 지킬 것") 따로 적는다.
@@ -477,7 +491,7 @@ dsh 웹(`dsh-web-app` 번들)에서 에이전트가 가질 도구·스킬·페�
 - 사용자가 설정 화면에서 고른 기본 프리셋(`selectedDefault`)이 `config.default`보다 우선한다(**소스 확인**). 그래서 우리 프리셋을 기본으로 두는 것만으로는 사용자가 `standard`로 바꾸는 것을 막지 못한다.
 - 세션을 만들 때 프리셋을 줄 수 있다(`ctx.sessions.create({ agentPreset })`, **소스 확인**).
 - **DreamVerse가 한 것**(**소스 확인(DreamVerse)**): 자기 프리셋 `dreamverse`를 기본으로 두고 그 안에 `persona`, `skill-filesystem`(자기 스킬 폴더만), `tool-skill`, `tool-ask-user`, compaction 묶음만 넣었다. 셸·파일 도구가 없다. 연산 도구(`dv_*`)는 프리셋 안이 아니라 `@dv/project`가 `tools` 서비스에 등록한다(`ctx.inject(['tools'], …)`). 레지스트리에는 `modeSelectionEnabled: false`를 준다(이름으로 보아 프리셋 고르기를 끄는 설정이다. 동작은 읽지 않았다). 이 필드는 0.2.2-rc.5의 레지스트리에서 빠졌다(업스트림 문서가 "retired"라고 적는다).
-- 확인하지 못한 것: 0.2.2-rc.5에서 우리 프리셋을 넣어 띄우는 것, 프리셋 밖에서 `tools` 서비스에 등록한 도구가 그 프리셋의 에이전트에게 보이는지(2-0), 기본 제공 프리셋 행을 끄거나 덮었을 때의 동작.
+- 확인하지 못한 것: 0.2.2-rc.5에서 우리 프리셋을 넣어 띄우는 것, 프리셋 밖에서 `tools` 서비스에 등록한 도구가 그 프리셋의 에이전트에게 보이는지(2-0에서 전역 레지스트리에 등록되는 데까지 봤다. 에이전트 쪽은 1-3), 기본 제공 프리셋 행을 끄거나 덮었을 때의 동작.
 - **에이전트에게 무엇을 줄지는 정해지지 않았다**(`docs/DECISIONS.md` "미정", 1-4).
 
 ## dsh가 이미 주는 기능
@@ -546,7 +560,7 @@ span[class$="_brandMark"]:has(> [data-slot="sidebar.brand.mark"]:empty) { displa
 - 브라우저 절반을 고치고 빌드하지 않으면 옛 `lib/client.js`(브라우저 번들)가 나간다. `pnpm dsh:start`는 띄우기 전에 빌드하지만, 띄워 둔 동안 고친 것은 `pnpm build`를 다시 돌려야 나간다.
 - **dsh를 띄워 둔 채 `lib/client.js`가 바뀌면 새로고침 없이 화면이 새 번들로 바뀐다**(**띄워 확인**, 2026-11-26. 파일을 바꾸고 1.5초 뒤에 이미 바뀌어 있었고 콘솔 오류는 없었다). 개발할 때는 dsh를 띄워 두고 `pnpm build`만 다시 돌리면 된다. 호스트 절반을 고친 것이 다시 실리는지는 보지 않았다.
 - `verbatimModuleSyntax` 아래에서 `import { type X } from "…"`는 값 import로 남는다. 표 밖의 `@deepseek-ai/*`면 빌드가 거절한다. `import type { X } from "…"`로 쓴다.
-- 임시 home으로 처음 띄우면 "Unable to create default workspace. Use Choose workspace to select a folder." 토스트가 뜬다(관찰, 2026-11-26. 콘솔 오류는 아니다. 원인은 보지 않았다. `HOME`까지 임시 폴더로 줘도 뜬다, 2026-11-27. 기본 작업공간은 3-0과 2-0이 다룬다).
+- 임시 home으로 처음 띄우면 "Unable to create default workspace. Use Choose workspace to select a folder." 토스트가 뜬다(관찰, 2026-11-26. 콘솔 오류는 아니다. `HOME`까지 임시 폴더로 줘도 뜬다, 2026-11-27). dsh는 기본 작업공간을 `<문서 폴더>/deepseek-harness/default-workspace`에 두는데, 문서 폴더를 OS에 물어 얻고(Linux는 `xdg-user-dir DOCUMENTS`) 답이 없거나 홈 폴더와 같으면 던진다(**소스 확인**: `@deepseek-ai/dsh-api-workspace-controller`의 `default-directory`. 이 함수는 공개 진입점으로 나오지 않는다). 토스트의 원인은 이것으로 보인다(추정). 우리 새 프로젝트 폴더는 이 규칙을 쓰지 않는다(`docs/ARCHITECTURE.md` "프로젝트 계층"). 기본 작업공간 자체는 3-0이 다룬다.
 - 헤드리스 확인 환경에 한국어 글꼴이 없으면 스크린샷의 한국어가 네모로 나온다. DOM의 글자로 확인한다.
 - 프로필의 번들 링크는 절대 경로다. 저장소 폴더를 옮기거나 다른 워크트리에서 띄우려면 링크를 다시 건다("워크트리와 DSH_HOME").
 - Playwright는 크기가 0인 요소를 "숨김"으로 본다. 표시용 빈 요소를 기다릴 때는 `state: 'attached'`를 쓴다.
@@ -569,7 +583,7 @@ pnpm exec vitest run --project integration tests/integration/boot.test.ts   # �
 | --- | --- |
 | `launchDsh(options?)`(`dsh.ts`) | 임시 home에 프로필을 만들고 dsh를 빈 포트에 띄운다. 주소 줄을 기다려 `{ url, home, output(), exited, stop() }`를 준다. 행 하나라도 활성화에 실패했으면 거절한다. `patches`로 `--patch` 파일을 얹는다 |
 | `openPage(url, options?)`(`browser.ts`) | 헤드리스 Chromium으로 열고 첫 실행 창 둘을 버튼으로 닫는다. `{ page, issues, close() }`를 준다. `issues`는 콘솔의 error·warning과 잡히지 않은 페이지 오류다 |
-| `runHostScenario(scenario, options?)`(`host.ts`) | 시나리오 모듈을 dsh 프로세스 안에서 실행하고 돌려준 값을 받는다(아래 "호스트 쪽 서비스를 부르는 시험") |
+| `runHostScenario(scenario, options?)`(`host.ts`) | 시나리오 모듈을 dsh 프로세스 안에서 실행하고 돌려준 값을 받는다(아래 "호스트 쪽 서비스를 부르는 시험"). `input`, `patches`, `env`, `timeoutMs`를 받는다 |
 | `redactLoginUrls(text)`(`dsh.ts`) | 주소와 토큰을 가린다. 틀이 내보내는 글은 모두 이것을 거친다. 주소는 `DshInstance.url`로만 건넨다 |
 
 브라우저로 화면을 보는 시험(`tests/integration/boot.test.ts`에서 추렸다):
@@ -616,7 +630,8 @@ expect(result.names).toContain("working_directory");
 - 입력과 결과는 JSON으로(파일로) 건너간다.
 - 시나리오는 dsh가 주소 줄을 찍은 뒤(기동이 끝난 뒤)에 실행된다. 프로브의 `apply` 때는 다른 플러그인이 아직 실리는 중이다.
 - `inject`에 적은 서비스가 없으면 dsh는 오류 없이 기다리기만 한다. 틀이 `timeoutMs`(기본 20초) 뒤에 거절하고, 메시지의 dsh 출력에 `cs-test-probe: waiting for services …`가 보인다.
-- 시나리오가 워크스페이스 패키지를 import하면 dsh가 프로필을 거쳐 실은 것과 같은 모듈일 것이다(둘 다 `packages/` 아래의 실제 경로로 풀린다. **미확인**이고 2-0에서 처음 쓴다).
+- 시나리오가 워크스페이스 패키지를 값으로 import하면 dsh가 프로필을 거쳐 실은 것과 같은 모듈이다(둘 다 `packages/` 아래의 실제 경로로 풀린다. **띄워 확인**, 2026-11-27: 시나리오가 가져온 `ProjectError`로 서비스가 던진 오류에 `instanceof`가 맞는다). 그 패키지는 루트 `package.json`의 `devDependencies`에 `workspace:*`로 있어야 한다.
+- `runHostScenario`의 `env`로 dsh에 환경 변수를 더 넘긴다(허용 목록 위에 얹는다).
 
 알아 둘 것:
 
@@ -667,7 +682,8 @@ expect(result.names).toContain("working_directory");
 - 서드파티 패키지가 같이 실린 브라우저 번들, 공유 모듈의 하위 경로(`zod/v4` 등), 플러그인이 내려갈 때 로더가 우리 `<style>`을 지우는 것, 호스트 절반을 고쳤을 때 다시 실리는지.
 - **에이전트 프리셋.** 우리 프리셋을 넣어 띄우는 것, 프리셋 밖에서 등록한 도구가 에이전트에게 보이는지, 기본 제공 프리셋을 끄는 것.
 - 무시된 설치 스크립트(`node-pty` 등)가 에이전트의 셸 도구에 주는 영향("함정").
-- DreamVerse의 서버 쪽 코드를 0.2.2-rc.5에서 실행하는 것(타입 검사까지만 했다. 2-0).
+- DreamVerse의 서버 쪽 코드 가운데 프로젝트 계층 밖의 것을 0.2.2-rc.5에서 실행하는 것(프로젝트 계층은 2-0에서 옮겨 돌렸다. `@dv/api`는 2-2, 에셋은 2-3).
+- 프로젝트 계층이 에이전트의 실제 턴에서 하는 일: 연산 도구가 에이전트의 도구 목록에 들어가는지, `agent/pre-step`에서 프로젝트 상태·갱신 메시지가 붙는지, 턴 번호가 기록에 남는지(모델 키가 있어야 한다. 1-3).
 - 가운데에 입력창을 끼운 첫 화면, `@` 메뉴에 우리 항목 추가.
 - `ctx.credentials`와 `ctx.storageDomain`을 저장소 밖 플러그인에서 쓰는 것(`ctx.tools`를 읽는 것은 1-2에서 확인했다).
 - 첫 실행 창을 설정으로 끄는 것, 같은 home으로 dsh를 다시 띄웠을 때의 화면(조합 시험은 늘 새 home이다).

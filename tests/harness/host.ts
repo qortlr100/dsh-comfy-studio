@@ -18,6 +18,8 @@ export interface HostScenarioOptions {
   home?: TestHome;
   /** Placed before the probe's patch. */
   patches?: readonly string[];
+  /** Added on top of the variables the harness lets dsh see. */
+  env?: Readonly<Record<string, string>>;
   /** How long to wait for the report after the URL line. Default 20_000. */
   timeoutMs?: number;
 }
@@ -101,6 +103,7 @@ export async function runHostScenario<T = unknown>(
     const dsh = await launchDsh({
       home: options.home,
       patches: [...(options.patches ?? []), patch],
+      env: options.env,
     });
     try {
       writeFileSync(go, "");
