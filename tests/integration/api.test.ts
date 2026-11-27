@@ -1,6 +1,6 @@
 // The view API (@cs/api) served by a real dsh through our bundle and called from a page that
 // logged in the way a user does: the browser reads a project's state, runs an operation, and
-// the change arrives on the event stream. Spec: docs/PLAN_2-2.md "시험".
+// the change arrives on the event stream. Spec: docs/archive/PLAN_2-2.md "시험".
 
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -86,7 +86,17 @@ const PAGE_SCRIPT = `(async () => {
       params: { text: "hello" },
       surface: "view",
     });
-    const afterRun = await seen(() => lineAt(ready, run.body.id));
+    // The record and its line arrive when the record is written, the updates as the run goes on.
+    const afterRun = await seen(
+      () =>
+        lineAt(ready, run.body.id) &&
+        events.some(
+          (event) =>
+            event.kind === "update" &&
+            event.data.record.id === run.body.id &&
+            event.data.record.status === "done",
+        ),
+    );
     const stateAfterRun = await get("/api/cs/state?project=" + project);
 
     const undo = await post("/api/cs/undo", { project });
@@ -187,6 +197,13 @@ describe("view API", () => {
           data: expect.objectContaining({
             kind: "record",
             record: expect.objectContaining({ id: runId, operation: OPERATION }),
+          }),
+        });
+        expect(duringRun).toContainEqual({
+          kind: "update",
+          data: expect.objectContaining({
+            kind: "update",
+            record: expect.objectContaining({ id: runId, status: "done" }),
           }),
         });
         expect(duringRun).toContainEqual({

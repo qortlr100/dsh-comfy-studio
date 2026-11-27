@@ -1,10 +1,16 @@
+import { EventEmitter } from "node:events";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { Context } from "@deepseek-ai/cordis";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 import type { ProjectEvent, ProjectId } from "@cs/project";
 import { defined, standIn } from "@cs/project/testing/support";
 import { EVENTS_PATH, ROUTES } from "./index.ts";
-import { frameOf, serveEventStream, type EventStreamSources } from "./events.ts";
+import {
+  frameOf,
+  MAX_BUFFERED_BYTES,
+  serveEventStream,
+  type EventStreamSources,
+} from "./events.ts";
 import { asRecord, mountApi } from "./testing/support.ts";
 
 type Handler = (request: IncomingMessage, response: ServerResponse) => void;
@@ -259,9 +265,10 @@ async function mounted() {
   return { f, standIns, url, route };
 }
 
-describe("the /cs/events route of CsApi", () => {
-  const owner = { peer: { principal: { kind: "owner" } } };
+/** What Connection answers for the owner's browser. */
+const owner = { peer: { principal: { kind: "owner" } } };
 
+describe("the /cs/events route of CsApi", () => {
   it("registers an exact route at /cs/events and the Fetch routes through Connection", async () => {
     const { standIns, route } = await mounted();
     expect(standIns.webRoutes).toHaveLength(1);
@@ -360,5 +367,86 @@ describe("the /cs/events route of CsApi", () => {
     await stream.until("event: ready");
     await f.api.runOperation({ project, operation: "probe_note.add", params: { text: "x" } });
     await stream.until("event: line");
+  });
+});
+
+/** A response that records what is written and lets a test set how much is buffered. */
+class FakeResponse extends EventEmitter {
+  readonly written: string[] = [];
+  writableLength = 0;
+  ends = 0;
+
+  writeHead(): this {
+    return this;
+  }
+
+  write(text: string): boolean {
+    this.written.push(text);
+    return true;
+  }
+
+  end(): this {
+    this.ends += 1;
+    return this;
+  }
+}
+
+describe("ending a stream", () => {
+  it("returns a function that ends the stream once and tells the owner", () => {
+    const sources = new FakeSources();
+    let ended = 0;
+    const response = new FakeResponse();
+    const end = serveEventStream(PROJECT, standIn(new EventEmitter()), standIn(response), {
+      subscribe: (project, listener) => sources.subscribe(project, listener),
+      keepaliveMs: sources.keepaliveMs,
+      onEnd: () => {
+        ended += 1;
+      },
+    });
+    expect(sources.listeners.size).toBe(1);
+    end();
+    end();
+    response.emit("close");
+    expect(response.ends).toBe(1);
+    expect(ended).toBe(1);
+    expect(sources.unsubscribed).toBe(1);
+    // Nothing is written after the end.
+    const before = response.written.length;
+    sources.emit({ kind: "line", tip: standIn("r2"), at: standIn("r1") });
+    expect(response.written).toHaveLength(before);
+  });
+
+  it("ends a stream whose client stopped reading instead of buffering without bound", () => {
+    const sources = new FakeSources();
+    const response = new FakeResponse();
+    serveEventStream(PROJECT, standIn(new EventEmitter()), standIn(response), sources);
+    sources.emit({ kind: "line", tip: standIn("r1"), at: standIn("r1") });
+    expect(response.ends).toBe(0);
+    response.writableLength = MAX_BUFFERED_BYTES + 1;
+    sources.emit({ kind: "line", tip: standIn("r2"), at: standIn("r2") });
+    expect(response.ends).toBe(1);
+    expect(sources.unsubscribed).toBe(1);
+  });
+
+  it("does not subscribe when the stream ends while its first lines are written", () => {
+    const sources = new FakeSources();
+    const response = new FakeResponse();
+    response.writableLength = MAX_BUFFERED_BYTES + 1;
+    serveEventStream(PROJECT, standIn(new EventEmitter()), standIn(response), sources);
+    expect(response.ends).toBe(1);
+    expect(sources.listeners.size).toBe(0);
+  });
+
+  it("ends every open stream when the plugin goes away, so the browser connects again", async () => {
+    const { f, standIns, url } = await mounted();
+    const project = await f.newProject();
+    standIns.admit.mockReturnValue(owner);
+    const first = await open(`${url}?project=${project}`);
+    const second = await open(`${url}?project=${project}`);
+    await first.until("event: ready");
+    await second.until("event: ready");
+    await f.context.fiber.dispose();
+    await expect(first.until("event: never")).rejects.toThrow(/stream ended/);
+    await expect(second.until("event: never")).rejects.toThrow(/stream ended/);
   });
 });

@@ -48,13 +48,13 @@ declare module "@deepseek-ai/cordis" {
 
 /** Configuration of the API plugin. */
 export interface Config {
-  /** Milliseconds between keep-alive comments on the event stream. */
+  /** Milliseconds between keep-alive comments on the event stream; at least 1000. */
   keepaliveMs: number;
 }
 
 /** Runtime schema of {@link Config}. */
 export const Config: z<Config> = z.object({
-  keepaliveMs: z.number().default(15_000),
+  keepaliveMs: z.natural().min(1000).default(15_000),
 });
 
 /** The path below the web root where the event stream is served. */
@@ -101,39 +101,6 @@ function query(request: Request, name: string): string | null {
   return new URL(request.url).searchParams.get(name);
 }
 
-/**
- * A GET route that answers with the JSON value of `run`.
- * @param path - the route path.
- * @param run - the handler.
- * @returns the route.
- */
-function get(path: string, run: (request: Request) => unknown): ConnectionFetchRoute {
-  return {
-    path,
-    methods: ["GET"],
-    requestBody: "buffered",
-    fetch: (request) => answer(() => run(request)),
-  };
-}
-
-/**
- * A POST route that answers with the JSON value of `run`, called with the request's JSON body.
- * @param path - the route path.
- * @param run - the handler.
- * @returns the route.
- */
-function post(path: string, run: (body: unknown) => unknown): ConnectionFetchRoute {
-  return {
-    path,
-    methods: ["POST"],
-    requestBody: "buffered",
-    fetch: async (request) => {
-      const body = await bodyOf(request);
-      return answer(() => run(body));
-    },
-  };
-}
-
 /** The API service. */
 export default class CsApi extends Service {
   static inject = ["csProject"];
@@ -143,6 +110,8 @@ export default class CsApi extends Service {
   readonly api: ApiHandlers;
 
   private readonly config: Config;
+  /** The end function of every open event stream. */
+  private readonly streams = new Set<() => void>();
 
   constructor(ctx: Context, config: Config) {
     super(ctx, "csApi");
@@ -160,32 +129,59 @@ export default class CsApi extends Service {
     });
     // The stream needs Connection to tell whose request it is; without one it is not served at all.
     ctx.inject(["webServer", "connection"], (web) => {
-      web.effect(
-        () =>
-          web.webServer.register({
-            kind: "exact",
-            path: EVENTS_PATH,
-            handler: (request, response) => {
-              this.serveEvents(web, request, response);
-            },
-          }),
-        `csApi ${EVENTS_PATH}`,
-      );
+      web.effect(() => {
+        const dispose = web.webServer.register({
+          kind: "exact",
+          path: EVENTS_PATH,
+          handler: (request, response) => {
+            this.serveEvents(web, request, response);
+          },
+        });
+        return () => {
+          dispose();
+          // An open stream would stay subscribed to a service that is going away and never speak again. Ending it
+          // makes the browser connect anew, to whatever serves the path then.
+          // Each end removes its own entry; a Set may shrink while it is iterated.
+          for (const end of this.streams) end();
+        };
+      }, `csApi ${EVENTS_PATH}`);
     });
   }
 
   /** @returns the Fetch routes in path order. */
   fetchRoutes(): ConnectionFetchRoute[] {
     const api = this.api;
+    /** Answer with the JSON value of `run`, and log a failure nobody expected. */
+    const reply = (run: () => unknown): Promise<Response> =>
+      answer(run, (error) => {
+        this.ctx.logger("csApi").warn(error);
+      });
+    /** A GET route that answers with the JSON value of `run`. */
+    const get = (path: string, run: (request: Request) => unknown): ConnectionFetchRoute => ({
+      path,
+      methods: ["GET"],
+      requestBody: "buffered",
+      fetch: (request) => reply(() => run(request)),
+    });
+    /** A POST route that answers with the JSON value of `run`, called with the request's JSON body. */
+    const post = (path: string, run: (body: unknown) => unknown): ConnectionFetchRoute => ({
+      path,
+      methods: ["POST"],
+      requestBody: "buffered",
+      fetch: async (request) => {
+        const body = await bodyOf(request);
+        return reply(() => run(body));
+      },
+    });
     return [
       {
         path: ROUTES.projects,
         methods: ["GET", "POST"],
         requestBody: "buffered",
         fetch: async (request) => {
-          if (request.method === "GET") return answer(() => api.listProjects());
+          if (request.method === "GET") return reply(() => api.listProjects());
           const body = await bodyOf(request);
-          return answer(() => api.createProject(body));
+          return reply(() => api.createProject(body));
         },
       },
       post(ROUTES.untitled, (body) => api.untitledFolder(body)),
@@ -206,9 +202,10 @@ export default class CsApi extends Service {
   }
 
   /**
-   * Serve `/cs/events?project=<id>`: refuse requests Connection does not admit as the owner, answer the JSON error
-   * body of the Fetch routes for a malformed project (400 `invalid_params`) or an unknown one (404 `unknown_project`),
-   * else stream the project's changes.
+   * Serve `/cs/events?project=<id>`: refuse a method other than GET (405) and requests Connection does not admit as
+   * the owner (401 or 403, with no body, as dsh answers them), answer the JSON error body of the Fetch routes for a
+   * malformed project (400 `invalid_params`) or an unknown one (404 `unknown_project`), else stream the project's
+   * changes. Admission is checked when the stream opens; the stream ends with the plugin.
    * @param web - the context that holds the web server and the Connection.
    * @param request - the HTTP request.
    * @param response - the HTTP response.
@@ -244,9 +241,11 @@ export default class CsApi extends Service {
         .end(JSON.stringify({ error: error.message, code: error.code }));
       return;
     }
-    serveEventStream(projectId, request, response, {
+    const end = serveEventStream(projectId, request, response, {
       subscribe: (id, listener) => this.ctx.csProject.subscribe(id, listener),
       keepaliveMs: this.config.keepaliveMs,
+      onEnd: () => this.streams.delete(end),
     });
+    this.streams.add(end);
   }
 }

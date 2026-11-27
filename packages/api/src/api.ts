@@ -122,9 +122,13 @@ const STATUS_OF: Partial<Record<ProjectError["code"], 400 | 404 | 409>> = {
  * `/api/cs` route and `/cs/events`: an {@link ApiRequestError} with its status and code, a `ProjectError` with the
  * status of its code, anything else with 500 and code `internal_error`.
  * @param run - the route body.
+ * @param onInternalError - told about each failure answered with 500, so the host can log it.
  * @returns the JSON response.
  */
-export async function answer(run: () => unknown): Promise<Response> {
+export async function answer(
+  run: () => unknown,
+  onInternalError?: (error: unknown) => void,
+): Promise<Response> {
   try {
     return json(await run());
   } catch (error) {
@@ -134,6 +138,7 @@ export async function answer(run: () => unknown): Promise<Response> {
     if (error instanceof ProjectError) {
       return json({ error: error.message, code: error.code }, STATUS_OF[error.code] ?? 409);
     }
+    onInternalError?.(error);
     return json({ error: messageOf(error), code: "internal_error" }, 500);
   }
 }
@@ -207,6 +212,40 @@ function stringOf(value: unknown, field: string): string {
     throw invalid(`'${field}' must be a non-empty string.`);
   }
   return value;
+}
+
+/** The longest folder or project name a request may give, in UTF-8 bytes; file systems stop at 255. */
+const NAME_BYTES = 200;
+
+/**
+ * @param value - a raw JSON value.
+ * @param field - the field name for the error.
+ * @returns the string, fit to name a folder or a project.
+ * @throws ApiRequestError (400, code `invalid_params`) when the value is not a non-empty string, holds a control
+ *   character, or is longer than {@link NAME_BYTES} bytes.
+ */
+function nameOf(value: unknown, field: string): string {
+  const name = stringOf(value, field);
+  // oxlint-disable-next-line eslint/no-control-regex -- control characters are what this refuses.
+  if (/[\u0000-\u001f\u007f]/u.test(name)) {
+    throw invalid(`'${field}' must not contain control characters.`);
+  }
+  if (Buffer.byteLength(name) > NAME_BYTES) {
+    throw invalid(`'${field}' must be at most ${String(NAME_BYTES)} bytes.`);
+  }
+  return name;
+}
+
+/**
+ * @param error - what a file system call threw.
+ * @returns whether it says the path does not exist or is not a folder.
+ */
+function isMissingPath(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    (error.code === "ENOENT" || error.code === "ENOTDIR")
+  );
 }
 
 /**
@@ -323,6 +362,8 @@ function humanOrigin(body: Record<string, unknown>, intent: string): RecordOrigi
 /** Reads and writes projects on behalf of the browser views. */
 export class ApiHandlers {
   private readonly project: CsProject;
+  /** The create in flight, so the next one picks its title from a list that already holds this one. */
+  private creating: Promise<unknown> = Promise.resolve();
 
   /** @param project - the Project service every handler reads and writes through. */
   constructor(project: CsProject) {
@@ -376,20 +417,37 @@ export class ApiHandlers {
    * double click) create two distinct titles.
    * @param raw - `{title, surface?}`, or `{folder, session}` from the chat session `session` (surface `chat`).
    * @returns the project, with the title it was created with.
+   * @throws ApiRequestError (400, code `invalid_params`) for a title or folder that cannot name a project, or a
+   *   folder that does not exist.
    */
-  async createProject(raw: unknown): Promise<ProjectInfo> {
+  createProject(raw: unknown): Promise<ProjectInfo> {
+    // Creates run one at a time: each picks its free title after the one before it is listed.
+    const created = this.creating.then(() => this.createOne(raw));
+    this.creating = created.catch(() => undefined);
+    return created;
+  }
+
+  /** One create; see {@link createProject}. */
+  private async createOne(raw: unknown): Promise<ProjectInfo> {
     const body = objectOf(raw);
     if (body["folder"] !== undefined) {
       const folder = stringOf(body["folder"], "folder");
-      const title = this.freeTitle(basename(folder));
-      return refused(() =>
-        this.project.createProject(folder, title, {
-          ...humanOrigin(body, `create project ${title}`),
-          surface: "chat",
-        }),
-      );
+      const name = basename(folder);
+      if (name === "") throw invalid("'folder' must name a folder with a name.");
+      const title = this.freeTitle(name);
+      try {
+        return await refused(() =>
+          this.project.createProject(folder, title, {
+            ...humanOrigin(body, `create project ${title}`),
+            surface: "chat",
+          }),
+        );
+      } catch (error) {
+        if (isMissingPath(error)) throw invalid("'folder' must be an existing folder.");
+        throw error;
+      }
     }
-    const title = this.freeTitle(stringOf(body["title"], "title"));
+    const title = this.freeTitle(nameOf(body["title"], "title"));
     const folder = await refused(() => this.project.newProjectFolder(title));
     return refused(() =>
       this.project.createProject(folder, title, {
@@ -405,7 +463,7 @@ export class ApiHandlers {
    * @returns `{path}`, the folder.
    */
   async untitledFolder(raw: unknown): Promise<{ path: string }> {
-    const name = stringOf(objectOf(raw)["name"], "name");
+    const name = nameOf(objectOf(raw)["name"], "name");
     return { path: await refused(() => this.project.newProjectFolder(name)) };
   }
 
@@ -417,7 +475,7 @@ export class ApiHandlers {
   async renameProject(raw: unknown): Promise<{ title: string }> {
     const body = objectOf(raw);
     const projectId = this.requireProject(body["project"]);
-    const title = typeof body["title"] === "string" ? body["title"] : "";
+    const title = nameOf(body["title"], "title");
     const info = await refused(() => this.project.renameProject(projectId, title));
     return { title: info.title };
   }
@@ -480,15 +538,14 @@ export class ApiHandlers {
   async runOperation(raw: unknown): Promise<ProjectRecord> {
     const request = await this.runRequestOf(objectOf(raw));
     const result = await refused(() => this.project.run(request));
-    if (result.record === null) {
-      throw invalid(`'${request.operation}' is a read and writes no record.`);
-    }
+    // `runRequestOf` refused every read, so a run without a record is a broken operation.
+    if (result.record === null) throw new Error(`'${request.operation}' wrote no record.`);
     return result.record;
   }
 
   /**
    * Check an operation call as {@link runOperation} would run it, writing nothing: the refusal sentence that the call
-   * would get now. An unknown operation and an input text that does not parse are refusals too.
+   * would get now. An unknown operation, a read, and an input text that does not parse are refusals too.
    * @param raw - the {@link OperationRequest}.
    * @returns the check; `problems` is empty when the call can run on the current state.
    * @throws ApiRequestError when the body or the project is unknown.
@@ -499,7 +556,7 @@ export class ApiHandlers {
     } catch (error) {
       if (
         !(error instanceof ApiRequestError) ||
-        !["invalid_inputs", "unknown_operation"].includes(error.code)
+        !["invalid_inputs", "unknown_operation", "read_only_operation"].includes(error.code)
       ) {
         throw error;
       }
@@ -512,13 +569,23 @@ export class ApiHandlers {
    * names a producer that has not finished.
    * @param body - the request body.
    * @returns the request.
-   * @throws ApiRequestError when the project or the operation is unknown, or an input does not parse.
+   * @throws ApiRequestError when the project or the operation is unknown, the operation is a read, or an input does
+   *   not parse.
    */
   private async runRequestOf(body: Record<string, unknown>): Promise<RunRequest> {
     const projectId = this.requireProject(body["project"]);
     const operation = stringOf(body["operation"], "operation");
-    if (!this.project.listOperations().some((spec) => spec.name === operation)) {
+    const spec = this.project.listOperations().find((candidate) => candidate.name === operation);
+    if (spec === undefined) {
       throw new ApiRequestError(404, `Unknown operation '${operation}'.`, "unknown_operation");
+    }
+    // A read writes no record and is not in the operation list of a view; refusing it here keeps it from running.
+    if (spec.readOnly === true) {
+      throw new ApiRequestError(
+        400,
+        `'${operation}' is a read; a view cannot run it.`,
+        "read_only_operation",
+      );
     }
     const surface = surfaceOf(body["surface"]);
     const intent =
@@ -643,13 +710,16 @@ export class ApiHandlers {
   private inputsByRole(value: unknown): Record<string, string[]> {
     if (value === undefined) return {};
     if (!Array.isArray(value)) throw invalid("'inputs' must be an array.");
-    const byRole: Record<string, string[]> = {};
+    // A map, so a role named like an `Object.prototype` member (`constructor`) is a key like any other.
+    const byRole = new Map<string, string[]>();
     for (const entry of value) {
       const input = objectOf(entry);
       const role = stringOf(input["role"], "inputs[].role");
-      (byRole[role] ??= []).push(stringOf(input["ref"], "inputs[].ref"));
+      const refs = byRole.get(role) ?? [];
+      refs.push(stringOf(input["ref"], "inputs[].ref"));
+      byRole.set(role, refs);
     }
-    return byRole;
+    return Object.fromEntries(byRole);
   }
 
   /**

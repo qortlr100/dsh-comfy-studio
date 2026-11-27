@@ -61,6 +61,8 @@ export interface ApiFixture {
   api: ApiHandlers;
   csApi: CsApi;
   routes: ConnectionFetchRoute[];
+  /** How many times `probe_note.peek`, the read-only operation, has executed. */
+  reads(): number;
   /** Hold every `probe_note.slow` run until the returned function is called. */
   holdSlow(): () => void;
   /** Invoke a Fetch route as the browser would, with a real `Request`. */
@@ -92,10 +94,10 @@ function probe(overrides: Partial<OperationSpec> & Pick<OperationSpec, "name">):
 
 /**
  * The operations of the throwaway component.
- * @param gate - the gate `probe_note.slow` waits on.
+ * @param gate - the gate `probe_note.slow` waits on, and the count of `probe_note.peek` executions.
  * @returns the specs.
  */
-function probeOperations(gate: { wait: Promise<void> }): OperationSpec[] {
+function probeOperations(gate: { wait: Promise<void>; reads: number }): OperationSpec[] {
   const imageOutput: OperationSpec["outputs"] = [{ role: "image", type: "image" }];
   let counter = 0;
   const snap = (context: Parameters<OperationSpec["execute"]>[0]): AssetId => {
@@ -136,7 +138,10 @@ function probeOperations(gate: { wait: Promise<void> }): OperationSpec[] {
       name: "probe_note.peek",
       description: "Read the notes.",
       readOnly: true,
-      execute: () => Promise.resolve({ outputs: [], report: { read: true } }),
+      execute: () => {
+        gate.reads += 1;
+        return Promise.resolve({ outputs: [], report: { read: true } });
+      },
     }),
   ];
 }
@@ -184,7 +189,7 @@ export async function mountApi(beforeApi: (context: Context) => void = noop): Pr
   const project = context.csProject;
   const assets = new MemoryAssets();
   project.registerAssetStore(assets);
-  const gate = { wait: Promise.resolve() };
+  const gate = { wait: Promise.resolve(), reads: 0 };
   project.registerComponent("probe_note");
   project.registerReducer(standIn<never>("probe_note"), noteReducer);
   for (const spec of probeOperations(gate)) project.registerOperation(spec);
@@ -215,6 +220,7 @@ export async function mountApi(beforeApi: (context: Context) => void = noop): Pr
     api: csApi.api,
     csApi,
     routes,
+    reads: () => gate.reads,
     holdSlow(): () => void {
       let release = noop;
       gate.wait = new Promise<void>((resolve) => {

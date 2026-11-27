@@ -309,15 +309,33 @@ describe("running operations", () => {
     expect(asRecord(missingAsset.json)["code"]).toBe("unknown_asset");
   });
 
-  it("does not list a readOnly operation and answers 400 when it is run", async () => {
+  it("does not list a readOnly operation, and refuses to run it without executing it", async () => {
     const f = await mountApi();
     const project = await f.newProject();
     expect(f.api.listOperations().map((o) => o.name)).not.toContain("probe_note.peek");
-    const result = await f.call(ROUTES.operation, {
-      json: { project, operation: "probe_note.peek" },
-    });
+    const json = { project, operation: "probe_note.peek" };
+    const result = await f.call(ROUTES.operation, { json });
     expect(result.status).toBe(400);
-    expect(asRecord(result.json)["code"]).toBe("invalid_params");
+    expect(asRecord(result.json)["code"]).toBe("read_only_operation");
+    // The check gives the same sentence as a problem, as for every refusal of the run.
+    const check = await f.call(ROUTES.operationCheck, { json });
+    expect(check.status).toBe(200);
+    expect(check.json).toEqual({ problems: [asRecord(result.json)["error"]] });
+    expect(f.reads()).toBe(0);
+    expect(await historyOf(f, project)).toHaveLength(1);
+  });
+
+  it("answers 400 invalid_inputs for a role named like an Object.prototype member", async () => {
+    const f = await mountApi();
+    const project = await f.newProject();
+    for (const role of ["constructor", "__proto__", "toString", "hasOwnProperty"]) {
+      const json = { project, operation: "probe_note.use", inputs: [{ role, ref: "x" }] };
+      const run = await f.call(ROUTES.operation, { json });
+      expect(run.status, role).toBe(400);
+      expect(asRecord(run.json)["code"], role).toBe("invalid_inputs");
+      const check = await f.call(ROUTES.operationCheck, { json });
+      expect(check.json, role).toEqual({ problems: [asRecord(run.json)["error"]] });
+    }
     expect(await historyOf(f, project)).toHaveLength(1);
   });
 
@@ -726,6 +744,47 @@ describe("project management", () => {
     expect(paths.size).toBe(6);
   });
 
+  it("gives creates that overlap distinct titles, and a failed create does not hold up the next", async () => {
+    const f = await mountApi();
+    const created = await Promise.all([
+      f.api.createProject({ title: "Dup" }),
+      f.api.createProject({ title: "Dup" }),
+      f.api.createProject({ title: "Dup" }),
+    ]);
+    expect(created.map((info) => info.title).toSorted()).toEqual(["Dup", "Dup 2", "Dup 3"]);
+    expect(new Set(created.map((info) => info.path)).size).toBe(3);
+    await expect(f.api.createProject({})).rejects.toThrow(ApiRequestError);
+    expect((await f.api.createProject({ title: "Dup" })).title).toBe("Dup 4");
+  });
+
+  it("answers 400 invalid_params for names a folder cannot carry and for a folder that does not exist", async () => {
+    const f = await mountApi();
+    const project = await f.newProject("Kept");
+    const refusals: Array<[string, unknown]> = [
+      [ROUTES.projects, { title: "a\u0000b" }],
+      [ROUTES.projects, { title: "a\nb" }],
+      [ROUTES.projects, { title: "x".repeat(201) }],
+      // 67 three-byte characters are 201 bytes.
+      [ROUTES.projects, { title: "가".repeat(67) }],
+      [ROUTES.projects, { folder: "/definitely/not/here" }],
+      [ROUTES.projects, { folder: "/" }],
+      [ROUTES.untitled, { name: "a\u0000b" }],
+      [ROUTES.untitled, { name: "x".repeat(201) }],
+      [ROUTES.projectRename, { project, title: "a\u0007b" }],
+      [ROUTES.projectRename, { project, title: "x".repeat(201) }],
+    ];
+    for (const [path, json] of refusals) {
+      const result = await f.call(path, { json });
+      expect(result.status, JSON.stringify(json).slice(0, 60)).toBe(400);
+      expect(asRecord(result.json)["code"]).toBe("invalid_params");
+      // The message names the field, never a path on the host.
+      expect(String(asRecord(result.json)["error"])).not.toContain(f.root);
+    }
+    expect(f.api.listProjects().map((info) => info.title)).toEqual(["Kept"]);
+    // The limit is in bytes, so the longest name that fits still works.
+    expect((await f.api.createProject({ title: "가".repeat(66) })).title).toBe("가".repeat(66));
+  });
+
   it("makes a chat's folder a project with surface chat and the session, titled after the folder", async () => {
     const f = await mountApi();
     const folder = await f.project.newProjectFolder("From chat");
@@ -854,5 +913,44 @@ describe("handler errors", () => {
         code: "unknown_project",
       });
     }
+  });
+});
+
+describe("answer and internal errors", () => {
+  it("reports a failure answered with 500, and no refusal", async () => {
+    const reported: unknown[] = [];
+    const report = (error: unknown): void => {
+      reported.push(error);
+    };
+    const boom = new Error("boom");
+    const failed = await answer(() => {
+      throw boom;
+    }, report);
+    expect(failed.status).toBe(500);
+    expect(reported).toEqual([boom]);
+    const refused = await answer(() => {
+      throw new ApiRequestError(400, "no", "invalid_params");
+    }, report);
+    expect(refused.status).toBe(400);
+    const projectRefusal = await answer(() => {
+      throw new ProjectError("nothing_to_undo", "no");
+    }, report);
+    expect(projectRefusal.status).toBe(409);
+    expect(reported).toHaveLength(1);
+  });
+});
+
+describe("the asset reader of the project layer", () => {
+  it("offers reads only and follows the registered store", async () => {
+    const f = await mountApi();
+    const project = await f.newProject();
+    const reader = f.project.assets();
+    expect(Object.keys(reader).toSorted()).toEqual(["get", "has", "url"]);
+    const snap = await f.api.runOperation({ project, operation: "probe_note.snap" });
+    const asset = defined(snap.outputs[0], "the output");
+    // The reader was made before the asset existed.
+    expect(reader.has(asset)).toBe(true);
+    expect(reader.get(asset)).toMatchObject({ mime: "image/png" });
+    expect(reader.url(asset)).toBe(f.assets.url(asset));
   });
 });

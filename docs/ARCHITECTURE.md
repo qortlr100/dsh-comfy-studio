@@ -111,7 +111,7 @@ export function apply(ctx: Context): void {
 | 히스토리 | `undo(id)`, `redo(id)`, `moveTo(id, record)`, `line(id)`(`{ tip, at }`), `listHistory(query)` |
 | 읽기 | `getState(id)`(리듀서마다의 조각), `getRecord`, `listRecords`, `subscribe(id, listener)` |
 | 채팅 세션의 프로젝트 | `sessionProject(sessionId)`: 세션의 작업 폴더가 프로젝트 폴더인 프로젝트 |
-| 에셋 | `registerAssetStore(store)`: 에셋 기능 컴포넌트(2-3)가 등록한다. 그때까지는 아무 에셋도 없는 빈 저장소가 대신한다. 프로젝트 계층 밖에서 읽을 때는 `assets()`(화면용 API가 쓴다) |
+| 에셋 | `registerAssetStore(store)`: 에셋 기능 컴포넌트(2-3)가 등록한다. 그때까지는 아무 에셋도 없는 빈 저장소가 대신한다. 프로젝트 계층 밖에서 읽을 때는 `assets()`(`has`·`get`·`url`만 있다. 화면용 API가 쓴다) |
 
 - `origin`은 누가(`actor`: `user`·`agent`·`system`), 어디서(`surface`: `chat`·`view`·`api`·`history`), 어느 세션·턴·도구 호출에서, 왜(`intent`) 했는지다. 기록마다 남는다. `view`는 우리 화면에서 한 사용자 동작이다.
 - 프로젝트 폴더의 `.comfy-studio/`에 `records.jsonl`(기록 줄과 갱신 줄, 추가만 한다)과 `line.json`(히스토리의 끝 `tip`과 현재 위치 `at`)이 있다. 이 디렉터리는 프로젝트 계층만 읽고 쓴다.
@@ -187,12 +187,13 @@ export function apply(ctx: Context): void {
 | `/cs/events?project=<id>` | GET | — | `text/event-stream`: `ready` 뒤에 `record`(기록 추가), `update`(기록 갱신), `line`(현재 위치나 끝이 바뀜) |
 
 - **쓰는 요청은 전부 프로젝트 계층의 연산 실행을 지난다.** `actor: "user"`로 부르고, 기록의 `surface`는 요청의 `surface`가 `chat`이면 `chat`, 그 밖은 `view`다. `session`을 주면 그 채팅 세션이 기록에 남는다.
-- **오류**는 모든 라우트와 스트림이 같은 본문 `{error, code, ...details}`로 답한다: `invalid_params`·`invalid_inputs`·`input_not_ready`(400), `unknown_project`·`unknown_record`·`unknown_operation`·`unknown_asset`(404), 그 밖의 프로젝트 계층 거절(409. 예: `nothing_to_undo`), `internal_error`(500).
-- **인증은 dsh의 것을 그대로 탄다.** fetch 라우트는 dsh `connection` 서비스의 정확 일치 라우트라, dsh가 Host·Origin과 브라우저 세션 쿠키를 검사한 뒤에 부르고 소유자만 닿는다. 이벤트 스트림은 `webServer`의 날 라우트라 요청마다 `connection.admit`으로 같은 검사를 하고 소유자일 때만 연다. `connection`이 없으면 스트림 라우트를 등록하지 않는다. 쿠키 없는 요청은 둘 다 401이다(**띄워 확인**).
+- **오류**는 라우트와 스트림이 같은 본문 `{error, code, ...details}`로 답한다: `invalid_params`·`invalid_inputs`·`input_not_ready`·`read_only_operation`(400), `unknown_project`·`unknown_record`·`unknown_operation`·`unknown_asset`(404), 그 밖의 프로젝트 계층 거절(409. 예: `nothing_to_undo`), `internal_error`(500. 호스트 로그에도 남는다). 인증에서 걸린 요청(401·403)은 dsh가 답하는 꼴이라 이 본문이 아니다.
+- 제목과 폴더 이름은 제어 문자가 없고 200바이트 이하여야 한다. 만들기는 한 번에 하나씩 처리되어 동시에 온 같은 제목도 서로 다른 번호를 받는다. 읽기 전용 연산은 이 API로 실행하지 못한다.
+- **인증은 dsh의 것을 그대로 탄다.** fetch 라우트는 dsh `connection` 서비스의 정확 일치 라우트라, dsh가 Host·Origin과 브라우저 세션 쿠키를 검사한 뒤에 부르고 소유자만 닿는다. 이벤트 스트림은 `webServer`의 날 라우트라 요청마다 `connection.admit`으로 같은 검사를 하고 소유자일 때만 연다. `connection`이 없으면 스트림 라우트를 등록하지 않는다. 쿠키 없는 요청은 둘 다 401이다(**띄워 확인**). 플러그인이 내려가면 열린 스트림을 모두 끝내고(브라우저의 `EventSource`가 다시 잇는다), 읽지 않는 클라이언트의 버퍼가 4MiB를 넘어도 끝낸다.
 - **화면은 상태를 들고 있지 않는다.** 스트림에 이벤트가 오면 `/api/cs/state`를 다시 읽는다. 상태는 통째로 온다(부분 갱신 라우트는 없다).
 - **에셋**은 프로젝트 계층에 등록된 에셋 저장소에서 읽는다(`ctx.csProject.assets()`). 항목은 `{id, mime, name, url}`이고 상태의 `assets`에는 `made_by`(만든 연산)가 붙는다. 에셋 기능 컴포넌트(2-3)가 생기기 전에는 빈 저장소라 늘 `[]`이다.
 - 브라우저가 받는 JSON의 타입은 `@cs/api/wire`에 있다(`WireState`, `WireOperation`, `WireHistory`, `WireProject`, `ProjectAsset`). 브라우저 절반은 `import type`으로 가져다 쓴다.
-- 설정(번들의 `cs-api` 행): `keepaliveMs`(15000. 스트림이 조용할 때 주석 줄을 보내는 간격).
+- 설정(번들의 `cs-api` 행): `keepaliveMs`(15000, 1000 이상. 스트림이 조용할 때 주석 줄을 보내는 간격).
 
 DreamVerse의 라우트 가운데 아직 없는 것과 생길 곳:
 

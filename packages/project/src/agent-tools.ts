@@ -282,7 +282,8 @@ export function parseInputs(
     if (typeof raw !== "object" || raw === null || Array.isArray(raw))
       throw new Error("inputs must be an object of role to reference(s).");
     for (const [role, value] of Object.entries(raw)) {
-      const input = spec.inputs[role];
+      // Own keys only: `constructor` or `__proto__` is no role of any operation.
+      const input = Object.hasOwn(spec.inputs, role) ? spec.inputs[role] : undefined;
       if (input === undefined) {
         throw new Error(
           `Unknown input role "${role}" for ${callerName}; roles: ${Object.keys(spec.inputs).join(", ") || "none"}.`,

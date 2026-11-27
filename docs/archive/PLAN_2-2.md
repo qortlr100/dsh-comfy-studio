@@ -1,6 +1,6 @@
 # 단계 계획 — 2-2 계약 ②: 화면용 API
 
-`docs/ROADMAP.md` 2-2의 상세 계획이다. 브랜치는 `2-2-view-api`다(2026-11-28).
+`docs/ROADMAP.md` 2-2의 상세 계획이다. 브랜치는 `2-2-view-api`다(2026-11-28). 끝났다: 결과는 맨 아래 "한 것"부터 읽는다.
 
 ## 범위
 
@@ -58,7 +58,7 @@ DreamVerse `packages/dv/api/src/`의 모듈이다.
 | `/api/cs/history` | POST | `{project, actor?, component?, operation?, kind?, status?, session?, turn?, tool_call?, records?, before?, limit?}` | `WireHistory`(`{entries, assets}`). `limit`은 1~200, 기본 50 |
 | `/cs/events?project=<id>` | GET | — | `text/event-stream`: `ready` 뒤에 `record`, `update`, `line` |
 
-- 오류는 모든 라우트와 스트림이 같은 본문 `{error, code, ...details}`로 답한다. `invalid_params`(400), `invalid_inputs`·`input_not_ready`(400), `unknown_project`·`unknown_record`·`unknown_operation`·`unknown_asset`(404), 그 밖의 `ProjectError` 코드(409. 예: `nothing_to_undo`), `internal_error`(500).
+- 우리 처리기가 내는 오류는 라우트와 스트림이 같은 본문 `{error, code, ...details}`로 답한다. `invalid_params`·`invalid_inputs`·`input_not_ready`·`read_only_operation`(400), `unknown_project`·`unknown_record`·`unknown_operation`·`unknown_asset`(404), 그 밖의 `ProjectError` 코드(409. 예: `nothing_to_undo`), `internal_error`(500. 호스트 로그에도 남긴다). 인증에서 걸린 요청(401·403)과 스트림의 GET 아닌 메서드(405)는 dsh가 답하는 꼴대로 본문이 없거나 평문이다.
 - 쓰는 요청은 전부 `csProject`를 `actor: "user"`로 부른다. 기록의 `surface`는 요청의 `surface`가 `chat`이면 `chat`, 그 밖은 `view`다(`docs/DECISIONS.md` "확정"의 "글과 surface만": `view`는 우리 화면에서 한 사용자 동작).
 
 ## 인증
@@ -83,7 +83,7 @@ Claude가 고른 기본값이다. 사용자가 정한 것이 아니다(`docs/DEC
 | 요청의 `surface` | `chat` 또는 `view`. 그 밖의 값은 `view`로 센다 | 프로젝트 계층의 `Surface`가 `chat`·`view`·`api`·`history`다. 화면이 보내는 것은 앞의 둘이다 | 화면별로 나누기로 하면(3-2 이후) 값을 늘린다 |
 | 에셋의 모양 | `WireAsset`은 `{id, mime, name, url}`, 상태의 `assets`는 거기에 `made_by`를 더한 `ProjectAsset` | 프로젝트 계층의 `AssetStore`가 주는 것이 이만큼이다. 크기·픽셀 크기·만든 때, "가져온 에셋은 버려진 단계의 것도 남는다" 규칙은 에셋 기능 컴포넌트가 생기는 2-3에서 더한다 | 2-3에서 타입을 넓힌다(필드를 더하는 쪽이다) |
 | 프로젝트 요약의 표지 | 끝난 기록의 첫 이미지 출력 | DreamVerse에서 타임라인이 없을 때의 규칙이다 | 3-0에서 프로젝트 목록을 그리며 바꿀 수 있다 |
-| 설정 | `keepaliveMs`(15000) 하나 | 스킬 설정 넷은 뺀 라우트의 것이다 | — |
+| 설정 | `keepaliveMs`(15000, 1000 이상) 하나 | 스킬 설정 넷은 뺀 라우트의 것이다 | — |
 | 코드 모양 | 2-0과 같다: Prettier, 지울 수 있는 문법만, 시험은 대상 옆 | `docs/archive/PLAN_2-0.md` "고른 것" | — |
 | 시험이 쓰는 프로젝트 계층의 시험 지원 | `@cs/project`가 `./testing/support`와 `./testing/workspaces`를 내보낸다 | DreamVerse는 상대 경로로 다른 패키지의 `tests/`를 가져온다. 내보내는 쪽이 경계가 분명하다 | — |
 
@@ -103,7 +103,7 @@ Claude가 고른 기본값이다. 사용자가 정한 것이 아니다(`docs/DEC
 - 이벤트 스트림의 프레임과 `ready`, 구독 해제.
 - 상태의 `assets`: 저장소가 가진 것만, `made_by`.
 
-조합 시험(`tests/integration/api.test.ts`)은 dsh를 띄우고 브라우저 페이지 안에서 `fetch`와 `EventSource`로 부른다. 시험용 기능 컴포넌트는 패치 행으로 얹는 픽스처 플러그인(`tests/integration/fixtures/note-component.ts`)이 등록한다.
+조합 시험(`tests/integration/api.test.ts`)은 dsh를 띄우고 브라우저 페이지 안에서 `fetch`와 `EventSource`로 부른다. 시험용 기능 컴포넌트는 패치 행으로 얹는 픽스처 플러그인(`tests/integration/fixtures/memo-component.ts`)이 등록한다.
 
 1. `POST /api/cs/projects`로 프로젝트를 만든다.
 2. `GET /api/cs/state`가 `head`와 `components`를 준다. `GET /api/cs/operations`에 시험용 연산이 있다.
@@ -128,3 +128,54 @@ Claude가 고른 기본값이다. 사용자가 정한 것이 아니다(`docs/DEC
 | C | 조합 시험과 픽스처 플러그인 | 지휘 세션 |
 | D | 구현과 독립된 리뷰(diff, 이 문서, 원본 소스만 준다) | 상위 서브 에이전트 하나 |
 | E | 문서 | 지휘 세션 |
+
+## 한 것
+
+| 묶음 | 한 것 |
+| --- | --- |
+| A, C, E | `packages/api`(`@cs/api`)를 만들고 여섯 모듈을 옮겼다(`index.ts`, `api.ts`, `wire.ts`, `events.ts`, `summaries.ts`. `projects-admin.ts`는 `api.ts`에 합쳤다). `@cs/project`에 `assets()`와 시험 지원 내보내기를 더했다. 번들에 `cs-api` 행을 넣고 조합 시험과 픽스처 플러그인을 썼다. 문서 |
+| B | 단위 시험(`api.test.ts`, `events.test.ts`, `summaries.test.ts`, `wire.test.ts`)과 시험 지원(`src/testing/support.ts`) |
+| D | 리뷰와 그 지적을 고친 것(아래 "리뷰") |
+
+## 계획과 달라진 점
+
+- **dsh와 어긋나는 곳이 없었다.** `connection.fetch.register`, `webServer.register`, `connection.admit`이 0.2.2-rc.5에 그대로 있다. 2-0과 달리 dsh 쪽을 맞추느라 고친 곳이 없다.
+- **스트림 라우트는 `exact`로 등록했다**(원본은 `prefix`). `/cs/events` 아래에 다른 경로가 없다. GET이 아닌 메서드는 인증을 보기 전에 405로 답한다.
+- **프로젝트 만들기·이름 바꾸기·빼기도 `refused`를 거친다.** 상태 코드는 원본과 같다(원본은 `answer`가 같은 표로 바꿨다).
+- **리뷰에서 고친 여섯 곳이 원본과 동작이 다르다**(아래 "리뷰").
+
+## 확인한 것
+
+2026-11-28, 이 브랜치에서 돌렸다.
+
+- `pnpm check`의 검사(빌드, 타입, 린트, 포맷, 단위 시험 235개 가운데 화면용 API 94개)가 통과한다.
+- `pnpm test:integration`의 시험 10개가 통과한다. 화면용 API의 둘(`tests/integration/api.test.ts`)이 실제 dsh에서 본 것:
+  - 번들의 행으로 서비스가 올라오고, 로그인한 브라우저 페이지의 `fetch("/api/cs/…")`가 닿는다.
+  - `POST /api/cs/projects`가 dsh 프로세스의 홈 아래 `comfy-studio-projects/`에 폴더를 만들고 기록 파일을 쓴다. 목록에 그 프로젝트가 보인다.
+  - 연산 선언에 픽스처의 연산이 라벨과 함께 있다. 상태에 리듀서의 조각이 있다.
+  - `EventSource("/cs/events?project=…")`가 열리고 `ready`가 온다. 연산을 실행하면 그 기록의 `record`, 상태가 `done`인 `update`, `line`이 온다. 다시 읽은 상태에 결과가 보인다.
+  - 실행 취소와 다시 실행이 현재 위치를 옮기고 각각 `line` 이벤트 하나를 낸다. 히스토리와 요약이 맞는다.
+  - 브라우저 콘솔 오류와 경고가 0건이다.
+  - 쿠키 없는 요청은 fetch 라우트와 스트림 모두 401이다.
+- `pnpm -s dsh:config`의 `# == @cs/bundle` 아래에 `cs-api` 행이 보인다.
+
+확인하지 못한 것: 리버스 프록시 뒤에서 스트림이 버퍼링 없이 흐르는지(1-5), dsh가 도는 중에 `cs-project` 행의 설정이 바뀌어 서비스가 다시 실릴 때 브라우저가 스트림을 다시 잇는지(플러그인이 내려가면 열린 스트림이 끝나는 것까지는 단위 시험으로 봤다).
+
+## 리뷰
+
+구현과 독립된 리뷰를 상위 모델에게 맡겼다(diff, 이 문서, 원본 소스, 설치된 dsh 0.2.2-rc.5의 소스만 줬다). 원본과 모듈마다 비교한 결과 **계획에 적지 않은 동작 차이는 해롭지 않은 것뿐**이었다(위 "계획과 달라진 점"). P1은 없었다. P2 둘과 P3 여섯을 이렇게 처리했다. 여덟 가운데 여섯은 원본에서 물려받은 동작이다(`assets()`와 문서는 이 단계에서 생긴 것이다).
+
+| 지적 | 처리 |
+| --- | --- |
+| P2. 동시에 온 만들기 요청 둘이 같은 제목을 받는다(빈 제목을 고르는 것이 폴더를 만들기 전이다. 재현됐다) | 만들기를 한 번에 하나씩 한다(`ApiHandlers.createProject`가 앞의 만들기를 기다린다). 실패한 만들기는 다음 것을 막지 않는다. 시험을 더했다. **원본과 다르다** |
+| P2. 플러그인이 내려가도 열린 스트림이 남고, 옛 구독에 묶여 조용해진다(keep-alive가 계속 가서 브라우저가 다시 잇지 않는다. 앞 절반이 재현됐다) | 서비스가 열린 스트림을 들고 있다가 라우트를 뺄 때 모두 끝낸다. 브라우저의 `EventSource`가 다시 잇는다. 시험을 더했다. **원본과 다르다** |
+| P3. 입력 역할 이름이 `constructor`·`__proto__` 같으면 500이 난다(재현됐다) | 역할을 `Map`으로 모은다. 프로젝트 계층의 `parseInputs`도 연산의 자기 열쇠만 본다(에이전트 도구 호출에서 그런 역할이 아는 역할로 통하던 것을 같이 막았다). 400 `invalid_inputs`다. **원본과 다르다** |
+| P3. 폴더가 될 수 없는 이름(NUL, 너무 긴 이름)과 없는 폴더가 절대 경로가 든 500이 된다(재현됐다) | 제목·폴더 이름은 제어 문자가 없고 200바이트 이하여야 한다. 없는 폴더는 400 `invalid_params`다. 500은 호스트 로그에 남긴다. **원본과 다르다** |
+| P3. 읽기 전용 연산을 실행 라우트로 부르면 연산이 돌고 나서 400이 나고, 사전 확인은 문제없다고 답한다(재현됐다) | 실행 요청을 만들 때 거절한다(400 `read_only_operation`). 연산이 돌지 않고, 사전 확인이 같은 문장을 문제로 준다. **원본과 다르다** |
+| P3. `assets()`가 쓸 수 있는 저장소(`importAsset`)까지 내준다 | 읽기 셋(`has`, `get`, `url`)만 가진 객체를 준다(`AssetReader`). "에셋은 연산 실행으로만 들어온다"가 타입이 아니라 값으로 지켜진다 |
+| P3. `keepaliveMs`가 0이나 음수를 받는다. 읽지 않는 클라이언트의 버퍼가 끝없이 는다 | `keepaliveMs`는 1000 이상이다. 버퍼가 4MiB를 넘으면 스트림을 끝낸다(브라우저가 다시 잇고 상태를 다시 읽는다). **원본과 다르다** |
+| P3. 문서와 시험이 어긋난 곳: 조합 시험이 `update`를 단언하지 않는데 문서가 띄워 확인했다고 적었다. `line` 둘만 남는다는 단언이 `update`가 늦게 오면 깨질 수 있다. 인증에서 걸린 요청의 본문이 JSON이 아니다. 픽스처 파일 이름 | 조합 시험이 상태가 `done`인 `update`를 기다리고 단언한다. 문서를 고쳤다 |
+
+고치지 않은 것: 스트림의 인증을 열 때 한 번만 본다(브라우저 세션이 끊겨도 열린 스트림은 남는다). dsh의 다른 연결도 같은 방식이고 스트림은 플러그인과 함께 끝난다. `{folder}`로 만드는 프로젝트는 있는 폴더라면 어느 것이든 받는다. 원본의 동작이고, 소유자만 부를 수 있으며, 채팅이 도는 폴더를 프로젝트로 만드는 길이다.
+
+PR의 리뷰 봇 지적은 PR이 열린 뒤 이 절에 이어 적는다.
