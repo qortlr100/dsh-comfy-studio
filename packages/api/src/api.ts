@@ -495,12 +495,15 @@ export class ApiHandlers {
   /**
    * @param wanted - the requested project title.
    * @returns the title itself when no listed project has it; else its base (without a trailing number) followed by the
-   *   lowest free number from the requested one, or from 2, upwards.
+   *   lowest free number from the requested one, or from 2, upwards. A trailing number of more than nine digits is
+   *   part of the name, not a counter: the title is the base and the count starts at 2.
    */
   private freeTitle(wanted: string): string {
     const taken = new Set(this.project.listProjects().map((info) => info.title));
     if (!taken.has(wanted)) return wanted;
-    const numbered = /^(.*\S)\s+(\d+)$/.exec(wanted);
+    // Nine digits at most, so the counter stays an exact integer however far it counts: past 2^53 adding one
+    // changes nothing and the loop below would never end.
+    const numbered = /^(.*\S)\s+(\d{1,9})$/.exec(wanted);
     const base = numbered?.[1] ?? wanted;
     let n = numbered === null ? 2 : Number(numbered[2]) + 1;
     while (taken.has(`${base} ${String(n)}`)) n += 1;

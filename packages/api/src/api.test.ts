@@ -744,6 +744,32 @@ describe("project management", () => {
     expect(paths.size).toBe(6);
   });
 
+  it("counts on from a trailing number, and takes a number too large to count as part of the name", async () => {
+    const f = await mountApi();
+    const titles: string[] = [];
+    const huge = "Test 9007199254740992";
+    for (const wanted of [
+      "Take 41",
+      "Take 41",
+      huge,
+      huge,
+      huge,
+      "Shot 999999999",
+      "Shot 999999999",
+    ]) {
+      titles.push((await f.api.createProject({ title: wanted })).title);
+    }
+    expect(titles).toEqual([
+      "Take 41",
+      "Take 42",
+      huge,
+      `${huge} 2`,
+      `${huge} 3`,
+      "Shot 999999999",
+      "Shot 1000000000",
+    ]);
+  });
+
   it("gives creates that overlap distinct titles, and a failed create does not hold up the next", async () => {
     const f = await mountApi();
     const created = await Promise.all([
