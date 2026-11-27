@@ -8,7 +8,7 @@ DeepSeek Harness(dsh) 위에 이 프로젝트를 올릴 때 알아야 하는 것
 
 **경로 읽는 법**: 이 문서에서 "업스트림"이라고 한 `docs/…`와 `packages/…` 경로는 dsh 저장소 안의 경로다(소문자 파일 이름). 이 저장소의 문서는 `docs/ARCHITECTURE.md`처럼 대문자 이름이다.
 
-확인에 쓴 시험 코드는 이 저장소에 없다(검토용이었고 지웠다). 다시 확인하려면 "띄워서 확인하는 법"을 따른다. 이 문서의 코드 조각은 그때 실제로 돌린 것에서 추렸다. 그 시험 코드는 빨리 확인하려고 업스트림의 브라우저 코드 규칙을 따르지 않았다("업스트림의 브라우저 코드 규칙"의 주의).
+2026-11-24~25의 확인에 쓴 시험 코드는 이 저장소에 없다(검토용이었고 지웠다). 지금은 조합 시험(`pnpm test:integration`, "띄워서 확인하는 법")으로 확인한다. 이 문서의 코드 조각은 그때 실제로 돌린 것에서 추렸다. 그 시험 코드는 빨리 확인하려고 업스트림의 브라우저 코드 규칙을 따르지 않았다("업스트림의 브라우저 코드 규칙"의 주의).
 
 ## 기본 정보
 
@@ -33,6 +33,8 @@ dsh plugin --profile <name> <pnpm-args>   프로필 디렉터리에서 pnpm을 �
 웹 앱 옵션: --host <주소> --port <포트>(0이면 빈 포트) --no-open
             --public-url <url> --trusted-host <authority> --tls-cert <파일> --tls-key <파일>
 ```
+
+런처의 옵션(`--patch`, `--dump-config` 등)은 웹 앱 옵션보다 **앞에** 적는다. 뒤에 두면 웹 앱이 `error: unknown option '--patch'`로 끝난다(**띄워 확인**, 2026-11-27). 웹 앱은 준비되면 stdout에 `dsh web: <토큰이 든 주소>` 한 줄을 찍는다. 주소를 기계가 읽을 다른 길(파일, `--json`)은 없다(**소스 확인**).
 
 ## 얹는 방법: 프로필과 번들
 
@@ -95,6 +97,12 @@ pnpm exec dsh --profile comfy-studio --no-open --port 8092
 - 프로필의 `pnpm-workspace.yaml`은 `nodeLinker: hoisted`다.
 - 설정 화면에서 바꾼 값은 프로필의 `cordis.patch.yml`에 쓰인다.
 - 합성된 구성은 203행이다(`dsh-base`와 `dsh-web-app`이 202행. 2026-11-26에 이 저장소의 틀로 다시 셌다). `--dump-config`는 행 묶음마다 어느 계층의 것인지 `# == <번들 이름>` 머리 줄을 찍는다(우리 번들의 행은 `# == @cs/bundle` 아래에 나왔다). 자주 볼 행 id: `llm-pi-ai`, `llm-deepseek`, `credentials`, `storage`, `storage-json`, `storage-domain`, `schedule`, `mcp-manager`, `skill`, `subagent`, `web-search-deepseek`, `webserver`, `web-runtime`, `connection`, `locale`, `ui-theme`, `ui-layout`, `ui-sidebar`, `ui-sidebar-right`, `ui-conversation`, `ui-settings`, `agent-preset-registry`, `preset-standard`.
+- 패치의 행 `name`은 패키지 이름 말고 **파일 경로**여도 된다. 절대 경로나 `./`·`../`로 시작하는 경로(그 패치 파일의 위치 기준)를 dsh가 `file://` 주소로 바꿔 불러온다(**소스 확인**: 업스트림 `packages/boot/app-boot/src/index.ts`의 `anchorInsertedPluginNames`). `.ts` 파일의 절대 경로를 적은 `--patch`로 프로필에 설치하지 않은 플러그인이 실린다(**띄워 확인**, 2026-11-27. 조합 시험의 프로브가 이렇게 실린다).
+- 패치 파일의 내용은 JSON이어도 된다(JSON은 YAML이다. **띄워 확인**, 2026-11-27).
+- 행을 지우는 키는 없다. 끄려면 그 `id`에 `disabled: true`를 준다(**소스 확인**).
+- **행의 `apply`가 던져도 dsh는 뜬다.** `dsh: warning: 1 entry did not activate`와 그 행의 스택을 찍고 계속 간다. 필수 플러그인이 못 뜰 때만(예: 브라우저 번들이 없을 때의 `modules`) `dsh: startup failed: …`로 종료 코드 1이다(**띄워 확인**, 2026-11-27). 그래서 조합 시험의 `launchDsh`는 출력에 `did not activate`가 있으면 실패로 본다.
+- 기동은 주소 줄까지 약 1.2초다. SIGTERM을 받으면 정리하고 약 0.8초 뒤 종료 코드 0으로 끝나고(정리 한도는 5초, **소스 확인**), SIGINT는 종료 코드 130이다. 웹 프로필은 자식 프로세스를 두지 않았다(**띄워 확인**, 2026-11-27).
+- 같은 home을 두 dsh가 동시에 쓰는 것을 막는 잠금은 없다(세션 파일과 설정 쓰기에만 잠금이 있다. **소스 확인**).
 - 업스트림 안내: `docs/user/develop/basic/publish.md`.
 
 ### 워크트리와 DSH_HOME
@@ -108,7 +116,7 @@ pnpm exec dsh --profile comfy-studio --no-open --port 8092
 - 다시 거는 데는 약 0.5초가 걸린다. `bundles` 목록에 번들이 겹쳐 들어가지 않고 프로필의 `cordis.patch.yml`(설정 화면에서 바꾼 값)은 그대로 남는다(**띄워 확인**, 2026-11-25).
 - **링크는 한 번에 한 워크트리만 가리킨다.** 한 워크트리에서 띄워 둔 채 다른 워크트리에서 띄우면 먼저 띄운 쪽의 링크가 바뀐다. 두 곳에서 동시에 띄울 때는 한쪽에 `DSH_HOME=<다른 경로>`를 준다. 환경 변수가 있으면 스크립트는 그 경로를 쓴다.
 - 워크트리를 지운 뒤에는 링크가 없는 경로를 가리킨다. 다음에 어느 체크아웃에서든 `pnpm dsh:profile`이나 `pnpm dsh:start`를 돌리면 다시 걸린다(**띄워 확인**, 2026-11-26).
-- 시험은 임시 home을 쓴다("띄워서 확인하는 법"). 개발용 home의 키와 설정을 건드리지 않는다.
+- 조합 시험은 띄울 때마다 새 임시 home을 쓴다("띄워서 확인하는 법"). 개발용 home의 키와 설정을 건드리지 않는다.
 - 버린 안: 워크트리마다 home을 두는 것(워크트리를 지우면 모델 키와 설정이 같이 사라진다), 저장소 밖에 공용 home을 두는 것.
 
 ## 플러그인 패키지 하나의 모양
@@ -433,7 +441,7 @@ dsh가 싣고 오는 언어는 영어, 중국어, 일본어, 스페인어, 프�
 
 ## 호스트 쪽
 
-DreamVerse의 서버 쪽 패키지가 dsh에서 가져다 쓰는 것이다. 전부 0.2.2-rc.5에 있고 타입이 맞는다(타입 검사로 확인, 차이 5건은 `docs/DREAMVERSE.md`). 실행해 보지는 않았다. 쓰는 법은 업스트림 문서를 본다.
+DreamVerse의 서버 쪽 패키지가 dsh에서 가져다 쓰는 것이다. 전부 0.2.2-rc.5에 있고 타입이 맞는다(타입 검사로 확인, 차이 5건은 `docs/DREAMVERSE.md`). 이 가운데 실행해 본 것은 `ctx.tools`를 읽는 것 하나다(표 아래). 쓰는 법은 업스트림 문서를 본다.
 
 | 하려는 것                       | dsh 패키지와 이름                                                                                                   | 업스트림 문서                                              |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
@@ -449,6 +457,14 @@ DreamVerse의 서버 쪽 패키지가 dsh에서 가져다 쓰는 것이다. 전�
 | 비밀값                          | `ctx.credentials` — 설정에는 참조(환경 변수 이름 모양)만 두고 쓸 때마다 `resolve(ref)`로 읽는다                     | `docs/subsystems/credentials.md`                           |
 | 세션 로그가 아닌 데이터 저장    | `ctx.storage`, `ctx.storageDomain` — zod 스키마로 도메인을 선언하고 연다                                            | `docs/subsystems/storage.md`                               |
 | 설정 화면에 카드 추가           | —                                                                                                                   | `docs/cookbook/adding-a-settings-card.md`                  |
+
+호스트 쪽 플러그인을 쓰며 알게 된 것(**띄워 확인**, 2026-11-27. 조합 시험의 프로브와 시나리오):
+
+- `apply(ctx, config)`의 둘째 인자로 행의 `config`가 온다(중첩된 값도 그대로).
+- 주입하지 않은 서비스를 `ctx`에서 읽으면 던진다(`cannot get property "x" without inject`). 모듈의 `inject`에 적거나 `ctx.inject([이름], (inner) => …)`로 받는다. 없는 서비스를 기다리는 `ctx.inject`는 오류 없이 영영 기다린다.
+- `ctx.effect(() => 정리 함수)`가 호스트 쪽에서도 된다(정리 함수가 불리는 것은 따로 보지 않았다).
+- `ctx.tools.definitions()`는 등록된 도구의 정의(`name` 등)를 준다. 플러그인의 `apply` 때는 0개였고 기동이 끝난 뒤에는 5개였다(`working_directory`, `team_task_create`·`_list`·`_get`·`_update`). 에이전트 프리셋이 주는 도구(`tool-bash`, `tool-fs` 등)는 이 전역 목록에 없었다. 등록·해제 때 `tools/change` 이벤트가 난다(**소스 확인**).
+- 스택에서 플러그인의 `apply`는 `new apply (…)`로 보인다.
 
 ## 에이전트 프리셋
 
@@ -517,7 +533,11 @@ span[class$="_brandMark"]:has(> [data-slot="sidebar.brand.mark"]:empty) { displa
 ## 함정
 
 - 새 프로필을 처음 열면 "Preview Notice" 창(버튼은 `Continue`)과 "Get started" 창(API 키·로그인, `Close`로 닫는다)이 차례로 뜬다. 첫 창이 떠 있는 동안 페이지 전체가 inert라 클릭이 막힌다.
-- Preview Notice 창은 페이지 로드가 끝난(`networkidle`) 뒤에 뜬다. 로드 직후에 `count()`로 있는지 보면 0이 나와 닫지 못하고 지나간다(2026-11-26에 그렇게 됐다). 창이 뜨기를 기다린 뒤 닫는다.
+- Preview Notice 창은 페이지 로드가 끝난(`networkidle`) 뒤에 뜬다(2026-11-27에 잰 것은 약 24ms 뒤). 로드 직후에 `count()`로 있는지 보면 0이 나와 닫지 못하고 지나간다(2026-11-26에 그렇게 됐다). 창이 뜨기를 기다린 뒤 닫는다. 조합 시험의 `openPage`가 그렇게 한다.
+- 두 창을 설정으로 끄는 길이 소스에 있다: Preview Notice는 `ui-settings-general` 행의 `welcomeNoticeVersion`이 지금 판(`2026-09-28.1`)과 같으면 뜨지 않고, Get started는 `ui-settings-models` 행의 `credentialOnboarding: false`로 끈다(**소스 확인**. 띄워 보지 않았다. 패치는 행의 `config` 전체를 바꾸므로 그 행의 다른 키도 같이 적어야 한다).
+- dsh는 환경 변수의 모델 키(`DEEPSEEK_API_KEY` 등)를 읽는다(**소스 확인**). 키가 있는 셸에서 띄우면 첫 실행 창과 프로바이더 상태가 달라질 수 있다. 조합 시험은 허용 목록의 환경 변수만 넘긴다.
+- 런처의 옵션은 웹 앱 옵션보다 앞에 적는다("기본 정보"의 CLI).
+- `playwright-core install`은 브라우저를 받으면서, 지금 있는 어떤 Playwright 설치도 쓰지 않는 판을 캐시(`~/.cache/ms-playwright`)에서 지운다. 경로로 지정해 쓰던 옛 판이 사라질 수 있다(2026-11-27에 `chromium-1243`이 그렇게 지워졌다). `playwright-core` 1.65.1이 찾는 것은 1255판(Chromium 159)이다.
 - pnpm 10은 의존성의 설치 스크립트를 돌리지 않는다. dsh를 설치하면 `@deepseek-ai/dsh-subprocess-local`(`node-pty`의 `spawn-helper`에 실행 권한을 준다), `node-pty`, `koffi`, `protobufjs`, `@google/genai` 다섯 개가 무시됐다고 나온다. 그 상태로 웹은 뜬다(**띄워 확인**, 2026-11-26). 에이전트의 셸 도구가 그 상태로 도는지는 보지 않았다(1-3, 1-4). 필요하면 `pnpm-workspace.yaml`의 `onlyBuiltDependencies`에 적어 돌리게 한다.
 - "Get started" 창의 DOM 노드를 강제로 지우면 `sidebar.settings` 슬롯이 `removeChild` 오류로 죽는다. 반드시 버튼으로 닫는다.
 - Preview Notice를 넘기면 프로필 `cordis.patch.yml`의 `ui-settings-general` 행에 `welcomeNoticeVersion`이 기록된다(관찰).
@@ -526,7 +546,7 @@ span[class$="_brandMark"]:has(> [data-slot="sidebar.brand.mark"]:empty) { displa
 - 브라우저 절반을 고치고 빌드하지 않으면 옛 `lib/client.js`(브라우저 번들)가 나간다. `pnpm dsh:start`는 띄우기 전에 빌드하지만, 띄워 둔 동안 고친 것은 `pnpm build`를 다시 돌려야 나간다.
 - **dsh를 띄워 둔 채 `lib/client.js`가 바뀌면 새로고침 없이 화면이 새 번들로 바뀐다**(**띄워 확인**, 2026-11-26. 파일을 바꾸고 1.5초 뒤에 이미 바뀌어 있었고 콘솔 오류는 없었다). 개발할 때는 dsh를 띄워 두고 `pnpm build`만 다시 돌리면 된다. 호스트 절반을 고친 것이 다시 실리는지는 보지 않았다.
 - `verbatimModuleSyntax` 아래에서 `import { type X } from "…"`는 값 import로 남는다. 표 밖의 `@deepseek-ai/*`면 빌드가 거절한다. `import type { X } from "…"`로 쓴다.
-- 임시 home으로 처음 띄우면 "Unable to create default workspace. Use Choose workspace to select a folder." 토스트가 뜬다(관찰, 2026-11-26. 콘솔 오류는 아니다. 원인은 보지 않았다. 기본 작업공간은 3-0과 2-0이 다룬다).
+- 임시 home으로 처음 띄우면 "Unable to create default workspace. Use Choose workspace to select a folder." 토스트가 뜬다(관찰, 2026-11-26. 콘솔 오류는 아니다. 원인은 보지 않았다. `HOME`까지 임시 폴더로 줘도 뜬다, 2026-11-27. 기본 작업공간은 3-0과 2-0이 다룬다).
 - 헤드리스 확인 환경에 한국어 글꼴이 없으면 스크린샷의 한국어가 네모로 나온다. DOM의 글자로 확인한다.
 - 프로필의 번들 링크는 절대 경로다. 저장소 폴더를 옮기거나 다른 워크트리에서 띄우려면 링크를 다시 건다("워크트리와 DSH_HOME").
 - Playwright는 크기가 0인 요소를 "숨김"으로 본다. 표시용 빈 요소를 기다릴 때는 `state: 'attached'`를 쓴다.
@@ -535,55 +555,75 @@ span[class$="_brandMark"]:has(> [data-slot="sidebar.brand.mark"]:empty) { displa
 
 ## 띄워서 확인하는 법
 
-화면이 걸린 변경은 dsh를 실제로 띄워 확인한다. 아래는 2026-11-24~25에 쓴 절차를 한 파일로 정리한 것이다(`playwright-core` 1.65.1). 이 모양 그대로 돌려 보지는 않았다. 1-2에서 조합 시험으로 만든다.
+화면이 걸린 변경은 dsh를 실제로 띄워 확인한다. 1-2에서 그 절차를 조합 시험으로 만들었다(**띄워 확인**, 2026-11-27. 명세와 확인 결과는 `docs/archive/PLAN_1-2.md`).
 
-1-0과 1-1에서는 저장소 밖에 둔 같은 모양의 스크립트로 `DSH_HOME=<임시 폴더> pnpm -s dsh:start --no-open --port 0`을 띄워 화면과 콘솔 오류 0건을 확인했다(2026-11-26). 1-1의 스크립트는 두 창이 뜨기를 기다렸다가 닫고(`waitFor({ state: "visible" })`), 시험용 요소의 속성과 계산된 스타일을 읽고, 버튼을 눌러 테마가 바뀌는지 봤다. 아래 0번의 두 명령은 `DSH_HOME=<임시 폴더> pnpm dsh:profile` 하나로 바꿀 수 있다. 3번의 창 닫기는 아래처럼 쓰면 Preview Notice를 놓친다("함정"). `playwright-core`는 아직 이 저장소의 의존성이 아니다.
-
-**브라우저 준비.** 그때는 이 장비에 받아 둔 Chromium을 경로로 지정해 썼다(`~/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome`). 다른 장비에서는 `CHROME`에 Chrome이나 Chromium 실행 파일 경로를 주거나, `pnpm exec playwright-core install chromium`으로 받고 `executablePath`를 빼서 playwright가 찾게 한다(이 설치 명령은 이 저장소에서 돌려 보지 않았다).
-
-```js
-import { chromium } from 'playwright-core'
-import { execFileSync, spawn } from 'node:child_process'
-import { mkdtemp } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
-
-// 0. 시험용 home을 임시 폴더에 만든다. 개발용 home의 설정과 키를 건드리지 않는다.
-const env = { ...process.env, DSH_HOME: await mkdtemp(join(tmpdir(), 'cs-dsh-')) }
-const dsh = (...args) => execFileSync('pnpm', ['exec', 'dsh', ...args], { env, stdio: ['ignore', 'pipe', 'inherit'] })
-dsh('--profile', 'comfy-studio', '--from-default-profile', 'web', '--dump-config')
-dsh('plugin', '--profile', 'comfy-studio', 'add', resolve('packages/bundle'))
-
-// 1. dsh를 빈 포트에 띄우고 출력에서 토큰 주소를 읽는다. 이 주소는 로그에 남기지 않는다.
-const child = spawn('pnpm', ['exec', 'dsh', '--profile', 'comfy-studio', '--no-open', '--port', '0'],
-  { env, stdio: ['ignore', 'pipe', 'pipe'] })
-let log = ''
-const url = await new Promise((resolveUrl, reject) => {
-  const onData = (chunk) => { log += chunk; const m = /dsh web: (http\S+)/.exec(log); if (m) resolveUrl(m[1]) }
-  child.stdout.on('data', onData); child.stderr.on('data', onData)
-  child.on('exit', code => reject(new Error(`dsh exited with ${code}`)))
-})
-
-// 2. 페이지를 열고 콘솔 오류를 모은다.
-const browser = await chromium.launch({ executablePath: process.env.CHROME, args: ['--no-sandbox'] })
-const page = await browser.newPage({ viewport: { width: 1400, height: 900 } })
-const issues = []
-page.on('console', m => { if (['error', 'warning'].includes(m.type())) issues.push(m.text()) })
-page.on('pageerror', e => issues.push(String(e)))
-await page.goto(url, { waitUntil: 'networkidle' })
-
-// 3. 첫 실행 창을 버튼으로 닫는다.
-const notice = page.locator('[role="dialog"]', { hasText: 'Preview Notice' }).getByRole('button', { name: 'Continue' })
-if (await notice.count()) await notice.first().click()
-const close = page.locator('[role="dialog"]', { hasText: 'Get started' }).getByRole('button', { name: 'Close' })
-if (await close.count()) await close.first().click()
-
-// 4. 확인하고 정리한다. issues가 비어 있어야 한다.
-await browser.close(); child.kill('SIGTERM')
+```sh
+pnpm exec playwright-core install chromium-headless-shell   # 장비마다 한 번. 또는 CHROME=<Chrome·Chromium 실행 파일>
+pnpm test:integration                                       # 브라우저 번들을 빌드하고 dsh와 브라우저를 띄운다
+pnpm exec vitest run --project integration tests/integration/boot.test.ts   # 파일 하나만
 ```
 
-- 끝나면 dsh와 브라우저 프로세스가 남지 않았는지 확인하고 임시 home을 지운다.
-- 호스트 쪽 서비스를 화면 없이 확인하는 방법은 정해지지 않았다. 1-2에서 정한다(`docs/ROADMAP.md` 1-2).
+틀은 `tests/harness/`에, 조합 시험은 `tests/integration/`에 있다. 시험은 띄울 때마다 **새 임시 home**(`DSH_HOME`과 `HOME` 둘 다)을 만들고 끝나면 지운다. 개발용 home의 키와 설정을 건드리지 않고, 병렬로 돈다. dsh에는 허용 목록의 환경 변수만 넘어가므로 셸에 있는 모델 키가 시험에 섞이지 않는다.
+
+| 틀 | 하는 일 |
+| --- | --- |
+| `launchDsh(options?)`(`dsh.ts`) | 임시 home에 프로필을 만들고 dsh를 빈 포트에 띄운다. 주소 줄을 기다려 `{ url, home, output(), exited, stop() }`를 준다. 행 하나라도 활성화에 실패했으면 거절한다. `patches`로 `--patch` 파일을 얹는다 |
+| `openPage(url, options?)`(`browser.ts`) | 헤드리스 Chromium으로 열고 첫 실행 창 둘을 버튼으로 닫는다. `{ page, issues, close() }`를 준다. `issues`는 콘솔의 error·warning과 잡히지 않은 페이지 오류다 |
+| `runHostScenario(scenario, options?)`(`host.ts`) | 시나리오 모듈을 dsh 프로세스 안에서 실행하고 돌려준 값을 받는다(아래 "호스트 쪽 서비스를 부르는 시험") |
+| `redactLoginUrls(text)`(`dsh.ts`) | 주소와 토큰을 가린다. 틀이 내보내는 글은 모두 이것을 거친다. 주소는 `DshInstance.url`로만 건넨다 |
+
+브라우저로 화면을 보는 시험(`tests/integration/boot.test.ts`에서 추렸다):
+
+```ts
+const dsh = await launchDsh();
+try {
+  const session = await openPage(dsh.url);
+  try {
+    const probe = session.page.locator('[data-slot="sidebar.footer.action"] [data-cs-probe="@cs/ui-shell"]');
+    await probe.waitFor({ state: "attached", timeout: 10_000 });
+    await probe.getByRole("button").click();
+    await expect.poll(() => probe.getAttribute("data-cs-scheme")).toBe("dark");
+    expect(session.issues).toEqual([]);          // 콘솔 오류·경고 0건
+  } finally {
+    await session.close();
+  }
+} finally {
+  await dsh.stop();
+}
+```
+
+### 호스트 쪽 서비스를 부르는 시험
+
+화면용 API가 없어도 호스트 쪽 서비스를 실제 조합 안에서 부를 수 있다. 틀이 시험용 호스트 플러그인(프로브, `tests/harness/probe/index.ts`)을 `--patch`로 얹고, 프로브가 시험이 준 **시나리오 모듈**을 dsh 프로세스 안에서 실행해 결과를 파일로 돌려준다.
+
+```ts
+// tests/integration/scenarios/tool-names.ts — dsh 프로세스 안에서 돈다
+import type { Context } from "@deepseek-ai/cordis";
+import type {} from "@deepseek-ai/dsh-tools";             // ctx.tools의 타입
+
+export const inject = ["tools"];                           // 기다릴 서비스. 없어도 된다
+export default function toolNames(ctx: Context, input: unknown) {
+  return { names: ctx.tools.definitions().map((definition) => definition.name), input };
+}
+
+// tests/integration/host-scenario.test.ts — Vitest에서 돈다
+const result = await runHostScenario<ToolNamesResult>(
+  new URL("./scenarios/tool-names.ts", import.meta.url), { input: { text: "가나다" } });
+expect(result.names).toContain("working_directory");
+```
+
+- 시나리오는 dsh의 Node가 바로 읽는다. 지울 수 있는 문법만 쓰고 상대 import에 `.ts`를 붙인다. Vitest의 `expect`는 쓸 수 없다. 값을 돌려주고 시험에서 단언하거나, 시나리오 안에서 던진다(던지면 `runHostScenario`가 그 이름·메시지·스택으로 거절한다).
+- 입력과 결과는 JSON으로(파일로) 건너간다.
+- 시나리오는 dsh가 주소 줄을 찍은 뒤(기동이 끝난 뒤)에 실행된다. 프로브의 `apply` 때는 다른 플러그인이 아직 실리는 중이다.
+- `inject`에 적은 서비스가 없으면 dsh는 오류 없이 기다리기만 한다. 틀이 `timeoutMs`(기본 20초) 뒤에 거절하고, 메시지의 dsh 출력에 `cs-test-probe: waiting for services …`가 보인다.
+- 시나리오가 워크스페이스 패키지를 import하면 dsh가 프로필을 거쳐 실은 것과 같은 모듈일 것이다(둘 다 `packages/` 아래의 실제 경로로 풀린다. **미확인**이고 2-0에서 처음 쓴다).
+
+알아 둘 것:
+
+- 시험 하나가 dsh를 한 번 띄운다. 띄우고 내리는 데 약 2초, 브라우저까지 열면 약 3.5초다(2026-11-27).
+- 끝나면 dsh와 브라우저 프로세스, 임시 폴더(`cs-dsh-test-*`)가 남지 않아야 한다. 틀이 `stop()`과 `close()`에서 정리하므로 시험은 `try`/`finally`로 둘을 반드시 부른다.
+- 시험이 시간 초과로 끊기면 Vitest가 워커를 신호로 죽여서 `finally`가 돌지 않는다. 그때는 `tests/harness/global-setup.ts`의 전역 정리가 남은 dsh를 죽이고 그 실행의 임시 폴더를 지운다. Vitest 자체를 Ctrl+C나 SIGTERM으로 끊어도 같다(**띄워 확인**, 2026-11-27). 브라우저는 워커가 죽을 때 같이 닫혔다(브라우저까지 연 채 시간 초과가 난 경우를 봤다).
+- 실제 모델이 있어야 하는 것(메시지, 도구 호출)은 이 틀로 보지 못한다. 키 없이 돈다.
 - 살아 있는 슬롯 트리는 dsh의 `cordis_inspect what:"client"`로 물어볼 수 있다고 업스트림 문서에 있다(미확인).
 
 ## 버전 올리기
@@ -629,7 +669,8 @@ await browser.close(); child.kill('SIGTERM')
 - 무시된 설치 스크립트(`node-pty` 등)가 에이전트의 셸 도구에 주는 영향("함정").
 - DreamVerse의 서버 쪽 코드를 0.2.2-rc.5에서 실행하는 것(타입 검사까지만 했다. 2-0).
 - 가운데에 입력창을 끼운 첫 화면, `@` 메뉴에 우리 항목 추가.
-- `ctx.credentials`와 `ctx.storageDomain`을 저장소 밖 플러그인에서 쓰는 것.
+- `ctx.credentials`와 `ctx.storageDomain`을 저장소 밖 플러그인에서 쓰는 것(`ctx.tools`를 읽는 것은 1-2에서 확인했다).
+- 첫 실행 창을 설정으로 끄는 것, 같은 home으로 dsh를 다시 띄웠을 때의 화면(조합 시험은 늘 새 home이다).
 - 한국어 언어 팩 등록.
 - 리버스 프록시 배포, 예약·MCP·스킬·서브에이전트·웹 검색의 실제 동작.
 - Chrome 이외의 브라우저.

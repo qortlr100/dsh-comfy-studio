@@ -15,15 +15,23 @@
     "typecheck": "tsc -p tsconfig.json && pnpm -r run typecheck",
     "lint": "oxlint",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "test": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "check": "pnpm build && pnpm typecheck && pnpm lint && pnpm format:check && pnpm test"
   },
   "devDependencies": {
+    "@deepseek-ai/cordis": "4.1.0",
     "@deepseek-ai/dsh": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-tools": "0.2.2-rc.5",
     "@types/node": "24.19.2",
     "esbuild": "0.28.2",
     "lightningcss": "1.33.0",
     "oxlint": "1.95.0",
+    "oxlint-tsgolint": "7.0.2009",
+    "playwright-core": "1.65.1",
     "prettier": "3.10.1",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "vitest": "5.1.2"
   }
 }

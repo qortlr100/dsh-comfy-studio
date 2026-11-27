@@ -51,10 +51,8 @@ interface ClientTarget {
   entry: string;
 }
 
-interface PackageManifest {
-  name?: unknown;
-  exports?: unknown;
-  dsh?: { client?: { platform?: unknown; external?: unknown } };
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function toPosix(path: string): string {
@@ -62,14 +60,11 @@ function toPosix(path: string): string {
 }
 
 /** `exports["./client"]` may be a string or a conditions object whose `default` is the file. */
-function clientExportPath(manifest: PackageManifest): unknown {
+function clientExportPath(manifest: Record<string, unknown>): unknown {
   const exports = manifest.exports;
-  if (typeof exports !== "object" || exports === null) return undefined;
-  const entry: unknown = (exports as Record<string, unknown>)["./client"];
-  if (typeof entry === "object" && entry !== null) {
-    return (entry as Record<string, unknown>).default;
-  }
-  return entry;
+  if (!isRecord(exports)) return undefined;
+  const entry = exports["./client"];
+  return isRecord(entry) ? entry.default : entry;
 }
 
 /** Finds every package with `dsh.client` and checks that its manifest and files can be built. */
@@ -84,12 +79,13 @@ function discoverTargets(root: string): ClientTarget[] {
     const manifestPath = join(dir, "package.json");
     if (!existsSync(manifestPath)) continue;
 
-    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as PackageManifest;
-    const client = manifest.dsh?.client;
+    const manifest: unknown = JSON.parse(readFileSync(manifestPath, "utf8"));
+    if (!isRecord(manifest)) continue;
+    const client = isRecord(manifest.dsh) ? manifest.dsh.client : undefined;
     if (client === undefined) continue;
 
     const name = typeof manifest.name === "string" ? manifest.name : dirent.name;
-    if (client.platform !== "web") {
+    if (!isRecord(client) || client.platform !== "web") {
       throw new Error(`${name}: dsh.client.platform must be "web" in ${manifestPath}.`);
     }
     if (clientExportPath(manifest) !== "./lib/client.js") {
@@ -108,12 +104,13 @@ function discoverTargets(root: string): ClientTarget[] {
     const candidates = ["index.ts", "index.tsx"]
       .map((file) => join(dir, "src", "client", file))
       .filter((file) => existsSync(file));
-    if (candidates.length === 0) {
+    const [entry, ...others] = candidates;
+    if (entry === undefined) {
       throw new Error(
         `${name}: no entry point. Create src/client/index.ts or src/client/index.tsx.`,
       );
     }
-    if (candidates.length > 1) {
+    if (others.length > 0) {
       throw new Error(
         `${name}: both src/client/index.ts and src/client/index.tsx exist. Keep only one.`,
       );
@@ -121,7 +118,7 @@ function discoverTargets(root: string): ClientTarget[] {
     if (!existsSync(join(dir, "tsconfig.client.json"))) {
       throw new Error(`${name}: tsconfig.client.json is missing in ${dir}.`);
     }
-    targets.push({ name, dir, entry: candidates[0] as string });
+    targets.push({ name, dir, entry });
   }
   return targets.toSorted((a, b) => a.name.localeCompare(b.name));
 }

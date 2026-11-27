@@ -30,8 +30,8 @@
 | 생성 백엔드      | ComfyUI HTTP·WebSocket, Comfy Cloud, RunPod Serverless(+ 네트워크 볼륨 S3), Modal 게이트웨이                                                                      | 기존 `lib/comfy`를 옮긴다(`docs/LEGACY.md`).                                                                                                               |
 | LLM              | dsh가 관리한다: DeepSeek, 내장 프로바이더 목록(`anthropic`, `openai` 등), 사용자 지정 API(OpenAI Chat Completions, OpenAI Responses, Anthropic Messages, Gemini)  | 우리 코드에 LLM SDK를 두지 않는다.                                                                                                                         |
 | 저장             | 프로젝트는 폴더 + 추가 전용 기록 파일, 대화·설정·자격 증명은 dsh(`$DSH_HOME`)                                                                                     | 프로젝트를 넘는 데이터의 자리는 설계 과제다(아래 "데이터가 사는 곳").                                                                                      |
-| 테스트           | Vitest(단위), dsh를 실제로 띄운 조합 시험, 헤드리스 Chromium(`playwright-core`, 확인에 쓴 버전 1.65.1)으로 화면 확인                                              | 기존 `lib/comfy` 테스트가 Vitest다. 틀은 1-2에서 만든다.                                                                                                   |
-| 린트·포맷        | oxlint 1.95.0, Prettier 3.10.1                                                                                                                                    | 사용자가 골랐다(2026-11-26). Prettier 설정은 기존 저장소의 것이고 Markdown은 대상이 아니다. 타입 기반 린트 규칙은 켜지 않았다(1-2에서 정한다). oxlint의 `react` 플러그인을 켰다(규칙 넷은 `docs/archive/PLAN_1-1.md` "린트 규칙"). |
+| 테스트           | Vitest 5.1.2(단위, `pnpm test`), dsh를 실제로 띄우는 조합 시험(`pnpm test:integration`, 틀은 `tests/harness/`), 헤드리스 Chromium(`playwright-core` 1.65.1)으로 화면 확인 | 기존 `lib/comfy` 테스트가 Vitest다. 호스트 쪽 서비스는 프로브 플러그인이 시나리오 모듈을 dsh 안에서 실행해 확인한다(`docs/DSH.md` "띄워서 확인하는 법"). |
+| 린트·포맷        | oxlint 1.95.0(타입 기반 규칙은 `oxlint-tsgolint` 7.0.2009), Prettier 3.10.1                                                                                       | 사용자가 골랐다(2026-11-26). Prettier 설정은 기존 저장소의 것이고 Markdown은 대상이 아니다. 타입 기반 린트 규칙을 켰다(사용자가 정함, 2026-11-27. 기다리지 않은 Promise 등을 잡는다. `docs/archive/PLAN_1-2.md` "사용자가 정한 것"). oxlint의 `react` 플러그인을 켰다(규칙 넷은 `docs/archive/PLAN_1-1.md` "린트 규칙"). |
 
 **쓰지 않는 것**: Astryx와 StyleX, React 19, Next.js, Tailwind, UI 컴포넌트 라이브러리, 자체 LLM SDK 연동, 자체 채팅 구현.
 
@@ -221,8 +221,6 @@ scripts/             프로필 만들기, 실행, 합성 구성 찍기(`dsh.ts`,
 
 | 과제                                                                                  | 정하는 단계 |
 | ------------------------------------------------------------------------------------- | ----------- |
-| 호스트 쪽 서비스를 화면 없이 확인하는 조합 시험의 방법                                | 1-2         |
-| 타입 기반 린트 규칙을 켤지(`oxlint-tsgolint`)                                         | 1-2         |
 | 에이전트 프리셋에 넣을 도구(셸·파일 도구를 줄지, 기본 제공 프리셋을 끌지)             | 1-4         |
 | 접속·배포 구성                                                                        | 1-5         |
 | UI 언어(한국어 언어 팩 여부, 문자열을 로케일 사전으로 옮길지)                         | 1-6         |
