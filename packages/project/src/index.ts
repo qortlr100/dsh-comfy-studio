@@ -31,7 +31,7 @@
  * reaches the agent as the project state message and afterwards as project update messages appended to the
  * conversation (the `project-updates` module), folded from what the session's log shows the agent saw.
  *
- * The asset pool registers itself with {@link CsProject.registerAssetStore}; until it does, a run that names an input
+ * The asset component registers itself with {@link CsProject.registerAssetStore}; until it does, a run that names an input
  * asset or imports an output fails.
  *
  * The internal modules (`folders`, `record-store`, `runner`, `scheduler`, `history`, `reducers`, `subscriptions`,
@@ -240,7 +240,7 @@ export default class CsProject extends Service {
         gpu: config.gpuConcurrency,
       },
     );
-    // The runner reaches the asset pool through the registered store, read at call time.
+    // The runner reaches the asset store through the registered store, read at call time.
     this.runner = new Runner({
       store: this.store,
       reducers: this.reducers,
@@ -342,7 +342,7 @@ export default class CsProject extends Service {
   }
 
   /**
-   * Make an empty folder in the DreamVerse folder: `<name>`, else `<name> 2`, `<name> 3`, … Two calls never get one
+   * Make an empty folder in the projects folder: `<name>`, else `<name> 2`, `<name> 3`, … Two calls never get one
    * folder.
    * @param name - the folder name; a path separator in it becomes `-`.
    * @returns the folder path. Throws `invalid_params` for a name that is empty, `.` or `..`.
@@ -517,7 +517,7 @@ export default class CsProject extends Service {
 
   /**
    * Every record of a project in write order, discarded records included (a discarded import keeps its asset in the
-   * asset pool). A read: it writes no record.
+   * asset store). A read: it writes no record.
    * @param project - the project.
    * @returns the records in their current form.
    */
@@ -559,7 +559,7 @@ export default class CsProject extends Service {
    * Register a component's key; a plugin calls it inside `ctx.effect` before it registers the component's reducer and
    * operations. The core keeps no list of components: every built-in and added plugin registers its own key in the same
    * way, and Project registers its own key `proj`.
-   * @param key - the component key, such as `timeline`.
+   * @param key - the component key, such as `asset`.
    * @returns a function that removes the key. Throws `component_exists`.
    */
   registerComponent(key: string): () => void {
@@ -722,7 +722,7 @@ export default class CsProject extends Service {
   }
 
   /**
-   * Register the asset pool's store; one at a time, a later registration replaces the earlier one.
+   * Register the asset store; one at a time, a later registration replaces the earlier one.
    * @param store - the store.
    * @returns a function that removes it.
    */

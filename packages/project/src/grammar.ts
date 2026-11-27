@@ -1,5 +1,5 @@
 /**
- * The two reference grammars of DreamVerse, as string functions with no state and no host import, so that the browser
+ * The two reference grammars of the project layer, as string functions with no state and no host import, so that the browser
  * reads and writes them with the kernel's own code (`@cs/project/grammar`).
  *
  * - A citation in a prompt: `@[<label>](cs:<kind>/<id>)`. A model provider plugin replaces the citations with the
@@ -41,8 +41,7 @@ const NOT_ELEMENTS = [ASSET_PREFIX, "cs:record/", INPUT_PREFIX];
  */
 export function parsePromptCitations(prompt: string): PromptCitation[] {
   return [...prompt.matchAll(CITATION)].map((match) => {
-    // Both groups of CITATION match in every citation.
-    // The regular expression has exactly three groups, and all of them take part in every match.
+    // The match array holds the whole text and both groups of CITATION, and every group takes part in every match.
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion
     const [text, label, uri] = match as RegExpExecArray & [string, string, string];
     return { label, uri, start: match.index, end: match.index + text.length };
@@ -148,7 +147,7 @@ export function versionRefOf(
 /**
  * The citation URI of the element that an input reference is a version of: `cs:<kind>/<id>`, with the reference kind.
  * A prompt cites an element without a version; the reference names the version.
- * @param ref - an input reference, such as a `reference` input of a render call.
+ * @param ref - an input reference, such as a `reference` input of a generation call.
  * @returns the URI; null for a reference to an asset or to a record output.
  */
 export function elementCitationUri(ref: RecordInputRef): string | null {

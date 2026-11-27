@@ -9,7 +9,7 @@
  * step with nothing new gets no message.
  *
  * What the agent saw is the `csProjectSight` session projection, folded from the session's own log: the
- * {@link ProjectShown} in the source of each project message and in the `cs_seen` metadata of each DreamVerse tool
+ * {@link ProjectShown} in the source of each project message and in the `cs_seen` metadata of each project tool
  * result. A restart, a resume and a replay recover the same state from the log. The `agent/pre-step` listener adds the
  * message after the step's claimed messages; the agent loop logs it as a `user/message`, appended after the cached
  * history, so each request extends the previous one.
@@ -78,10 +78,10 @@ export type SessionSeen =
 export const PROJECT_MESSAGE_KIND = "cs-project";
 
 /** The first line of every project state message. */
-export const STATE_HEAD = "DreamVerse project state.";
+export const STATE_HEAD = "Project state.";
 
 /** The first line of every project update message. */
-export const UPDATE_HEAD = "DreamVerse project updates since your last step:";
+export const UPDATE_HEAD = "Project updates since your last step:";
 
 /** The projection key. */
 const SEEN_PROJECTION = "csProjectSight" as const;
@@ -89,9 +89,7 @@ const SEEN_PROJECTION = "csProjectSight" as const;
 /** Who a user record line names, by surface. */
 const USER_SURFACE: Record<Surface, string> = {
   chat: "user in chat",
-  canvas: "user on canvas",
-  timeline: "user on timeline",
-  asset_pool: "user in asset pool",
+  view: "user in the app",
   api: "user via API",
   history: "user in history",
 };
@@ -259,7 +257,7 @@ export function renderState(
   return [
     `${STATE_HEAD} This conversation belongs to the project "${info.title}" in the folder ${info.path}: do all work in it ` +
       "and never call cs_proj_create. " +
-      "Later changes that your own tool results did not show reach you as DreamVerse project updates. " +
+      "Later changes that your own tool results did not show reach you as project updates. " +
       "The project summary, as cs_proj_state returns it without the reports of recent records:",
     JSON.stringify(summary, null, 1),
   ].join("\n");
@@ -278,11 +276,11 @@ export function renderState(
  *   `- history: the current step is <at>; cs_proj_history_list shows which steps are undone or discarded.`
  *   Its source shows the listed records in their status and the current position.
  * ```
- * DreamVerse project updates since your last step:
- * - done r_5a10 (user on canvas): imported knife.png
+ * Project updates since your last step:
+ * - done r_5a10 (user in the app): imported knife.png
  *   - asset: 7be3… (image/png) https://…/cs/assets/7be3…
- * - failed r_7c22 (scheduled): shot 3 of plan p1 v2: The backend refused the request.
- * - running r_5b20 (user on canvas): render shot 3 again
+ * - failed r_7c22 (scheduled): generation 3 of batch b1 v2: The backend refused the request.
+ * - running r_5b20 (user in the app): run generation 3 again
  * ```
  * A record line names the user's surface for a user record, `your call` for an agent record of this session,
  * `another chat` for an agent record of another session, and `scheduled` for a system record; its text is the

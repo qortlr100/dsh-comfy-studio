@@ -1,7 +1,7 @@
 /**
- * Stand-ins for the DSH services that `csProject` reads projects and chats from, shared by the DreamVerse test suites:
+ * Stand-ins for the DSH services that `csProject` reads projects and chats from, shared by the test suites of this package:
  * a Workspace registry kept in memory, and a live session store whose sessions carry only an ID and a working
- * directory. `chatProject` makes a project in a fresh folder of the DreamVerse folder and opens a chat in it.
+ * directory. `chatProject` makes a project in a fresh folder of the projects folder and opens a chat in it.
  */
 import { realpathSync } from "node:fs";
 import { randomUUID } from "node:crypto";
@@ -138,7 +138,7 @@ export function provideChatServices(ctx: Context): TestChatServices {
 }
 
 /**
- * Make a project in a fresh folder of the DreamVerse folder and start chat `session` in it.
+ * Make a project in a fresh folder of the projects folder and start chat `session` in it.
  * @param project - the service.
  * @param services - the stand-in services.
  * @param title - the project title.

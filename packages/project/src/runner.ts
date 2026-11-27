@@ -4,7 +4,7 @@
  * scheduler.
  *
  * Lock scope: the runner holds the project lock (from the record store) while it checks and appends a record and
- * while it writes each update line. It releases the lock while `execute` runs, so a long render does not block other
+ * while it writes each update line. It releases the lock while `execute` runs, so a long generation does not block other
  * edits, and an operation's `execute` may itself call `csProject.run`.
  *
  * Calls: the record store (lock, head, append, update, records), the reducer
@@ -147,7 +147,7 @@ export class Runner {
   /**
    * Register a component key, which a plugin's operations then name in `component`. Refused with `component_exists`
    * when the key is registered.
-   * @param key - the component key, such as `timeline`.
+   * @param key - the component key, such as `asset`.
    * @returns a function that removes the key (only if it is still registered).
    */
   registerComponent(key: string): () => void {
@@ -299,7 +299,7 @@ export class Runner {
         message: `Operation ${String(pending.operation)} is not registered.`,
       });
     }
-    // A pending input role may name a render that is still running or failed: the operation handles the null asset.
+    // A pending input role may name a generation that is still running or failed: the operation handles the null asset.
     const pendingRoles = new Set(spec.pendingInputRoles ?? []);
     const unresolved = pending.inputs.find(
       (input) => input.resolved_asset === null && !pendingRoles.has(input.role),

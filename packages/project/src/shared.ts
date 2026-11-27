@@ -41,7 +41,7 @@ export class ProjectError extends Error {
 }
 
 /**
- * The key of a DreamVerse tool result's persisted metadata that holds the `ProjectShown` of what the result showed;
+ * The key of a project tool result's persisted metadata that holds the `ProjectShown` of what the result showed;
  * the operation tools and the `cs_proj_*` tools write it, the `project-updates` module reads it.
  */
 export const SEEN_META_KEY = "cs_seen";

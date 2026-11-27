@@ -1,6 +1,6 @@
 /**
  * Shared fixtures of the `@cs/project` unit tests: a temporary store root, record origins, in-memory asset stores,
- * a module set wired the same way as the `csProject` service, without a Cordis context, and the `test_bible` slice
+ * a module set wired the same way as the `csProject` service, without a Cordis context, and the `test_library` slice
  * that the test reference kinds answer `createdBy` and `assetsOf` from.
  */
 import { createHash } from "node:crypto";
@@ -35,9 +35,9 @@ declare module "@cs/project" {
      * The slice of the test reducers that stand in for the reference noun plugins: the assets and the creating record
      * of each version, by {@link versionKey}.
      */
-    test_bible?: { assets: Record<string, AssetId[]>; creators: Record<string, RecordId> };
+    test_library?: { assets: Record<string, AssetId[]>; creators: Record<string, RecordId> };
   }
-  /** The test reference kinds that the tests name in version references, with `string` IDs; they answer from `test_bible`. */
+  /** The test reference kinds that the tests name in version references, with `string` IDs; they answer from `test_library`. */
   interface ReferenceKinds {
     test_character: string;
     test_location: string;
@@ -46,7 +46,7 @@ declare module "@cs/project" {
 }
 
 /**
- * The `test_bible` key of one version.
+ * The `test_library` key of one version.
  * @returns `<kind>:<id>@<version>`.
  */
 export function versionKey(kind: string, id: string, version: number): string {
@@ -54,14 +54,14 @@ export function versionKey(kind: string, id: string, version: number): string {
 }
 
 /**
- * A reference kind that answers from the `test_bible` slice.
+ * A reference kind that answers from the `test_library` slice.
  * @param kind - the kind, such as `test_character`.
  * @returns the spec.
  */
-export function testKind(kind: string): ReferenceKindSpec<"test_bible"> {
+export function testKind(kind: string): ReferenceKindSpec<"test_library"> {
   return {
     kind,
-    component: "test_bible",
+    component: "test_library",
     assetsOf: (slice, id, version) => slice?.assets[versionKey(kind, id, version)] ?? null,
     createdBy: (slice, id, version) => slice?.creators[versionKey(kind, id, version)] ?? null,
     latest(slice, id) {
@@ -90,18 +90,18 @@ export const SESSION = brandString<SessionId>("session-a");
 export const OTHER_SESSION = brandString<SessionId>("session-b");
 
 /**
- * A human edit from the canvas in {@link SESSION}.
+ * A human edit from the app in {@link SESSION}.
  * @param overrides - fields to change.
  * @returns the origin.
  */
 export function userOrigin(overrides: Partial<RecordOrigin> = {}): RecordOrigin {
   return {
     actor: "user",
-    surface: "canvas",
+    surface: "view",
     session: SESSION,
     turn: null,
     tool_call: null,
-    intent: "edit on the canvas",
+    intent: "edit in the app",
     ...overrides,
   };
 }
@@ -274,7 +274,7 @@ export interface ProjectModules {
 }
 
 /** The component keys that the fake operations of the Project tests use. */
-export const STAND_IN_COMPONENTS = ["asset", "bible", "shot", "timeline", "inspect"];
+export const STAND_IN_COMPONENTS = ["asset", "library", "image", "batch", "inspect"];
 
 /**
  * Build the module set on a temporary root, load it, and register the `proj` reducer.
@@ -312,7 +312,7 @@ export function startModules(limits = { cpu: 4, gpu: 1 }): ProjectModules {
     limits,
   );
   const runner = new Runner({ store, reducers, scheduler, assets });
-  // The fake operations of these tests stand in for the components that DreamVerse plugins register.
+  // The fake operations of these tests stand in for the components that plugins register.
   for (const key of STAND_IN_COMPONENTS) runner.registerComponent(key);
   holder.scheduler = scheduler;
   holder.runner = runner;

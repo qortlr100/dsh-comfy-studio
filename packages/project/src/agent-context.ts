@@ -29,10 +29,10 @@ const versionNaming = (kinds: readonly string[]): string =>
 export function projectContext(project: Pick<CsProject, "listReferenceKinds">): string {
   const kinds = project.listReferenceKinds();
   return [
-    "DreamVerse project rules:",
-    "- A conversation without a project starts the work with cs_proj_create. Once the DreamVerse project state message or " +
+    "Project rules:",
+    "- A conversation without a project starts the work with cs_proj_create. Once the project state message or " +
       "cs_proj_create names this conversation's project, do all work in it and never call cs_proj_create again. Changes of " +
-      "the project that your own tool results did not show reach you as DreamVerse project updates; cs_proj_state reads the " +
+      "the project that your own tool results did not show reach you as project updates; cs_proj_state reads the " +
       "whole project at any time.",
     "- Every call of yours and every edit of the user is a step of the project history at once; the user does not accept changes.",
     "- When the user asks to undo, roll back or go back to an earlier state, call cs_proj_undo: without to it goes back one " +
@@ -44,6 +44,6 @@ export function projectContext(project: Pick<CsProject, "listReferenceKinds">): 
       `${versionNaming(kinds)}an asset by its asset ID, and any other item by the ID that the summary gives it. ` +
       "The user points at things with cs: mentions, which reach you as these IDs. " +
       "When the user's words fit more than one thing and no mention names it, ask which one instead of guessing.",
-    "- Stale records had an input replaced. Render one again only when the user agrees; call cs_proj_stale_accept when the user keeps it as it is.",
+    "- Stale records had an input replaced. Run one again only when the user agrees; call cs_proj_stale_accept when the user keeps it as it is.",
   ].join("\n");
 }

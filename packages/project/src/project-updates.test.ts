@@ -56,10 +56,10 @@ afterEach(async () => {
 /** The asset ID of the bytes of a text. */
 const assetOf = (text: string): string => createHash("sha256").update(text).digest("hex");
 
-/** A user edit on the canvas. */
+/** A user edit in the app. */
 const user = (intent: string): RecordOrigin => ({
   actor: "user",
-  surface: "canvas",
+  surface: "view",
   session: null,
   turn: null,
   tool_call: null,
@@ -164,13 +164,13 @@ interface Fixture {
     params: Record<string, unknown>,
     extra?: Partial<Parameters<CsProject["run"]>[0]>,
   ): Promise<ProjectRecord>;
-  /** Let the render of `prompt` finish. */
+  /** Let the generation of `prompt` finish. */
   release(prompt: string): void;
 }
 
 /**
  * Mount the DSH tool registry and `csProject` with an in-memory asset store, two operations (`asset.import`, and a GPU
- * `shot.render` that waits until the test releases its prompt and fails for the prompt `broken`), and a project bound
+ * `image.generate` that waits until the test releases its prompt and fails for the prompt `broken`), and a project bound
  * to {@link SESSION} unless `bound` is false.
  * @param bound - whether {@link SESSION} starts bound to the project.
  * @returns the fixture.
@@ -194,7 +194,7 @@ async function start(bound = true): Promise<Fixture> {
   const assets = new MemoryAssets();
   project.registerAssetStore(assets);
   for (const key of STAND_IN_COMPONENTS) project.registerComponent(key);
-  // One gate per prompt, made by whichever of the render and the release comes first.
+  // One gate per prompt, made by whichever of the generation and the release comes first.
   const gates = new Map<string, { promise: Promise<void>; resolve: () => void }>();
   const gate = (prompt: string): { promise: Promise<void>; resolve: () => void } => {
     const existing = gates.get(prompt);
@@ -238,18 +238,18 @@ async function start(bound = true): Promise<Fixture> {
   } satisfies OperationSpec);
   project.registerOperation({
     ...base,
-    name: "shot.render",
-    component: "shot",
+    name: "image.generate",
+    component: "image",
     params: { prompt: { type: "string" } },
     outputs: [{ role: "video", type: "video" }],
     resource: "gpu",
-    summarize: (record) => `shot ${String(record.params["prompt"])}`,
+    summarize: (record) => `image ${String(record.params["prompt"])}`,
     execute: async (call) => {
       const prompt = String(call.params["prompt"]);
       await gate(prompt).promise;
       if (prompt === "broken") throw new Error("The backend refused the request.");
       return {
-        outputs: [call.importAsset(Buffer.from(prompt), { mime: "video/mp4", name: "shot.mp4" })],
+        outputs: [call.importAsset(Buffer.from(prompt), { mime: "video/mp4", name: "output.mp4" })],
       };
     },
   } satisfies OperationSpec);
@@ -325,20 +325,20 @@ describe("project state message", () => {
   it("starts with the binding sentence and the project summary without reports, and logs what it showed", async () => {
     const fixture = await start();
     const record = await fixture.run(user("import knife"), "asset.import", { name: "knife.png" });
-    const render = await fixture.run(
-      user("render"),
-      "shot.render",
+    const gen = await fixture.run(
+      user("generate"),
+      "image.generate",
       { prompt: "held" },
       { after: [] },
     );
-    await until(fixture.project, fixture.projectId, render.id, "running");
+    await until(fixture.project, fixture.projectId, gen.id, "running");
     const message = projectMessage(fixture.project, fixture.deps, SESSION, fixture.log.seen);
     const text = message === null ? "" : textOf(message);
     const [head, ...json] = text.split("\n");
     const { title, path } = fixture.project.openProject(fixture.projectId);
     expect(head).toBe(
       `${STATE_HEAD} This conversation belongs to the project "${title}" in the folder ${path}: do all work in it ` +
-        "and never call cs_proj_create. Later changes that your own tool results did not show reach you as DreamVerse project updates. " +
+        "and never call cs_proj_create. Later changes that your own tool results did not show reach you as project updates. " +
         "The project summary, as cs_proj_state returns it without the reports of recent records:",
     );
     const summary = JSON.parse(json.join("\n")) as {
@@ -346,7 +346,7 @@ describe("project state message", () => {
       head: string;
       recent: Array<Record<string, unknown>>;
     };
-    expect(summary).toMatchObject({ project_id: fixture.projectId, head: render.id });
+    expect(summary).toMatchObject({ project_id: fixture.projectId, head: gen.id });
     expect(summary.recent.at(-2)).toEqual({
       record: record.id,
       operation: "asset.import",
@@ -364,8 +364,8 @@ describe("project state message", () => {
       shown: {
         project: fixture.projectId,
         base: 3,
-        at: render.id,
-        records: { [render.id]: "running" },
+        at: gen.id,
+        records: { [gen.id]: "running" },
       },
     });
   });
@@ -391,7 +391,7 @@ describe("project state message", () => {
         fixture.log.seen,
       ),
     ).toBeNull();
-    expect(fixture.log.step()).toMatch(/^DreamVerse project state\./);
+    expect(fixture.log.step()).toMatch(/^Project state\./);
     // What the agent of SESSION saw, read for a session whose folder is another project.
     await chatProject(fixture.project, fixture.services, "Other", user("create"), "s2");
     const message = projectMessage(
@@ -410,7 +410,7 @@ describe("project state message", () => {
     expect(fixture.log.step()).toBeNull();
     fixture.log.toolResult(await fixture.call("cs_proj_create", { title: "From chat" }));
     expect(fixture.log.step()).toMatch(
-      /^DreamVerse project state\. This conversation belongs to the project "From chat" /,
+      /^Project state\. This conversation belongs to the project "From chat" /,
     );
     expect(fixture.log.step()).toBeNull();
   });
@@ -419,18 +419,18 @@ describe("project state message", () => {
 describe("project update message", () => {
   it("sends nothing when nothing changed since the last message", async () => {
     const fixture = await start();
-    expect(fixture.log.step()).toMatch(/^DreamVerse project state\./);
+    expect(fixture.log.step()).toMatch(/^Project state\./);
     expect(fixture.log.step()).toBeNull();
   });
 
-  it("reports a user import on the canvas with its output line, in the operation tool result output format", async () => {
+  it("reports a user import in the app with its output line, in the operation tool result output format", async () => {
     const fixture = await start();
     fixture.log.step();
     const record = await fixture.run(user("import knife"), "asset.import", { name: "knife.png" });
     const asset = assetOf("knife.png");
     expect(fixture.log.step()).toBe(
       update(
-        `- done ${record.id} (user on canvas): imported knife.png`,
+        `- done ${record.id} (user in the app): imported knife.png`,
         `  - asset: ${asset} (image/png) https://assets.example/${asset}`,
       ),
     );
@@ -446,9 +446,9 @@ describe("project update message", () => {
     expect(fixture.log.step()).toBeNull();
     fixture.log.toolResult(await fixture.call("cs_proj_undo", {}));
     expect(fixture.log.step()).toBeNull();
-    const render = await fixture.run(
-      scheduler("shot 1"),
-      "shot.render",
+    const gen = await fixture.run(
+      scheduler("image 1"),
+      "image.generate",
       { prompt: "one" },
       { after: [] },
     );
@@ -457,12 +457,12 @@ describe("project update message", () => {
       value: {},
       content: [],
       meta: {
-        cs_seen: { project: fixture.projectId, at: render.id, records: { [render.id]: "pending" } },
+        cs_seen: { project: fixture.projectId, at: gen.id, records: { [gen.id]: "pending" } },
       },
     });
-    await until(fixture.project, fixture.projectId, render.id, "running");
+    await until(fixture.project, fixture.projectId, gen.id, "running");
     fixture.release("one");
-    fixture.log.toolResult(await fixture.call("cs_proj_wait", { records: [render.id] }));
+    fixture.log.toolResult(await fixture.call("cs_proj_wait", { records: [gen.id] }));
     expect(fixture.log.step()).toBeNull();
   });
 
@@ -470,18 +470,18 @@ describe("project update message", () => {
     const fixture = await start();
     fixture.log.step();
     const one = await fixture.run(
-      scheduler("shot 1 of plan p1"),
-      "shot.render",
+      scheduler("image 1 of batch p1"),
+      "image.generate",
       { prompt: "one" },
       { after: [] },
     );
     const broken = await fixture.run(
-      scheduler("shot 2 of plan p1"),
-      "shot.render",
+      scheduler("image 2 of batch p1"),
+      "image.generate",
       { prompt: "broken" },
       { after: [] },
     );
-    // The approval result listed both renders under scheduled.
+    // The approval result listed both generations under scheduled.
     fixture.log.toolResult({
       isError: false,
       value: {},
@@ -502,33 +502,33 @@ describe("project update message", () => {
     const asset = assetOf("one");
     expect(fixture.log.step()).toBe(
       update(
-        `- done ${one.id} (scheduled): shot one`,
+        `- done ${one.id} (scheduled): image one`,
         `  - video: ${asset} (video/mp4) https://assets.example/${asset}`,
-        `- failed ${broken.id} (scheduled): shot 2 of plan p1: The backend refused the request.`,
+        `- failed ${broken.id} (scheduled): image 2 of batch p1: The backend refused the request.`,
       ),
     );
     expect(fixture.log.step()).toBeNull();
   });
 
-  it("reports a user render once while it runs and once when it finishes", async () => {
+  it("reports a user generation once while it runs and once when it finishes", async () => {
     const fixture = await start();
     fixture.log.step();
-    const render = await fixture.run(
-      user("render shot 3 again"),
-      "shot.render",
+    const gen = await fixture.run(
+      user("run image 3 again"),
+      "image.generate",
       { prompt: "three" },
       { after: [] },
     );
-    await until(fixture.project, fixture.projectId, render.id, "running");
+    await until(fixture.project, fixture.projectId, gen.id, "running");
     expect(fixture.log.step()).toBe(
-      update(`- running ${render.id} (user on canvas): render shot 3 again`),
+      update(`- running ${gen.id} (user in the app): run image 3 again`),
     );
     expect(fixture.log.step()).toBeNull();
     fixture.release("three");
     await fixture.project.wait(fixture.projectId);
     expect(fixture.log.step()).toBe(
       update(
-        `- done ${render.id} (user on canvas): shot three`,
+        `- done ${gen.id} (user in the app): image three`,
         `  - video: ${assetOf("three")} (video/mp4) https://assets.example/${assetOf("three")}`,
       ),
     );
@@ -559,7 +559,7 @@ describe("project update message", () => {
     expect(fixture.log.step()).toBe(
       update(
         `- history: the current step is ${written.id}; cs_proj_history_list shows which steps are undone or discarded.`,
-        `- done ${written.id} (user on canvas): imported d.png`,
+        `- done ${written.id} (user in the app): imported d.png`,
         `  - asset: ${assetOf("d.png")} (image/png) https://assets.example/${assetOf("d.png")}`,
       ),
     );
@@ -638,8 +638,8 @@ describe("project update message", () => {
       deterministic: false,
       outputs: [],
       resource: "none",
-      name: "shot.choose",
-      component: "shot",
+      name: "image.choose",
+      component: "image",
       params: { model: { type: "string" } },
       outsideHistory: true,
       summarize: (record) => `chose ${String(record.params["model"])}`,
@@ -649,15 +649,15 @@ describe("project update message", () => {
     fixture.log.step();
     await fixture.project.undo(fixture.projectId);
     const head = fixture.project.line(fixture.projectId).at;
-    const chosen = await fixture.run(user("choose"), "shot.choose", { model: "pika" });
+    const chosen = await fixture.run(user("choose"), "image.choose", { model: "pika" });
     expect(fixture.log.step()).toBe(
       update(
         `- history: the current step is ${head}; cs_proj_history_list shows which steps are undone or discarded.`,
-        `- done ${chosen.id} (user on canvas): chose pika`,
+        `- done ${chosen.id} (user in the app): chose pika`,
       ),
     );
     fixture.log.toolResult(
-      await fixture.call("cs_shot_choose", { reason: "own choice", model: "wan" }),
+      await fixture.call("cs_image_choose", { reason: "own choice", model: "wan" }),
     );
     expect(fixture.log.step()).toBeNull();
   });
@@ -720,7 +720,7 @@ describe("csProjectSight fold", () => {
     expect(fixture.log.seen).toBe(before);
     fixture.log.append(checkpoint(from));
     expect(fixture.log.seen).toEqual({ from: null });
-    expect(fixture.log.step()).toMatch(/^DreamVerse project state\./);
+    expect(fixture.log.step()).toMatch(/^Project state\./);
   });
 
   it("recovers the same state and the same next message when the log is folded again after a restart", async () => {
@@ -729,13 +729,13 @@ describe("csProjectSight fold", () => {
     fixture.log.toolResult(
       await fixture.call("cs_asset_import", { reason: "product", name: "product.png" }),
     );
-    const render = await fixture.run(
-      user("render"),
-      "shot.render",
+    const gen = await fixture.run(
+      user("generate"),
+      "image.generate",
       { prompt: "four" },
       { after: [] },
     );
-    await until(fixture.project, fixture.projectId, render.id, "running");
+    await until(fixture.project, fixture.projectId, gen.id, "running");
     fixture.log.step();
     const definition = seenProjection();
     const replayed = fixture.log.events.reduce(

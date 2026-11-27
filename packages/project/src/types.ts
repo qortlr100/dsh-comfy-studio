@@ -38,11 +38,11 @@ export type SessionId = Branded<"CsSessionId">;
 /** What a record represents: one call of one operation. */
 export type RecordKind = "operation";
 
-/** Who caused a record. `system` is used only for automatic actions, such as a scheduled render. */
+/** Who caused a record. `system` is used only for automatic actions, such as a scheduled run. */
 export type Actor = "user" | "agent" | "system";
 
 /** Where the action that caused a record came from. */
-export type Surface = "chat" | "canvas" | "timeline" | "asset_pool" | "api" | "history";
+export type Surface = "chat" | "view" | "api" | "history";
 
 /**
  * The state of an operation call. It only moves forward: `pending` → `running` → `done` | `failed` | `cancelled`;
@@ -140,9 +140,9 @@ export interface ProjectRecord {
   /** The record written just before this one; empty only for the first record of a project. */
   parents: RecordId[];
   kind: RecordKind;
-  /** The component key that owns the operation, for example `timeline`. */
+  /** The component key that owns the operation, for example `asset`. */
   component: string;
-  /** The operation name, for example `timeline.clip_move`. */
+  /** The operation name, for example `asset.tag_add`. */
   operation: string | null;
   /** The version of the operation's parameter schema. */
   operation_version: string | null;
@@ -154,14 +154,14 @@ export interface ProjectRecord {
   session: SessionId | null;
   /** The agent's tool-call ID that made the record; null when the human acted directly. */
   tool_call: string | null;
-  /** Why: the agent's `reason` argument, or a short description of the human's gesture, such as "move clip 3 before clip 1". */
+  /** Why: the agent's `reason` argument, or a short description of the human's gesture, such as "add tag "keep" to asset 3". */
   intent: string;
   /** The operation's parameters, valid against its schema. The owning component defines their meaning. */
   params: Record<string, unknown>;
   inputs: RecordInput[];
   /** Assets the operation created; empty for operations that only change data. */
   outputs: AssetId[];
-  /** The record this one repeats with changes, such as a new take with an edited prompt. */
+  /** The record this one repeats with changes, such as a new variant with an edited prompt. */
   based_on: RecordId | null;
   /** Records whose outputs this one replaces; their dependents become stale. */
   supersedes: RecordId[];
@@ -222,7 +222,7 @@ export interface ProjectInfo {
   title: string;
   /** When the Workspace was registered, ISO-8601 UTC. */
   created_at: string;
-  /** The canonical path of the project folder; its `.comfy-studio/` directory holds the DreamVerse files. */
+  /** The canonical path of the project folder; its `.comfy-studio/` directory holds the files of the project layer. */
   path: string;
 }
 
@@ -230,7 +230,7 @@ export interface ProjectInfo {
 export interface OperationResult {
   /** The created assets, in the order the operation declares them. */
   outputs: AssetId[];
-  /** Facts besides the outputs, such as the seed a renderer drew; a read returns its answer here. */
+  /** Facts besides the outputs, such as the seed a generation drew; a read returns its answer here. */
   report?: Record<string, unknown>;
 }
 
@@ -249,7 +249,7 @@ export interface OperationContext {
   /** Aborted when the caller's run request aborts. */
   signal: AbortSignal;
   /**
-   * Import a file or bytes the operation produced into the asset pool, in the project's folder, as an asset created by
+   * Import a file or bytes the operation produced into the asset store, in the project's folder, as an asset created by
    * this record.
    * @param source - the bytes, or a file path to copy.
    * @param meta - the asset's media type, display name, duration for audio and video, and pixel width and height of
@@ -265,12 +265,12 @@ export interface OperationContext {
 /** The kind of file or value an operation input or output carries. */
 type OperationValueType = "image" | "video" | "audio" | "text" | "json" | "any";
 
-/** One input role of an operation, as the agent tool and the canvas form declare it. */
+/** One input role of an operation, as the agent tool and the form in a view declare it. */
 export interface OperationInput {
   type: OperationValueType;
   description: string;
   required?: boolean;
-  /** Whether the role takes several references, such as every reference image of a shot. */
+  /** Whether the role takes several references, such as every reference image of a generation. */
   many?: boolean;
   /** Whether the role also accepts versions of the registered reference kinds (`<id>@<version>`) besides assets. */
   versioned?: boolean;
@@ -287,7 +287,7 @@ export interface OperationOutput {
  *
  * ```ts
  * declare module '@cs/project/types' {
- *   interface ComponentStates { timeline: TimelineState }
+ *   interface ComponentStates { asset: AssetState }
  * }
  * ```
  *
@@ -424,7 +424,7 @@ export interface ProjectLine {
 }
 
 /**
- * What one logged project message or DreamVerse tool result showed a chat session's agent of one project. Written to
+ * What one logged project message or project tool result showed a chat session's agent of one project. Written to
  * the DSH session log inside the source of a project message, and as `cs_seen` inside the persisted metadata of a tool
  * result (`tool/result.meta`), which the model never reads. A project update lists what the session's entries have not
  * shown.
@@ -456,13 +456,13 @@ export type ProjectEvent =
   | ({ kind: "line" } & ProjectLine);
 
 /**
- * The asset pool as Project sees it: Project checks that input assets exist, imports the files operations produce,
- * and describes outputs to the agent. The asset pool registers itself with `csProject.registerAssetStore`.
+ * The asset store as Project sees it: Project checks that input assets exist, imports the files operations produce,
+ * and describes outputs to the agent. The asset component registers itself with `csProject.registerAssetStore`.
  */
 export interface AssetStore {
   /**
    * @param asset - an asset ID.
-   * @returns whether the asset pool holds it.
+   * @returns whether the asset store holds it.
    */
   has(asset: AssetId): boolean;
   /**
@@ -476,7 +476,7 @@ export interface AssetStore {
    */
   read(asset: AssetId): Uint8Array;
   /**
-   * Import a file or bytes into the asset pool, in the project's folder.
+   * Import a file or bytes into the asset store, in the project's folder.
    * @param project - the project whose folder receives the bytes.
    * @param source - the bytes, or a file path to copy.
    * @param meta - the media type, the display name, the duration for audio and video, and the pixel size when known.

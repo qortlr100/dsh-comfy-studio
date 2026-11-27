@@ -34,20 +34,20 @@ export interface OperationToolCall {
 
 /**
  * An operation a component implements and registers with `csProject.registerOperation`. Each operation is run only
- * through `csProject.run`. The spec also declares the operation's agent tool and canvas form: `description`, `inputs`,
+ * through `csProject.run`. The spec also declares the operation's agent tool and form in a view: `description`, `inputs`,
  * `outputs` and `summarize`.
  */
 export interface OperationSpec {
-  /** `<component key>.<verb>` or `<component key>.<object>_<verb>`, for example `timeline.clip_move`. */
+  /** `<component key>.<verb>` or `<component key>.<object>_<verb>`, for example `asset.tag_add`. */
   name: string;
   /** The owning component's key; it equals the part of `name` before the dot. */
   component: string;
   /** The version of the parameter schema, written to each record's `operation_version`. */
   version: string;
-  /** What the operation does, for the model (its tool description) and the canvas form. */
+  /** What the operation does, for the model (its tool description) and the form in a view. */
   description: string;
-  /** The name that views show for the operation, in Chinese and English; Project only stores it. */
-  label?: { zh: string; en: string };
+  /** The name that views show for the operation; Project only stores it. */
+  label?: string;
   /** The parameter schema in the DSH tool parameter format; the runner validates `params` against it. */
   params: ParameterSchemaSpec;
   /** The input roles the operation accepts; the runner refuses an input with any other role. */
@@ -69,7 +69,7 @@ export interface OperationSpec {
   /** Whether this call may overlap other agent tool calls; the provider must own resource reservation. */
   isConcurrencySafe?(params: Record<string, unknown>): boolean;
   /**
-   * A durable setting outside the undo history, such as a conversation's video model: the runner writes the record
+   * A durable setting outside the undo history, such as a conversation's default workflow: the runner writes the record
    * after the current position without making it a step, so the call discards no step and cancels no record, and
    * undo, redo and moves never change its effect. The owning reducer receives every such record of the project, in
    * write order, after the history list up to the current position.
@@ -90,7 +90,7 @@ export interface OperationSpec {
    */
   basedOn?(params: Record<string, unknown>, state: ProjectState): RecordId | null;
   /**
-   * One line for a chat card or a canvas node.
+   * One line for a chat card or a card in a view.
    * @param record - a finished record of this operation.
    * @returns the line.
    */
@@ -109,7 +109,7 @@ export interface OperationSpec {
    */
   prepareToolCall?(call: OperationToolCall): Promise<void>;
   /**
-   * Refuse a call of any caller before Project writes a record, for a rule the operation itself enforces (a render
+   * Refuse a call of any caller before Project writes a record, for a rule the operation itself enforces (a run
    * needs a reference image). The runner calls it under the project lock, after the params and inputs are valid, so
    * it must stay fast and must never call `csProject.run`.
    * @param request - the call.

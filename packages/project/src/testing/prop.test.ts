@@ -120,12 +120,12 @@ describe("the prop fixture", () => {
     const cs = context.csProject;
     const assets = new MemoryAssets();
     cs.registerAssetStore(assets);
-    cs.registerComponent("look");
+    cs.registerComponent("preset");
     cs.registerOperation({
-      name: "look.make",
-      component: "look",
+      name: "preset.make",
+      component: "preset",
       version: "1",
-      description: "Make a look.",
+      description: "Make a preset.",
       params: {},
       inputs: {
         reference: { type: "image", many: true, versioned: true, description: "References." },
@@ -133,7 +133,7 @@ describe("the prop fixture", () => {
       outputs: [],
       deterministic: false,
       resource: "none",
-      summarize: () => "look",
+      summarize: () => "preset",
       execute: () => Promise.resolve({ outputs: [] }),
     });
     const removeProp = registerProp(cs);
@@ -158,7 +158,7 @@ describe("the prop fixture", () => {
     await run("prop.create", { prop: "p1" }, [{ role: "reference", ref: { asset: lamp } }]);
     const inputsText = () =>
       JSON.stringify(
-        context.tools.schemas().find((tool) => tool.name === "cs_look_make")?.parameters,
+        context.tools.schemas().find((tool) => tool.name === "cs_preset_make")?.parameters,
       );
     expect(cs.listReferenceKinds()).toEqual(["prop"]);
     expect(inputsText()).toContain("or <id>@<version> (a prop version; cs_proj_state lists IDs)");
@@ -166,7 +166,7 @@ describe("the prop fixture", () => {
     const result = await callTool(
       context,
       "call-1",
-      "cs_look_make",
+      "cs_preset_make",
       { reason: "use the lamp", inputs: { reference: ["p1@1"] } },
       { id: "s1" },
     );

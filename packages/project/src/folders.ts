@@ -1,7 +1,7 @@
 /**
  * Projects over the DSH Workspace registry: a project is a registered Workspace whose folder holds
  * `.comfy-studio/records.jsonl`, and its ID, title, creation time and path are the Workspace's. This module is the only
- * DreamVerse code that writes the registry, and it never deletes a file. Called by the service.
+ * code that writes the registry, and it never deletes a file. Called by the service.
  *
  * @module @cs/project/folders
  */
@@ -53,7 +53,7 @@ export class ProjectFolders {
 
   /**
    * @param registry - the DSH Workspace registry.
-   * @param parent - the DreamVerse folder, which holds the folders of new projects.
+   * @param parent - the projects folder, which holds the folders of new projects.
    * @param chats - the stored and live top-level chat sessions with the working directory each header records.
    * @param warn - logs a chat session that could not be attached; the project stays created.
    */

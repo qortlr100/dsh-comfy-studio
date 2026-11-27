@@ -26,12 +26,12 @@ import type {
 
 declare module "@cs/project" {
   interface ComponentStates {
-    /** The slice of the counting test reducer: how many `timeline` records the chain holds. */
+    /** The slice of the counting test reducer: how many `batch` records the chain holds. */
     reducers_test?: { count: number };
   }
 }
 
-/** The `test_character` ID that the `test_bible` reducers record. */
+/** The `test_character` ID that the `test_library` reducers record. */
 const HERO = "hero";
 
 /** A record's operation, plus the record-line fields that differ from a plain finished human edit. */
@@ -84,10 +84,10 @@ function projSlice(m: ProjectModules, project: ProjectId): States["proj"] {
   return m.reducers.getState(project).components.proj;
 }
 
-/** A shot render: component `shot`, operation `shot.render`. */
-const RENDER = { component: "shot", operation: "shot.render" } as const;
-/** A timeline edit: component `timeline`, operation `timeline.clip_insert`. */
-const INSERT = { component: "timeline", operation: "timeline.clip_insert" } as const;
+/** An image generation: component `image`, operation `image.generate`. */
+const GENERATE = { component: "image", operation: "image.generate" } as const;
+/** A batch edit: component `batch`, operation `batch.item_insert`. */
+const INSERT = { component: "batch", operation: "batch.item_insert" } as const;
 
 describe("reducers", () => {
   it("computes each registered slice from the records of the effective chain", async () => {
@@ -95,11 +95,11 @@ describe("reducers", () => {
     m.reducers.register("reducers_test", {
       initial: () => ({ count: 0 }),
       reduce: (slice, record) =>
-        record.component === "timeline" ? { count: (slice?.count ?? 0) + 1 } : slice,
+        record.component === "batch" ? { count: (slice?.count ?? 0) + 1 } : slice,
     });
     const project = await createTestProject(m);
     await append(m, project, INSERT);
-    await append(m, project, RENDER);
+    await append(m, project, GENERATE);
     const last = await append(m, project, INSERT);
     const state = m.reducers.getState(project);
     expect(state).toMatchObject({ head: last.id, project: m.store.getProject(project) });
@@ -143,14 +143,14 @@ describe("reducers", () => {
   it("marks consumers of a superseded record stale", async () => {
     const m = startModules();
     const project = await createTestProject(m);
-    const x = m.assets.add("take x");
+    const x = m.assets.add("variant x");
     const y = m.assets.add("export y");
-    const a = await append(m, project, { ...RENDER, outputs: [x] });
+    const a = await append(m, project, { ...GENERATE, outputs: [x] });
     const b = await append(m, project, { ...INSERT, inputs: [uses(x)], outputs: [y] });
     const d = await append(m, project, { ...INSERT, inputs: [uses(y)] });
     const c = await append(m, project, {
-      ...RENDER,
-      outputs: [m.assets.add("take x2")],
+      ...GENERATE,
+      outputs: [m.assets.add("variant x2")],
       based_on: a.id,
       supersedes: [a.id],
     });
@@ -164,12 +164,16 @@ describe("reducers", () => {
   it("keeps a record fresh after proj.stale_accept", async () => {
     const m = startModules();
     const project = await createTestProject(m);
-    const x = m.assets.add("take x");
+    const x = m.assets.add("variant x");
     const y = m.assets.add("export y");
-    const a = await append(m, project, { ...RENDER, outputs: [x] });
+    const a = await append(m, project, { ...GENERATE, outputs: [x] });
     const b = await append(m, project, { ...INSERT, inputs: [uses(x)], outputs: [y] });
     const d = await append(m, project, { ...INSERT, inputs: [uses(y)] });
-    await append(m, project, { ...RENDER, outputs: [m.assets.add("take x2")], supersedes: [a.id] });
+    await append(m, project, {
+      ...GENERATE,
+      outputs: [m.assets.add("variant x2")],
+      supersedes: [a.id],
+    });
     expect(Object.keys(projSlice(m, project).stale)).toEqual([b.id, d.id]);
     await append(m, project, {
       component: "proj",
@@ -194,10 +198,10 @@ describe("reducers", () => {
     expect(m.reducers.assetsOf(m.reducers.getState(project), ref)).toBeNull();
     expect(m.reducers.kindsWithVersion(m.reducers.getState(project), HERO, 1)).toEqual([]);
     const face = m.assets.add("hero face");
-    m.reducers.register("test_bible", {
+    m.reducers.register("test_library", {
       initial: () => ({ assets: {}, creators: {} }),
       reduce: (slice, record) =>
-        record.operation === "bible.character_create"
+        record.operation === "library.character_create"
           ? {
               assets: { [versionKey("test_character", HERO, 1)]: record.outputs },
               creators: { [versionKey("test_character", HERO, 1)]: record.id },
@@ -205,18 +209,18 @@ describe("reducers", () => {
           : slice,
     });
     await append(m, project, {
-      component: "bible",
-      operation: "bible.character_create",
+      component: "library",
+      operation: "library.character_create",
       params: { character: "hero" },
       outputs: [face],
     });
-    const withBible = m.reducers.getState(project);
-    expect(m.reducers.assetsOf(withBible, ref)).toEqual([face]);
-    expect(m.reducers.kindsWithVersion(withBible, HERO, 1)).toEqual(["test_character"]);
-    expect(m.reducers.assetsOf(withBible, { test_character: HERO, version: 2 })).toBeNull();
+    const withLibrary = m.reducers.getState(project);
+    expect(m.reducers.assetsOf(withLibrary, ref)).toEqual([face]);
+    expect(m.reducers.kindsWithVersion(withLibrary, HERO, 1)).toEqual(["test_character"]);
+    expect(m.reducers.assetsOf(withLibrary, { test_character: HERO, version: 2 })).toBeNull();
     // A kind that is not registered, and an asset, stand for no version.
-    expect(m.reducers.assetsOf(withBible, { test_location: HERO, version: 1 })).toBeNull();
-    expect(m.reducers.assetsOf(withBible, { asset: face })).toBeNull();
+    expect(m.reducers.assetsOf(withLibrary, { test_location: HERO, version: 1 })).toBeNull();
+    expect(m.reducers.assetsOf(withLibrary, { asset: face })).toBeNull();
   });
 
   it("lists the kinds that have an ID and the newest version of an ID, on the slice of each owner", async () => {
@@ -226,10 +230,10 @@ describe("reducers", () => {
     m.reducers.registerKind(testKind("test_location"));
     // A kind whose owner has no reducer knows no ID.
     expect(m.reducers.kindsWithId(m.reducers.getState(project), HERO)).toEqual([]);
-    m.reducers.register("test_bible", {
+    m.reducers.register("test_library", {
       initial: () => ({ assets: {}, creators: {} }),
       reduce(slice, record) {
-        if (record.operation !== "bible.write") return slice;
+        if (record.operation !== "library.write") return slice;
         const kind = String(record.params["kind"]);
         const key = versionKey(
           kind,
@@ -241,7 +245,7 @@ describe("reducers", () => {
       },
     });
     const write = (kind: string) =>
-      append(m, project, { component: "bible", operation: "bible.write", params: { kind } });
+      append(m, project, { component: "library", operation: "library.write", params: { kind } });
     await write("test_location");
     await write("test_location");
     const located = m.reducers.getState(project);
@@ -263,12 +267,12 @@ describe("reducers", () => {
     const m = startModules();
     const project = await createTestProject(m);
     const face = m.assets.add("hero face");
-    m.reducers.register("test_bible", {
+    m.reducers.register("test_library", {
       initial: () => ({ assets: {}, creators: {} }),
       reduce(slice, record) {
         if (
-          record.operation !== "bible.character_create" &&
-          record.operation !== "bible.character_update"
+          record.operation !== "library.character_create" &&
+          record.operation !== "library.character_update"
         )
           return slice;
         const key = versionKey(
@@ -283,36 +287,36 @@ describe("reducers", () => {
       },
     });
     m.reducers.registerKind(testKind("test_character"));
-    /** A render that reads one version of the hero. */
+    /** A generation that reads one version of the hero. */
     const reads = (version: number): RecordInput => ({
       role: "reference",
       ref: { test_character: HERO, version },
       resolved_asset: face,
     });
     const create = await append(m, project, {
-      component: "bible",
-      operation: "bible.character_create",
+      component: "library",
+      operation: "library.character_create",
     });
-    const x = m.assets.add("take x");
-    const render = await append(m, project, { ...RENDER, inputs: [reads(1)], outputs: [x] });
+    const x = m.assets.add("variant x");
+    const gen = await append(m, project, { ...GENERATE, inputs: [reads(1)], outputs: [x] });
     const insert = await append(m, project, { ...INSERT, inputs: [uses(x)] });
     const update = await append(m, project, {
-      component: "bible",
-      operation: "bible.character_update",
+      component: "library",
+      operation: "library.character_update",
       supersedes: [create.id],
     });
-    const late = await append(m, project, { ...RENDER, inputs: [reads(1)] });
-    await append(m, project, { ...RENDER, inputs: [reads(2)] });
+    const late = await append(m, project, { ...GENERATE, inputs: [reads(1)] });
+    await append(m, project, { ...GENERATE, inputs: [reads(2)] });
     expect(projSlice(m, project).stale).toEqual({
-      [render.id]: update.id,
+      [gen.id]: update.id,
       [insert.id]: update.id,
       [late.id]: update.id,
     });
-    // Accepting the render also clears the stale mark of the clip made from it.
+    // Accepting the generation also clears the stale mark of the item made from it.
     await append(m, project, {
       component: "proj",
       operation: "proj.stale_accept",
-      params: { record: render.id },
+      params: { record: gen.id },
       deterministic: true,
     });
     expect(projSlice(m, project).stale).toEqual({ [late.id]: update.id });

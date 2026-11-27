@@ -106,13 +106,13 @@ async function start(): Promise<Fixture> {
 }
 
 /**
- * An operation that renders a still from its `prompt` param and an optional `reference` input.
+ * An operation that makes a still from its `prompt` param and an optional `reference` input.
  * @param overrides - the fields to change.
  * @returns the spec.
  */
 function still(overrides: Partial<OperationSpec> = {}): OperationSpec {
   return {
-    name: "asset.grab_still",
+    name: "asset.crop",
     component: "asset",
     version: "1",
     description: "A test operation.",
@@ -170,7 +170,7 @@ describe("cs_proj_* tools", () => {
     expect(fixture.context.tools.get("cs_proj_open")).toBeUndefined();
     const schemas = fixture.context.tools.schemas().filter((tool) => tool.name.startsWith("cs_"));
     expect(schemas.map((tool) => tool.name)).toEqual(
-      expect.arrayContaining([...PROJ_TOOLS, "cs_asset_grab_still"]),
+      expect.arrayContaining([...PROJ_TOOLS, "cs_asset_crop"]),
     );
     for (const tool of schemas) {
       expect(
@@ -288,16 +288,16 @@ describe("cs_proj_* tools", () => {
       initial: () => ({ assets: {}, creators: {} }),
       reduce: <T>(slice: T) => slice,
     };
-    expect(() => fixture.project.registerReducer("test_bible", reducer)).toThrow(
+    expect(() => fixture.project.registerReducer("test_library", reducer)).toThrow(
       expect.objectContaining({ code: "invalid_params" }),
     );
-    const removeComponent = fixture.project.registerComponent("test_bible");
-    expect(() => fixture.project.registerComponent("test_bible")).toThrow(
+    const removeComponent = fixture.project.registerComponent("test_library");
+    expect(() => fixture.project.registerComponent("test_library")).toThrow(
       expect.objectContaining({ code: "component_exists" }),
     );
-    fixture.project.registerReducer("test_bible", reducer)();
+    fixture.project.registerReducer("test_library", reducer)();
     removeComponent();
-    expect(() => fixture.project.registerReducer("test_bible", reducer)).toThrow(
+    expect(() => fixture.project.registerReducer("test_library", reducer)).toThrow(
       expect.objectContaining({ code: "invalid_params" }),
     );
   });
@@ -305,10 +305,10 @@ describe("cs_proj_* tools", () => {
   it("adds each reducer's agentSummary fields between the record count and the stale records, in component key order", async () => {
     const fixture = await start();
     fixture.project.registerOperation(still());
-    fixture.project.registerComponent("test_bible");
+    fixture.project.registerComponent("test_library");
     fixture.project.registerComponent("proj_tools_test");
     // Registered before `proj_tools_test`, but its fields follow, because the summary orders the keys alphabetically.
-    const removeVersions = fixture.project.registerReducer("test_bible", {
+    const removeVersions = fixture.project.registerReducer("test_library", {
       initial: () => ({ assets: {}, creators: {} }),
       reduce: (slice) => slice,
       agentSummary: (slice) => ({ versions: Object.keys(slice?.creators ?? {}).length }),
@@ -316,7 +316,7 @@ describe("cs_proj_* tools", () => {
     fixture.project.registerReducer("proj_tools_test", {
       initial: () => ({ assets: [] }),
       reduce: (slice, record) =>
-        record.status === "done" && record.operation === "asset.grab_still"
+        record.status === "done" && record.operation === "asset.crop"
           ? { assets: [...(slice?.assets ?? []), ...record.outputs] }
           : slice,
       agentSummary: (slice, assets) => ({
@@ -324,9 +324,7 @@ describe("cs_proj_* tools", () => {
       }),
     });
     json(await fixture.call("cs_proj_create", { title: "summary" }));
-    const made = value(
-      await fixture.call("cs_asset_grab_still", { reason: "a still", prompt: "kite" }),
-    );
+    const made = value(await fixture.call("cs_asset_crop", { reason: "a still", prompt: "kite" }));
     const state = json(await fixture.call("cs_proj_state", {}));
     expect(Object.keys(state)).toEqual([
       "project_id",
@@ -342,7 +340,7 @@ describe("cs_proj_* tools", () => {
     expect(state["versions"]).toBe(0);
     removeVersions();
     // A field that Project or another component already uses refuses the summary.
-    fixture.project.registerReducer("test_bible", {
+    fixture.project.registerReducer("test_library", {
       initial: () => ({ assets: {}, creators: {} }),
       reduce: (slice) => slice,
       agentSummary: () => ({ stale: 1 }),
@@ -359,9 +357,7 @@ describe("cs_proj_* tools", () => {
       still({ name: "asset.import", execute: () => Promise.reject(new Error("no such file")) }),
     );
     json(await fixture.call("cs_proj_create", { title: "recent" }));
-    const made = value(
-      await fixture.call("cs_asset_grab_still", { reason: "a still", prompt: "kite" }),
-    );
+    const made = value(await fixture.call("cs_asset_crop", { reason: "a still", prompt: "kite" }));
     expect(
       errorOf(await fixture.call("cs_asset_import", { reason: "bring it", prompt: "x" })),
     ).toContain("no such file");
@@ -371,7 +367,7 @@ describe("cs_proj_* tools", () => {
       expect.objectContaining({ operation: "proj.create" }),
       {
         record: made.record,
-        operation: "asset.grab_still",
+        operation: "asset.crop",
         status: "done",
         intent: "a still",
         summary: "made from kite",
@@ -391,7 +387,7 @@ describe("cs_proj_* tools", () => {
     expect(
       (json(await fixture.call("cs_proj_state", {}))["recent"] as Array<{ summary: string }>)[1]
         ?.summary,
-    ).toBe("asset.grab_still");
+    ).toBe("asset.crop");
     expect(json(await fixture.call("cs_proj_history_list", { limit: 3 }))).toEqual([
       expect.objectContaining({
         operation: "asset.import",
@@ -402,7 +398,7 @@ describe("cs_proj_* tools", () => {
       {
         record: made.record,
         place: "before",
-        operation: "asset.grab_still",
+        operation: "asset.crop",
         status: "done",
         actor: "agent",
         intent: "a still",
@@ -411,7 +407,7 @@ describe("cs_proj_* tools", () => {
       expect.objectContaining({ operation: "proj.create", actor: "agent" }),
     ]);
     expect(
-      json(await fixture.call("cs_proj_history_list", { operation: "asset.grab_still" })),
+      json(await fixture.call("cs_proj_history_list", { operation: "asset.crop" })),
     ).toHaveLength(1);
     expect(json(await fixture.call("cs_proj_history_list", {}))).toHaveLength(3);
   });
@@ -422,11 +418,9 @@ describe("cs_proj_* tools", () => {
     const projectId = brandString<ProjectId>(
       String(json(await fixture.call("cs_proj_create", { title: "edits" }))["project_id"]),
     );
-    const first = value(
-      await fixture.call("cs_asset_grab_still", { reason: "first", prompt: "one" }),
-    );
+    const first = value(await fixture.call("cs_asset_crop", { reason: "first", prompt: "one" }));
     const dropped = value(
-      await fixture.call("cs_asset_grab_still", { reason: "dropped", prompt: "drop" }),
+      await fixture.call("cs_asset_crop", { reason: "dropped", prompt: "drop" }),
     );
     expect(json(await fixture.call("cs_proj_state", {}))).toMatchObject({ records: 3 });
     expect(json(await fixture.call("cs_proj_undo", {}))).toMatchObject({
@@ -452,27 +446,25 @@ describe("cs_proj_* tools", () => {
       expect.objectContaining({ record: create, place: "before" }),
     ]);
     // A write after the move discards the step after the current one for good.
-    const second = value(
-      await fixture.call("cs_asset_grab_still", { reason: "second", prompt: "two" }),
-    );
+    const second = value(await fixture.call("cs_asset_crop", { reason: "second", prompt: "two" }));
     expect(json(await fixture.call("cs_proj_state", {}))).toMatchObject({ records: 3 });
     expect(
-      json(await fixture.call("cs_proj_history_list", { operation: "asset.grab_still" })),
+      json(await fixture.call("cs_proj_history_list", { operation: "asset.crop" })),
     ).toHaveLength(2);
     expect(errorOf(await fixture.call("cs_proj_undo", { to: dropped.record }))).toContain(
       "discarded",
     );
     // A consumer of a superseded output is stale until the agent accepts it.
     const consumer = value(
-      await fixture.call("cs_asset_grab_still", {
+      await fixture.call("cs_asset_crop", {
         reason: "from the second",
         prompt: "three",
         inputs: { reference: `${second.record}#0` },
       }),
     );
     value(
-      await fixture.call("cs_asset_grab_still", {
-        reason: "retake",
+      await fixture.call("cs_asset_crop", {
+        reason: "rerun",
         prompt: "two again",
         supersedes: [second.record],
       }),
@@ -502,11 +494,9 @@ describe("cs_proj_* tools", () => {
         records: { [newest("proj.create")]: "done" },
       },
     });
-    const grabbed = value(
-      await fixture.call("cs_asset_grab_still", { reason: "first", prompt: "one" }),
-    );
+    const cropped = value(await fixture.call("cs_asset_crop", { reason: "first", prompt: "one" }));
     const accepted = await fixture.call("cs_proj_stale_accept", {
-      record: newest("asset.grab_still"),
+      record: newest("asset.crop"),
     });
     const seenAt = (at: string, ...records: string[]): unknown => ({
       project: projectId,
@@ -518,7 +508,7 @@ describe("cs_proj_* tools", () => {
       cs_seen: seenAt(
         newest("proj.stale_accept"),
         newest("proj.create"),
-        grabbed.record,
+        cropped.record,
         newest("proj.stale_accept"),
       ),
     });
@@ -526,10 +516,10 @@ describe("cs_proj_* tools", () => {
     const undone = await fixture.call("cs_proj_undo", {});
     expect(json(undone)["record"]).toBeUndefined();
     expect(undone.meta).toEqual({
-      cs_seen: seenAt(grabbed.record, newest("proj.create"), grabbed.record),
+      cs_seen: seenAt(cropped.record, newest("proj.create"), cropped.record),
     });
     expect((await fixture.call("cs_proj_state", {})).meta).toEqual({
-      cs_seen: seenAt(grabbed.record, newest("proj.create"), grabbed.record),
+      cs_seen: seenAt(cropped.record, newest("proj.create"), cropped.record),
     });
     expect((await fixture.call("cs_proj_history_list", {})).meta).toBeUndefined();
   });
@@ -567,7 +557,7 @@ describe("cs_proj_* tools", () => {
     const scheduled = await fixture.project.run({
       ...origin,
       project: projectId,
-      operation: "asset.grab_still",
+      operation: "asset.crop",
       params: { prompt: "s" },
       inputs: [],
       after: [],
@@ -609,7 +599,7 @@ describe("cs_proj_* tools", () => {
       String(json(await fixture.call("cs_proj_create", { title: "wait" }))["project_id"]),
     );
     const early = value(
-      await fixture.call("cs_asset_grab_still", { reason: "an early still", prompt: "kite" }),
+      await fixture.call("cs_asset_crop", { reason: "an early still", prompt: "kite" }),
     );
     const origin = {
       actor: "system" as const,
@@ -623,7 +613,7 @@ describe("cs_proj_* tools", () => {
         ...origin,
         intent,
         project: projectId,
-        operation: "asset.grab_still",
+        operation: "asset.crop",
         params: { prompt },
         inputs: [],
         after: [],

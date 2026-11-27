@@ -176,14 +176,12 @@ function boundProject(fixture: Fixture): Promise<ProjectId> {
 
 describe("agent tools", () => {
   it("names each operation's tool, registers it while the registry is mounted, and removes it with the operation", async () => {
-    expect(toolNameOf({ name: "timeline.clip_move" })).toBe("cs_timeline_clip_move");
+    expect(toolNameOf({ name: "batch.item_move" })).toBe("cs_batch_item_move");
     const fixture = await start();
     const remove = fixture.project.registerOperation(
-      operation({ name: "asset.grab_still", component: "asset" }),
+      operation({ name: "asset.crop", component: "asset" }),
     );
-    const schema = fixture.context.tools
-      .schemas()
-      .find((tool) => tool.name === "cs_asset_grab_still");
+    const schema = fixture.context.tools.schemas().find((tool) => tool.name === "cs_asset_crop");
     expect(schema?.description).toBe("A test operation.");
     expect(
       Object.keys(
@@ -191,10 +189,10 @@ describe("agent tools", () => {
       ).toSorted((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
     ).toEqual(["based_on", "inputs", "prompt", "reason", "supersedes"]);
     // The description ends with the resource hint and, for a read or a deterministic operation, how calls reuse work.
-    const removeRender = fixture.project.registerOperation(
+    const removeGenerate = fixture.project.registerOperation(
       operation({
-        name: "shot.render",
-        component: "shot",
+        name: "image.generate",
+        component: "image",
         resource: "gpu",
         deterministic: true,
       }),
@@ -210,40 +208,38 @@ describe("agent tools", () => {
     );
     const descriptionOf = (name: string): string | undefined =>
       fixture.context.tools.schemas().find((tool) => tool.name === name)?.description;
-    expect(descriptionOf("cs_shot_render")).toBe(
+    expect(descriptionOf("cs_image_generate")).toBe(
       "A test operation. Uses the GPU. Repeating a call with the same inputs and params reuses the earlier result.",
     );
     expect(descriptionOf("cs_inspect_asset")).toBe(
       "A test operation. Runs on the CPU. A read that writes no record.",
     );
-    removeRender();
+    removeGenerate();
     removeRead();
     remove();
-    expect(fixture.context.tools.get("cs_asset_grab_still")).toBeUndefined();
+    expect(fixture.context.tools.get("cs_asset_crop")).toBeUndefined();
     expect(fixture.project.listOperations()).toEqual([]);
   });
 
   it("refuses a call with an argument the tool does not declare, such as a project, before any record", async () => {
     const fixture = await start();
-    fixture.project.registerOperation(operation({ name: "asset.grab_still", component: "asset" }));
+    fixture.project.registerOperation(operation({ name: "asset.crop", component: "asset" }));
     const projectId = await boundProject(fixture);
-    const stray = await fixture.call("cs_asset_grab_still", {
+    const stray = await fixture.call("cs_asset_crop", {
       reason: "elsewhere",
       prompt: "x",
       project_id: "other",
     });
-    expect(stray.isError && stray.error.message).toBe(
-      "cs_asset_grab_still has no argument project_id.",
+    expect(stray.isError && stray.error.message).toBe("cs_asset_crop has no argument project_id.");
+    expect(fixture.project.listHistory({ project: projectId, operation: "asset.crop" })).toEqual(
+      [],
     );
-    expect(
-      fixture.project.listHistory({ project: projectId, operation: "asset.grab_still" }),
-    ).toEqual([]);
   });
 
   it("runs a call as the agent on its conversation's project and turn, and describes the record with URLs and images", async () => {
     const fixture = await start();
-    fixture.project.registerOperation(operation({ name: "asset.grab_still", component: "asset" }));
-    const refused = await fixture.call("cs_asset_grab_still", {
+    fixture.project.registerOperation(operation({ name: "asset.crop", component: "asset" }));
+    const refused = await fixture.call("cs_asset_crop", {
       reason: "no project yet",
       prompt: "x",
     });
@@ -252,12 +248,12 @@ describe("agent tools", () => {
     );
     const projectId = await boundProject(fixture);
     fixture.turns.set("s1", 3);
-    const result = await fixture.call("cs_asset_grab_still", {
+    const result = await fixture.call("cs_asset_crop", {
       reason: "the kite",
       prompt: "kite",
     });
-    const grabbed = value(result);
-    const record = fixture.project.getRecord(projectId, brandString<RecordId>(grabbed.record));
+    const cropped = value(result);
+    const record = fixture.project.getRecord(projectId, brandString<RecordId>(cropped.record));
     expect(record).toMatchObject({
       actor: "agent",
       surface: "chat",
@@ -267,7 +263,7 @@ describe("agent tools", () => {
       intent: "the kite",
       params: { prompt: "kite" },
     });
-    expect(grabbed).toMatchObject({
+    expect(cropped).toMatchObject({
       status: "done",
       summary: "made from kite",
       scheduled: [],
@@ -276,44 +272,44 @@ describe("agent tools", () => {
         { role: "still", mime: "image/png", url: `https://assets.example/${record.outputs[0]}` },
       ],
     });
-    expect(grabbed.images).toHaveLength(1);
+    expect(cropped.images).toHaveLength(1);
     expect(result.content.filter((block) => block.type === "image")).toHaveLength(1);
     expect(result.meta).toMatchObject({
-      record: grabbed.record,
-      tool: "asset.grab_still",
+      record: cropped.record,
+      tool: "asset.crop",
       status: "done",
-      cs_seen: { project: projectId, at: grabbed.record, records: { [grabbed.record]: "done" } },
+      cs_seen: { project: projectId, at: cropped.record, records: { [cropped.record]: "done" } },
     });
     // An empty reason falls back to the operation name; based_on and supersedes reach the record.
     const again = value(
-      await fixture.call("cs_asset_grab_still", {
+      await fixture.call("cs_asset_crop", {
         reason: "",
         prompt: "kite 2",
-        based_on: grabbed.record,
-        supersedes: [grabbed.record],
+        based_on: cropped.record,
+        supersedes: [cropped.record],
       }),
     );
     expect(fixture.project.getRecord(projectId, brandString<RecordId>(again.record))).toMatchObject(
-      { intent: "asset.grab_still", based_on: grabbed.record, supersedes: [grabbed.record] },
+      { intent: "asset.crop", based_on: cropped.record, supersedes: [cropped.record] },
     );
     // A failed record is a tool error with the failure message.
     fixture.project.registerOperation(
       operation({
-        name: "shot.render",
-        component: "shot",
+        name: "image.generate",
+        component: "image",
         execute: () => Promise.reject(new Error("out of memory")),
       }),
     );
-    const failed = await fixture.call("cs_shot_render", { reason: "render", prompt: "x" });
+    const failed = await fixture.call("cs_image_generate", { reason: "generate", prompt: "x" });
     expect(failed.isError && failed.error.message).toBe("out of memory");
     // An input error of a tool call names the tool, never the operation.
-    const unknownRole = await fixture.call("cs_shot_render", {
-      reason: "render",
+    const unknownRole = await fixture.call("cs_image_generate", {
+      reason: "generate",
       prompt: "x",
       inputs: { other: "a1" },
     });
     expect(unknownRole.isError && unknownRole.error.message).toBe(
-      'Unknown input role "other" for cs_shot_render; roles: reference.',
+      'Unknown input role "other" for cs_image_generate; roles: reference.',
     );
   });
 
@@ -351,9 +347,9 @@ describe("agent tools", () => {
       ),
     ).not.toContain("supersedes");
     expect(fixture.project.listHistory({ project: projectId })).toHaveLength(before);
-    fixture.project.registerOperation(operation({ name: "asset.grab_still", component: "asset" }));
+    fixture.project.registerOperation(operation({ name: "asset.crop", component: "asset" }));
     expect(
-      value(await fixture.call("cs_asset_grab_still", { reason: "still", prompt: "q" })).images,
+      value(await fixture.call("cs_asset_crop", { reason: "still", prompt: "q" })).images,
     ).toBeUndefined();
   });
 
@@ -366,13 +362,16 @@ describe("agent tools", () => {
     });
     fixture.project.registerOperation(
       operation({
-        name: "shot.render",
-        component: "shot",
+        name: "image.generate",
+        component: "image",
         execute: async (context) => {
           await held;
           return {
             outputs: [
-              context.importAsset(Buffer.from("take"), { mime: "video/mp4", name: "take.mp4" }),
+              context.importAsset(Buffer.from("variant"), {
+                mime: "video/mp4",
+                name: "variant.mp4",
+              }),
             ],
           };
         },
@@ -380,11 +379,11 @@ describe("agent tools", () => {
     );
     fixture.project.registerOperation(
       operation({
-        name: "asset.grab_still",
+        name: "asset.crop",
         component: "asset",
-        toolParams: { from_take: { type: "string", description: "A take record." } },
+        toolParams: { from_variant: { type: "string", description: "A variant record." } },
         prepareToolCall: (call) => {
-          const from = call.args["from_take"];
+          const from = call.args["from_variant"];
           if (typeof from === "string")
             call.request.inputs.push({
               role: "reference",
@@ -394,28 +393,30 @@ describe("agent tools", () => {
         },
       }),
     );
-    const rendering = fixture.call("cs_shot_render", { reason: "take", prompt: "r" });
+    const generating = fixture.call("cs_image_generate", { reason: "variant", prompt: "r" });
     await new Promise((resolve) => setTimeout(resolve, 30));
-    const take = fixture.project.listHistory({ project: projectId, operation: "shot.render" })[0]
-      ?.record.id as RecordId;
+    const variant = fixture.project.listHistory({
+      project: projectId,
+      operation: "image.generate",
+    })[0]?.record.id as RecordId;
     const still = value(
-      await fixture.call("cs_asset_grab_still", {
-        reason: "still of the take",
+      await fixture.call("cs_asset_crop", {
+        reason: "still of the variant",
         prompt: "s",
-        from_take: take,
+        from_variant: variant,
       }),
     );
     expect(still).toMatchObject({
       status: "pending",
-      summary: "cs_asset_grab_still pending",
+      summary: "cs_asset_crop pending",
       outputs: [],
       params: { prompt: "s" },
     });
     expect(
       fixture.project.getRecord(projectId, brandString<RecordId>(still.record)).inputs,
-    ).toEqual([{ role: "reference", ref: { record: take, output: 0 }, resolved_asset: null }]);
+    ).toEqual([{ role: "reference", ref: { record: variant, output: 0 }, resolved_asset: null }]);
     release();
-    await rendering;
+    await generating;
     await fixture.project.wait(projectId);
     expect(fixture.project.getRecord(projectId, brandString<RecordId>(still.record)).status).toBe(
       "done",
@@ -425,18 +426,16 @@ describe("agent tools", () => {
   it("records no turn for a call outside any turn", async () => {
     const fixture = await start();
     const projectId = await boundProject(fixture);
-    fixture.project.registerOperation(operation({ name: "asset.grab_still", component: "asset" }));
-    const grabbed = value(
-      await fixture.call("cs_asset_grab_still", { reason: "still", prompt: "a" }),
-    );
+    fixture.project.registerOperation(operation({ name: "asset.crop", component: "asset" }));
+    const cropped = value(await fixture.call("cs_asset_crop", { reason: "still", prompt: "a" }));
     expect(
-      fixture.project.getRecord(projectId, brandString<RecordId>(grabbed.record)).turn,
+      fixture.project.getRecord(projectId, brandString<RecordId>(cropped.record)).turn,
     ).toBeNull();
   });
 
   it("gives the agent the cs:project prompt section: Project's rules, the same text for an unbound and a bound conversation", async () => {
     const fixture = await start();
-    fixture.project.registerOperation(operation({ name: "asset.grab_still", component: "asset" }));
+    fixture.project.registerOperation(operation({ name: "asset.crop", component: "asset" }));
     const sectionOf = async (session: string): Promise<string | undefined> => {
       const assembly = await fixture.context.systemPrompt.assemble({
         agent: { id: session } as never,
@@ -444,11 +443,11 @@ describe("agent tools", () => {
       return assembly.sections.find((section) => section.name === "cs:project")?.text;
     };
     const unbound = await sectionOf("s1");
-    expect(unbound).toContain("DreamVerse project rules:");
+    expect(unbound).toContain("Project rules:");
     expect(unbound).toContain(
-      "- A conversation without a project starts the work with cs_proj_create. Once the DreamVerse project " +
+      "- A conversation without a project starts the work with cs_proj_create. Once the project " +
         "state message or cs_proj_create names this conversation's project, do all work in it and never call cs_proj_create " +
-        "again. Changes of the project that your own tool results did not show reach you as DreamVerse project updates; " +
+        "again. Changes of the project that your own tool results did not show reach you as project updates; " +
         "cs_proj_state reads the whole project at any time.",
     );
     expect(unbound).toContain(
@@ -461,7 +460,7 @@ describe("agent tools", () => {
     expect(unbound).not.toMatch(/branch/);
     await boundProject(fixture);
     expect(await sectionOf("s1")).toBe(unbound);
-    await fixture.call("cs_asset_grab_still", { reason: "still", prompt: "a" });
+    await fixture.call("cs_asset_crop", { reason: "still", prompt: "a" });
     expect(await sectionOf("s1")).toBe(unbound);
   });
 
@@ -474,7 +473,7 @@ describe("agent tools", () => {
     expect(await section()).toContain(
       "an output of a record as <record>#<n>, an asset by its asset ID, and any other item by the ID",
     );
-    fixture.project.registerComponent("test_bible");
+    fixture.project.registerComponent("test_library");
     const removeLocation = fixture.project.registerReferenceKind(testKind("test_location"));
     fixture.project.registerReferenceKind(testKind("test_style"));
     expect(await section()).toContain(
@@ -489,7 +488,7 @@ describe("agent tools", () => {
   it("holds a session's calls until its held work settles, even when that work fails", async () => {
     const fixture = await start();
     await boundProject(fixture);
-    fixture.project.registerOperation(operation({ name: "asset.grab_still", component: "asset" }));
+    fixture.project.registerOperation(operation({ name: "asset.crop", component: "asset" }));
     const order: string[] = [];
     let finish = (): void => {};
     const work = new Promise<void>((_resolve, reject) => {
@@ -500,7 +499,7 @@ describe("agent tools", () => {
     });
     fixture.project.holdToolCalls(brandString<SessionId>("s1"), work);
     const call = fixture
-      .call("cs_asset_grab_still", { reason: "after the import", prompt: "a" })
+      .call("cs_asset_crop", { reason: "after the import", prompt: "a" })
       .then((result) => {
         order.push("call");
         return result;
@@ -514,11 +513,10 @@ describe("agent tools", () => {
 
   it("registers reference kinds of registered components, and lists them in the inputs text of every tool", async () => {
     const fixture = await start();
-    fixture.project.registerOperation(operation({ name: "asset.grab_still", component: "asset" }));
+    fixture.project.registerOperation(operation({ name: "asset.crop", component: "asset" }));
     const inputsText = () =>
       JSON.stringify(
-        fixture.context.tools.schemas().find((tool) => tool.name === "cs_asset_grab_still")
-          ?.parameters,
+        fixture.context.tools.schemas().find((tool) => tool.name === "cs_asset_crop")?.parameters,
       );
     expect(inputsText()).toContain(
       "<asset> (an asset ID), <record>#<output> (an output of an earlier record); a list",
@@ -526,7 +524,7 @@ describe("agent tools", () => {
     expect(() => fixture.project.registerReferenceKind(testKind("test_location"))).toThrow(
       expect.objectContaining({ code: "invalid_params" }),
     );
-    fixture.project.registerComponent("test_bible");
+    fixture.project.registerComponent("test_library");
     // The other arms of an input reference use these keys, so no kind may take one.
     for (const reserved of ["asset", "record", "version"]) {
       expect(() => fixture.project.registerReferenceKind(testKind(reserved))).toThrow(
@@ -562,8 +560,8 @@ describe("agent tools", () => {
     const projectId = await boundProject(fixture);
     fixture.project.registerOperation(
       operation({
-        name: "shot.render",
-        component: "shot",
+        name: "image.generate",
+        component: "image",
         inputs: {
           first_frame: { type: "image", description: "A frame.", required: true },
           reference: { type: "image", description: "refs", many: true, versioned: true },
@@ -571,15 +569,15 @@ describe("agent tools", () => {
       }),
     );
     fixture.project.registerOperation(
-      operation({ name: "bible.create", component: "bible", inputs: {} }),
+      operation({ name: "library.create", component: "library", inputs: {} }),
     );
     const creators: Record<string, RecordId> = {
       "test_location:l1@2": brandString<RecordId>("r-location"),
       "test_location:dup@1": brandString<RecordId>("r1"),
       "test_style:dup@1": brandString<RecordId>("r2"),
     };
-    fixture.project.registerComponent("test_bible");
-    fixture.project.registerReducer("test_bible", {
+    fixture.project.registerComponent("test_library");
+    fixture.project.registerReducer("test_library", {
       initial: () => ({ assets: {}, creators }),
       reduce: (slice) => slice,
     });
@@ -590,7 +588,7 @@ describe("agent tools", () => {
     fixture.project.registerReferenceKind(testKind("test_location"));
     fixture.project.registerReferenceKind(testKind("test_style"));
     const parse = (name: string, raw: unknown) => fixture.project.parseInputs(name, raw, state);
-    expect(parse("shot.render", { first_frame: "r1#1", reference: ["a1", "l1@2"] })).toEqual([
+    expect(parse("image.generate", { first_frame: "r1#1", reference: ["a1", "l1@2"] })).toEqual([
       { role: "first_frame", ref: { record: "r1", output: 1 } },
       { role: "reference", ref: { asset: "a1" } },
       { role: "reference", ref: { test_location: "l1", version: 2 } },
@@ -599,7 +597,7 @@ describe("agent tools", () => {
       test_location: "l1",
       version: 2,
     });
-    expect(() => parse("shot.render", { first_frame: "a", reference: "nobody@1" })).toThrow(
+    expect(() => parse("image.generate", { first_frame: "a", reference: "nobody@1" })).toThrow(
       expect.objectContaining({
         code: "invalid_inputs",
         message: "Unknown version 'nobody@1'; reference kinds: test_location, test_style.",
@@ -612,33 +610,37 @@ describe("agent tools", () => {
       }),
     );
     // A view request names the operation by default; the caller can name the call another way, as the agent tool does.
-    expect(() => parse("shot.render", undefined)).toThrow('shot.render needs input "first_frame"');
+    expect(() => parse("image.generate", undefined)).toThrow(
+      'image.generate needs input "first_frame"',
+    );
     expect(() =>
       fixture.project.parseInputs(
-        "shot.render",
+        "image.generate",
         { first_frame: "a", other: "b" },
         state,
-        "cs_shot_render",
+        "cs_image_generate",
       ),
-    ).toThrow('Unknown input role "other" for cs_shot_render');
-    expect(() => parse("shot.render", "a")).toThrow("must be an object");
-    expect(() => parse("shot.render", ["a"])).toThrow("must be an object");
-    expect(() => parse("shot.render", { first_frame: ["a", "b"] })).toThrow("takes one reference");
-    expect(() => parse("shot.render", { first_frame: 1 })).toThrow(
+    ).toThrow('Unknown input role "other" for cs_image_generate');
+    expect(() => parse("image.generate", "a")).toThrow("must be an object");
+    expect(() => parse("image.generate", ["a"])).toThrow("must be an object");
+    expect(() => parse("image.generate", { first_frame: ["a", "b"] })).toThrow(
+      "takes one reference",
+    );
+    expect(() => parse("image.generate", { first_frame: 1 })).toThrow(
       "must be <asset>, <record>#<output>, or <id>@<version>",
     );
-    expect(() => parse("shot.render", { first_frame: "a", other: "b" })).toThrow(
+    expect(() => parse("image.generate", { first_frame: "a", other: "b" })).toThrow(
       'Unknown input role "other"',
     );
-    expect(() => parse("bible.create", { first_frame: "a" })).toThrow("roles: none");
+    expect(() => parse("library.create", { first_frame: "a" })).toThrow("roles: none");
     expect(() => parse("no.such", {})).toThrow(
       expect.objectContaining({ code: "unknown_operation" }),
     );
     // formatInputRef writes each reference form as the text parseInputs reads back.
-    const inputs = parse("shot.render", { first_frame: "r1#1", reference: ["a1", "l1@2"] });
+    const inputs = parse("image.generate", { first_frame: "r1#1", reference: ["a1", "l1@2"] });
     const texts = inputs.map((input) => formatInputRef(input.ref));
     expect(texts).toEqual(["r1#1", "a1", "l1@2"]);
-    expect(parse("shot.render", { first_frame: texts[0], reference: texts.slice(1) })).toEqual(
+    expect(parse("image.generate", { first_frame: texts[0], reference: texts.slice(1) })).toEqual(
       inputs,
     );
     expect(inputs.map((input) => versionRefOf(input.ref))).toEqual([
@@ -675,13 +677,13 @@ describe("the chat session's project and the asset store", () => {
     expect(second.project.sessionProject(brandString<SessionId>("s1"))).toBeNull();
   });
 
-  it("fails a run that needs the asset pool while no asset store is registered", async () => {
+  it("fails a run that needs the asset store while no asset store is registered", async () => {
     const fixture = await start();
     const projectId = await boundProject(fixture);
     // A later registration replaces the store; its disposer leaves no store behind.
     const removeOther = fixture.project.registerAssetStore(new MemoryAssets());
     removeOther();
-    fixture.project.registerOperation(operation({ name: "asset.grab_still", component: "asset" }));
+    fixture.project.registerOperation(operation({ name: "asset.crop", component: "asset" }));
     const origin = {
       actor: "user" as const,
       surface: "api" as const,
@@ -693,7 +695,7 @@ describe("the chat session's project and the asset store", () => {
     const result = await fixture.project.run({
       ...origin,
       project: projectId,
-      operation: "asset.grab_still",
+      operation: "asset.crop",
       params: { prompt: "z" },
       inputs: [],
     });

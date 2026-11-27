@@ -21,13 +21,13 @@ import type { ProjectId, ProjectRecord, RecordId, RecordOrigin, RunRequest } fro
 
 declare module "@cs/project" {
   interface ComponentStates {
-    /** The slice of the test reducer: the `params.value` of every `timeline` record, in chain order. */
+    /** The slice of the test reducer: the `params.value` of every `batch` record, in chain order. */
     history_test?: { values: number[] };
   }
 }
 
 /**
- * Build the modules with the test reducer that collects the `params.value` of `timeline` records.
+ * Build the modules with the test reducer that collects the `params.value` of `batch` records.
  * @returns the modules.
  */
 function startWithValues(): ProjectModules {
@@ -35,7 +35,7 @@ function startWithValues(): ProjectModules {
   m.reducers.register("history_test", {
     initial: () => ({ values: [] }),
     reduce: (slice, record) =>
-      record.component === "timeline" && typeof record.params.value === "number"
+      record.component === "batch" && typeof record.params.value === "number"
         ? { values: [...(slice?.values ?? []), record.params.value] }
         : slice,
   });
@@ -43,7 +43,7 @@ function startWithValues(): ProjectModules {
 }
 
 /**
- * Append one `timeline.clip_insert` record after the current position, under the lock.
+ * Append one `batch.item_insert` record after the current position, under the lock.
  * @param m - the modules.
  * @param project - the project.
  * @param origin - who writes.
@@ -62,8 +62,8 @@ function write(
     return m.store.append(project, {
       parents: [at],
       kind: "operation",
-      component: "timeline",
-      operation: "timeline.clip_insert",
+      component: "batch",
+      operation: "batch.item_insert",
       operation_version: "1",
       ...origin,
       params: { value },
@@ -212,16 +212,16 @@ describe("history", () => {
     const m = startWithValues();
     const project = await createTestProject(m);
     let started = 0;
-    // A slow render that ends only when it is aborted.
+    // A slow generation that ends only when it is aborted.
     m.runner.registerOperation({
-      name: "shot.render_ref2va",
+      name: "image.generate_ref2va",
       version: "1",
-      component: "shot",
-      params: { shot: { type: "integer" } },
+      component: "image",
+      params: { image: { type: "integer" } },
       inputs: {},
       outputs: [],
-      description: "A test render.",
-      summarize: () => "render",
+      description: "A test generation.",
+      summarize: () => "generate",
       deterministic: false,
       resource: "none",
       execute: async (context) => {
@@ -239,9 +239,9 @@ describe("history", () => {
       },
     });
     m.runner.registerOperation({
-      name: "timeline.rename",
+      name: "batch.rename",
       version: "1",
-      component: "timeline",
+      component: "batch",
       params: { value: { type: "integer" } },
       inputs: {},
       outputs: [],
@@ -252,38 +252,39 @@ describe("history", () => {
       execute: () => Promise.resolve({ outputs: [] }),
     });
     const before = await write(m, project, DIRECT, 1);
-    const render: RunRequest = {
+    const gen: RunRequest = {
       project,
-      operation: "shot.render_ref2va",
-      params: { shot: 1 },
+      operation: "image.generate_ref2va",
+      params: { image: 1 },
       inputs: [],
       ...DIRECT,
     };
-    const rendering = m.runner.run(render);
+    const generating = m.runner.run(gen);
     await expect
       .poll(
         () =>
-          m.store.listRecords(project).find((record) => record.operation === "shot.render_ref2va")
-            ?.status,
+          m.store
+            .listRecords(project)
+            .find((record) => record.operation === "image.generate_ref2va")?.status,
       )
       .toBe("running");
     const running = m.store
       .listRecords(project)
-      .find((record) => record.operation === "shot.render_ref2va")!;
-    const queued = await m.runner.run({ ...render, params: { shot: 2 }, after: [running.id] });
+      .find((record) => record.operation === "image.generate_ref2va")!;
+    const queued = await m.runner.run({ ...gen, params: { image: 2 }, after: [running.id] });
     expect(queued.record?.status).toBe("pending");
     await m.store.lock(project, () => m.history.moveTo(project, before.id));
     // A move alone cancels nothing.
     expect(m.store.getRecord(project, running.id).status).toBe("running");
     const edit = await m.runner.run({
       project,
-      operation: "timeline.rename",
+      operation: "batch.rename",
       params: { value: 2 },
       inputs: [],
       ...DIRECT,
     });
     expect(edit.record).toMatchObject({ status: "done", parents: [before.id] });
-    const ended = await rendering;
+    const ended = await generating;
     expect(ended.record).toMatchObject({
       id: running.id,
       status: "cancelled",

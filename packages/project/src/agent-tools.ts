@@ -7,8 +7,8 @@
  * `cs_seen` (a `ProjectShown`), the record in the status the result returned, each scheduled record as `pending`, and
  * the newest of them as the position, so the project updates do not repeat them; a read stores none.
  *
- * The record's turn is the DSH turn number of the calling agent's session, read from the `turnBoundary` session
- * projection.
+ * The record's turn is the DSH turn number of the calling agent's session, read from the DSH agent registry
+ * (`agents.turnBoundaryOf`).
  *
  * Calls the sessions module (held work), the asset store (output types, bytes, URLs), and the
  * service's run, state, record, operation and history reads through {@link AgentToolDeps}. Called by the service,
@@ -385,12 +385,12 @@ function sharedParams(spec: OperationSpec, kinds: readonly string[]): ParameterS
             type: "array",
             items: { type: "string" },
             description:
-              "Records whose outputs this call replaces, such as an earlier take; their consumers become stale.",
+              "Records whose outputs this call replaces, such as an earlier attempt; their consumers become stale.",
           },
           based_on: {
             type: "string",
             description:
-              "The record this call is a changed copy of; the takes of one original share it.",
+              "The record this call is a changed copy of; the variants of one original share it.",
           },
         }),
   };

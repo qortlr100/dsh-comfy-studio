@@ -35,7 +35,7 @@ function openStore(folders = new TestFolders(tempRoot())): OpenStore {
 }
 
 /**
- * A record line for an operation of the `timeline` component.
+ * A record line for an operation of the `batch` component.
  * @param parent - the project's current position, or null for the first record.
  * @param overrides - fields to change.
  * @returns the line.
@@ -44,8 +44,8 @@ function line(parent: RecordId | null, overrides: Partial<RecordLineInput> = {})
   return {
     parents: parent === null ? [] : [parent],
     kind: "operation",
-    component: "timeline",
-    operation: "timeline.clip_move",
+    component: "batch",
+    operation: "batch.item_move",
     operation_version: "1",
     ...userOrigin(),
     params: {},

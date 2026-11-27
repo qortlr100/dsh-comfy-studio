@@ -109,22 +109,22 @@ describe("Runner", () => {
     const project = await createTestProject(m);
     m.runner.registerOperation(
       operation({
-        name: "shot.render",
-        component: "shot",
+        name: "image.generate",
+        component: "image",
         resource: "gpu",
         execute: async (context) => {
           await new Promise((resolve) => setTimeout(resolve, 20));
-          const take = context.importAsset(Buffer.from("take of a red kite"), {
+          const variant = context.importAsset(Buffer.from("variant of a red kite"), {
             mime: "video/mp4",
-            name: "take.mp4",
+            name: "variant.mp4",
             durationSec: 2,
           });
-          return { outputs: [take], report: { seed: 7 } };
+          return { outputs: [variant], report: { seed: 7 } };
         },
       }),
     );
 
-    const result = await m.runner.run(request(project, "shot.render"));
+    const result = await m.runner.run(request(project, "image.generate"));
 
     const record = result.record;
     expect(record?.status).toBe("done");
@@ -144,15 +144,15 @@ describe("Runner", () => {
   it("adds the records an operation replaces to the record's supersedes", async () => {
     const m = startModules();
     const project = await createTestProject(m);
-    m.runner.registerOperation(operation({ name: "timeline.clip_insert", component: "timeline" }));
-    const first = (await m.runner.run(request(project, "timeline.clip_insert"))).record!;
-    const second = (await m.runner.run(request(project, "timeline.clip_insert"))).record!;
+    m.runner.registerOperation(operation({ name: "batch.item_insert", component: "batch" }));
+    const first = (await m.runner.run(request(project, "batch.item_insert"))).record!;
+    const second = (await m.runner.run(request(project, "batch.item_insert"))).record!;
     const seen: string[] = [];
     // The spec replaces the head of the state it is given, which is the project's state before the call.
     m.runner.registerOperation(
       operation({
-        name: "bible.character_update",
-        component: "bible",
+        name: "library.character_update",
+        component: "library",
         supersedes: (params, state) => {
           seen.push(String(params.prompt));
           return [state.head];
@@ -160,52 +160,52 @@ describe("Runner", () => {
       }),
     );
     const update = await m.runner.run(
-      request(project, "bible.character_update", userOrigin(), {
+      request(project, "library.character_update", userOrigin(), {
         supersedes: [first.id, second.id],
       }),
     );
     expect(seen).toEqual(["a red kite"]);
     expect(update.record?.supersedes).toEqual([first.id, second.id]);
-    const next = await m.runner.run(request(project, "bible.character_update"));
+    const next = await m.runner.run(request(project, "library.character_update"));
     expect(next.record?.supersedes).toEqual([update.record?.id]);
   });
 
   it("sets based_on from the operation when the caller names none, and keeps the caller's based_on", async () => {
     const m = startModules();
     const project = await createTestProject(m);
-    m.runner.registerOperation(operation({ name: "timeline.clip_insert", component: "timeline" }));
-    const first = (await m.runner.run(request(project, "timeline.clip_insert"))).record!;
+    m.runner.registerOperation(operation({ name: "batch.item_insert", component: "batch" }));
+    const first = (await m.runner.run(request(project, "batch.item_insert"))).record!;
     // The spec copies the head of the state it is given, which is the project's state before the call.
     m.runner.registerOperation(
       operation({
-        name: "bible.character_update",
-        component: "bible",
+        name: "library.character_update",
+        component: "library",
         basedOn: (_params, state) => state.head,
       }),
     );
-    const copied = await m.runner.run(request(project, "bible.character_update"));
+    const copied = await m.runner.run(request(project, "library.character_update"));
     expect(copied.record?.based_on).toBe(first.id);
     const named = await m.runner.run(
-      request(project, "bible.character_update", userOrigin(), { based_on: first.id }),
+      request(project, "library.character_update", userOrigin(), { based_on: first.id }),
     );
     expect(named.record?.based_on).toBe(first.id);
-    const unset = await m.runner.run(request(project, "timeline.clip_insert"));
+    const unset = await m.runner.run(request(project, "batch.item_insert"));
     expect(unset.record?.based_on).toBeNull();
   });
 
   it("copies started_by from the request onto the record of a run or a scheduled run", async () => {
     const m = startModules();
     const project = await createTestProject(m);
-    m.runner.registerOperation(operation({ name: "timeline.clip_insert", component: "timeline" }));
-    const starter = (await m.runner.run(request(project, "timeline.clip_insert"))).record!;
+    m.runner.registerOperation(operation({ name: "batch.item_insert", component: "batch" }));
+    const starter = (await m.runner.run(request(project, "batch.item_insert"))).record!;
     const startedBy = { record: starter.id, slot: 1, lane: "wide" };
 
     const now = await m.runner.run(
-      request(project, "timeline.clip_insert", userOrigin(), { started_by: startedBy }),
+      request(project, "batch.item_insert", userOrigin(), { started_by: startedBy }),
     );
     const scheduled = { started_by: { record: starter.id, slot: null }, after: [] };
     const later = await m.runner.run(
-      request(project, "timeline.clip_insert", userOrigin(), scheduled),
+      request(project, "batch.item_insert", userOrigin(), scheduled),
     );
 
     expect(starter).not.toHaveProperty("started_by");
@@ -225,23 +225,26 @@ describe("Runner", () => {
     const held = gate();
     m.runner.registerOperation(
       operation({
-        name: "shot.render",
-        component: "shot",
+        name: "image.generate",
+        component: "image",
         execute: async (context) => {
           await held.promise;
           return {
             outputs: [
-              context.importAsset(Buffer.from("take"), { mime: "video/mp4", name: "take.mp4" }),
+              context.importAsset(Buffer.from("variant"), {
+                mime: "video/mp4",
+                name: "variant.mp4",
+              }),
             ],
           };
         },
       }),
     );
-    const running = m.runner.run(request(project, "shot.render"));
+    const running = m.runner.run(request(project, "image.generate"));
     await vi.waitFor(() => {
-      expect(recordsOf(m, project, "shot.render")[0]?.status).toBe("running");
+      expect(recordsOf(m, project, "image.generate")[0]?.status).toBe("running");
     });
-    const producer = recordsOf(m, project, "shot.render")[0] as ProjectRecord;
+    const producer = recordsOf(m, project, "image.generate")[0] as ProjectRecord;
     const before = files(m, project);
     const eventCount = m.events.length;
 
@@ -261,7 +264,7 @@ describe("Runner", () => {
     ];
     for (const [extra, code] of refusals) {
       await expect(
-        m.runner.run(request(project, "shot.render", agent, extra)),
+        m.runner.run(request(project, "image.generate", agent, extra)),
       ).rejects.toMatchObject({ code });
     }
     await expect(m.runner.run(request(project, "unregistered", agent))).rejects.toMatchObject({
@@ -281,10 +284,12 @@ describe("Runner", () => {
     const precondition = (call: RunRequest, state: { head: string }): Promise<void> => {
       seen.push(state.head);
       return call.params["prompt"] === "refuse"
-        ? Promise.reject(new Error("This shot has no reference image."))
+        ? Promise.reject(new Error("This generation has no reference image."))
         : Promise.resolve();
     };
-    m.runner.registerOperation(operation({ name: "shot.render", component: "shot", precondition }));
+    m.runner.registerOperation(
+      operation({ name: "image.generate", component: "image", precondition }),
+    );
     m.runner.registerOperation(
       operation({ name: "inspect.image", component: "inspect", readOnly: true, precondition }),
     );
@@ -293,15 +298,15 @@ describe("Runner", () => {
     const eventCount = m.events.length;
 
     // An agent call that is refused writes nothing; a read-only call is refused the same way.
-    for (const name of ["shot.render", "inspect.image"]) {
+    for (const name of ["image.generate", "inspect.image"]) {
       await expect(
         m.runner.run(request(project, name, agentOrigin(), { params: { prompt: "refuse" } })),
-      ).rejects.toThrow("This shot has no reference image.");
+      ).rejects.toThrow("This generation has no reference image.");
     }
     expect(files(m, project)).toBe(before);
     expect(m.events).toHaveLength(eventCount);
     expect(seen).toEqual([head, head]);
-    expect((await m.runner.run(request(project, "shot.render"))).record?.status).toBe("done");
+    expect((await m.runner.run(request(project, "image.generate"))).record?.status).toBe("done");
   });
 
   it("checks a call with the sentence that run refuses it with, writing nothing", async () => {
@@ -309,11 +314,11 @@ describe("Runner", () => {
     const project = await createTestProject(m);
     m.runner.registerOperation(
       operation({
-        name: "shot.render",
-        component: "shot",
+        name: "image.generate",
+        component: "image",
         precondition: (call) =>
           call.params["prompt"] === "refuse"
-            ? Promise.reject(new Error("This shot has no reference image."))
+            ? Promise.reject(new Error("This generation has no reference image."))
             : Promise.resolve(),
       }),
     );
@@ -325,21 +330,25 @@ describe("Runner", () => {
       { params: { prompt: "refuse" } },
     ];
     for (const extra of calls) {
-      const refusal = await m.runner.run(request(project, "shot.render", userOrigin(), extra)).then(
-        () => "",
-        (error: unknown) => (error as Error).message,
-      );
+      const refusal = await m.runner
+        .run(request(project, "image.generate", userOrigin(), extra))
+        .then(
+          () => "",
+          (error: unknown) => (error as Error).message,
+        );
       expect(refusal).not.toBe("");
-      expect(await m.runner.check(request(project, "shot.render", userOrigin(), extra))).toEqual({
-        problems: [refusal],
-      });
+      expect(await m.runner.check(request(project, "image.generate", userOrigin(), extra))).toEqual(
+        {
+          problems: [refusal],
+        },
+      );
     }
     expect(await m.runner.check(request(project, "unregistered"))).toEqual({
       problems: ["Operation unregistered is not registered."],
     });
     expect(
       await m.runner.check(
-        request(project, "shot.render", userOrigin(), { params: { prompt: "a kite", seed: 2 } }),
+        request(project, "image.generate", userOrigin(), { params: { prompt: "a kite", seed: 2 } }),
       ),
     ).toEqual({ problems: [] });
     expect(files(m, project)).toBe(before);
@@ -351,13 +360,16 @@ describe("Runner", () => {
     const held = gate();
     m.runner.registerOperation(
       operation({
-        name: "shot.render",
-        component: "shot",
+        name: "image.generate",
+        component: "image",
         execute: async (context) => {
           await held.promise;
           return {
             outputs: [
-              context.importAsset(Buffer.from("take"), { mime: "video/mp4", name: "take.mp4" }),
+              context.importAsset(Buffer.from("variant"), {
+                mime: "video/mp4",
+                name: "variant.mp4",
+              }),
             ],
           };
         },
@@ -367,11 +379,11 @@ describe("Runner", () => {
     m.runner.registerOperation(
       operation({ name: "inspect.image", component: "inspect", readOnly: true, execute: read }),
     );
-    const running = m.runner.run(request(project, "shot.render"));
+    const running = m.runner.run(request(project, "image.generate"));
     await vi.waitFor(() => {
-      expect(recordsOf(m, project, "shot.render")[0]?.status).toBe("running");
+      expect(recordsOf(m, project, "image.generate")[0]?.status).toBe("running");
     });
-    const producer = recordsOf(m, project, "shot.render")[0] as ProjectRecord;
+    const producer = recordsOf(m, project, "image.generate")[0] as ProjectRecord;
     const call = request(project, "inspect.image", userOrigin(), {
       inputs: [{ role: "reference", ref: { record: producer.id, output: 0 } }],
       after: [],
@@ -390,17 +402,17 @@ describe("Runner", () => {
     const project = await createTestProject(m);
     m.runner.registerOperation(
       operation({
-        name: "shot.render",
-        component: "shot",
-        execute: () => Promise.reject(new Error("The renderer ran out of memory.")),
+        name: "image.generate",
+        component: "image",
+        execute: () => Promise.reject(new Error("The generator ran out of memory.")),
       }),
     );
 
-    const result = await m.runner.run(request(project, "shot.render"));
+    const result = await m.runner.run(request(project, "image.generate"));
 
     expect(result.record).toMatchObject({
       status: "failed",
-      error: { code: "operation_failed", message: "The renderer ran out of memory." },
+      error: { code: "operation_failed", message: "The generator ran out of memory." },
     });
     expect(result.outputs).toEqual([]);
     expect(
@@ -414,7 +426,7 @@ describe("Runner", () => {
     let calls = 0;
     m.runner.registerOperation(
       operation({
-        name: "asset.grab_still",
+        name: "asset.crop",
         component: "asset",
         deterministic: true,
         execute: (context) => {
@@ -431,13 +443,13 @@ describe("Runner", () => {
     const inputs: RunRequest["inputs"] = [{ role: "reference", ref: { asset: video } }];
 
     const first = await m.runner.run(
-      request(project, "asset.grab_still", userOrigin(), {
+      request(project, "asset.crop", userOrigin(), {
         params: { prompt: "frame", seed: 1 },
         inputs,
       }),
     );
     const second = await m.runner.run(
-      request(project, "asset.grab_still", userOrigin(), {
+      request(project, "asset.crop", userOrigin(), {
         params: { seed: 1, prompt: "frame" },
         inputs,
       }),
@@ -504,10 +516,10 @@ describe("Runner", () => {
     );
     // A setting of a component without a reducer changes no slice.
     m.runner.registerOperation(
-      operation({ name: "shot.load", component: "shot", outsideHistory: true }),
+      operation({ name: "image.load", component: "image", outsideHistory: true }),
     );
-    m.runner.registerOperation(operation({ name: "shot.render", component: "shot" }));
-    const step = await m.runner.run(request(project, "shot.render"));
+    m.runner.registerOperation(operation({ name: "image.generate", component: "image" }));
+    const step = await m.runner.run(request(project, "image.generate"));
     await m.store.lock(project, () => m.history.undo(project));
     const line = m.store.line(project);
     const events = m.events.length;
@@ -515,13 +527,13 @@ describe("Runner", () => {
     const chosen = await m.runner.run(
       request(project, "runner_setting.choose", userOrigin(), { params: { prompt: "pika" } }),
     );
-    await m.runner.run(request(project, "shot.load"));
+    await m.runner.run(request(project, "image.load"));
 
     expect(chosen.record?.status).toBe("done");
     expect(m.store.line(project)).toEqual(line);
     expect(m.events.slice(events).some(({ event }) => event.kind === "line")).toBe(false);
     expect(m.history.list({ project }).map((entry) => entry.record.operation)).toEqual([
-      "shot.render",
+      "image.generate",
       "proj.create",
     ]);
     expect(m.reducers.getState(project).components.runner_setting).toEqual({ values: ["pika"] });
@@ -533,50 +545,50 @@ describe("Runner", () => {
   it("registers an operation only after a plugin registers its component", () => {
     const m = startModules();
     expect(() =>
-      m.runner.registerOperation(operation({ name: "image.generate", component: "image" })),
+      m.runner.registerOperation(operation({ name: "preset.make", component: "preset" })),
     ).toThrow(expect.objectContaining({ code: "invalid_params" }));
-    const disposeComponent = m.runner.registerComponent("image");
-    expect(() => m.runner.registerComponent("image")).toThrow(
+    const disposeComponent = m.runner.registerComponent("preset");
+    expect(() => m.runner.registerComponent("preset")).toThrow(
       expect.objectContaining({ code: "component_exists" }),
     );
-    m.runner.registerOperation(operation({ name: "image.generate", component: "image" }));
-    expect(m.runner.listOperations().map((spec) => spec.name)).toEqual(["image.generate"]);
+    m.runner.registerOperation(operation({ name: "preset.make", component: "preset" }));
+    expect(m.runner.listOperations().map((spec) => spec.name)).toEqual(["preset.make"]);
     disposeComponent();
-    m.runner.registerComponent("image");
+    m.runner.registerComponent("preset");
   });
 
   it("refuses a second operation with a registered name until the first one is removed", () => {
     const m = startModules();
     const dispose = m.runner.registerOperation(
-      operation({ name: "shot.render", component: "shot" }),
+      operation({ name: "image.generate", component: "image" }),
     );
     expect(() =>
-      m.runner.registerOperation(operation({ name: "shot.render", component: "shot" })),
+      m.runner.registerOperation(operation({ name: "image.generate", component: "image" })),
     ).toThrow(expect.objectContaining({ code: "operation_exists" }));
     dispose();
-    m.runner.registerOperation(operation({ name: "shot.render", component: "shot" }));
-    expect(m.runner.listOperations().map((spec) => spec.name)).toEqual(["shot.render"]);
+    m.runner.registerOperation(operation({ name: "image.generate", component: "image" }));
+    expect(m.runner.listOperations().map((spec) => spec.name)).toEqual(["image.generate"]);
   });
 
   it("refuses an operation whose name does not start with its component key", () => {
     const m = startModules();
     expect(() =>
-      m.runner.registerOperation(operation({ name: "timeline.create", component: "inspect" })),
+      m.runner.registerOperation(operation({ name: "batch.create", component: "inspect" })),
     ).toThrow(expect.objectContaining({ code: "invalid_params" }));
     expect(() =>
-      m.runner.registerOperation(operation({ name: "shot", component: "shot" })),
+      m.runner.registerOperation(operation({ name: "image", component: "image" })),
     ).toThrow(expect.objectContaining({ code: "invalid_params" }));
     expect(m.runner.listOperations()).toEqual([]);
   });
 
-  it("lets other edits run while a render executes", async () => {
+  it("lets other edits run while a generation executes", async () => {
     const m = startModules();
     const project = await createTestProject(m);
     const held = gate();
     m.runner.registerOperation(
       operation({
-        name: "shot.render",
-        component: "shot",
+        name: "image.generate",
+        component: "image",
         resource: "gpu",
         execute: async () => {
           await held.promise;
@@ -584,27 +596,27 @@ describe("Runner", () => {
         },
       }),
     );
-    m.runner.registerOperation(operation({ name: "timeline.clip_insert", component: "timeline" }));
+    m.runner.registerOperation(operation({ name: "batch.item_insert", component: "batch" }));
 
-    const render = m.runner.run(request(project, "shot.render"));
+    const gen = m.runner.run(request(project, "image.generate"));
     await vi.waitFor(() => {
-      expect(recordsOf(m, project, "shot.render")[0]?.status).toBe("running");
+      expect(recordsOf(m, project, "image.generate")[0]?.status).toBe("running");
     });
-    const edit = await m.runner.run(request(project, "timeline.clip_insert"));
+    const edit = await m.runner.run(request(project, "batch.item_insert"));
 
     expect(edit.record?.status).toBe("done");
-    expect(recordsOf(m, project, "shot.render")[0]?.status).toBe("running");
+    expect(recordsOf(m, project, "image.generate")[0]?.status).toBe("running");
     held.resolve();
-    expect((await render).record?.status).toBe("done");
+    expect((await gen).record?.status).toBe("done");
   });
 
   it("loads a stored log whose operations and reference kind have no owner, and refuses a new call with that version", async () => {
     const m = startModules();
-    // The stored shapes of real logs: an old render name that no operation has, a `deliver.timeline_export` record whose
+    // The stored shapes of real logs: an old generation name that no operation has, a `deliver.batch_export` record whose
     // component no plugin registers, and an input `{character, version}` of a reference kind that no plugin registers.
     const project = brandString<ProjectId>("stored-project");
     const face = m.assets.add("face");
-    const take = m.assets.add("take");
+    const variant = m.assets.add("variant");
     const origin = {
       ...userOrigin(),
       operation_version: "1",
@@ -631,10 +643,10 @@ describe("Runner", () => {
         id: "r2",
         parents: ["r1"],
         kind: "operation",
-        component: "shot",
-        operation: "shot.render_ref2va",
+        component: "image",
+        operation: "image.generate_ref2va",
         params: { prompt: "dance" },
-        outputs: [take],
+        outputs: [variant],
         created_at: "2026-10-07T23:41:00.000Z",
         inputs: [{ role: "reference", ref: { character: "c1", version: 1 }, resolved_asset: face }],
       },
@@ -644,8 +656,8 @@ describe("Runner", () => {
         parents: ["r2"],
         kind: "operation",
         component: "deliver",
-        operation: "deliver.timeline_export",
-        params: { timeline: "t1" },
+        operation: "deliver.batch_export",
+        params: { batch: "t1" },
         inputs: [],
         outputs: [],
         created_at: "2026-10-07T23:42:00.000Z",
@@ -662,17 +674,17 @@ describe("Runner", () => {
     const proj = m.reducers.getState(project).components.proj;
     expect(proj.records.map((record) => record.operation)).toEqual([
       "proj.create",
-      "shot.render_ref2va",
-      "deliver.timeline_export",
+      "image.generate_ref2va",
+      "deliver.batch_export",
     ]);
     expect(proj.stale).toEqual({});
-    m.runner.registerOperation(operation({ name: "shot.render", component: "shot" }));
-    // The new call reads the stored `{character, version}` reference of the old render.
+    m.runner.registerOperation(operation({ name: "image.generate", component: "image" }));
+    // The new call reads the stored `{character, version}` reference of the old generation.
     const reads = { inputs: [{ role: "reference", ref: proj.records[1]!.inputs[0]!.ref }] };
     await expect(
-      m.runner.run(request(project, "shot.render", userOrigin(), reads)),
+      m.runner.run(request(project, "image.generate", userOrigin(), reads)),
     ).rejects.toMatchObject({ code: "invalid_inputs" });
-    expect(recordsOf(m, project, "shot.render")).toEqual([]);
+    expect(recordsOf(m, project, "image.generate")).toEqual([]);
   });
 
   it("ends unfinished records at start", async () => {
@@ -685,8 +697,8 @@ describe("Runner", () => {
         const record = m.store.append(project, {
           parents: [head],
           kind: "operation",
-          component: "shot",
-          operation: "shot.render",
+          component: "image",
+          operation: "image.generate",
           operation_version: "1",
           ...userOrigin(),
           params: {},

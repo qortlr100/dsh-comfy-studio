@@ -74,10 +74,10 @@ async function schedule(
  * @param context - the execute context.
  * @returns the asset ID.
  */
-function importTake(context: OperationContext): ReturnType<OperationContext["importAsset"]> {
-  return context.importAsset(Buffer.from(`take ${String(context.params["prompt"])}`), {
+function importVariant(context: OperationContext): ReturnType<OperationContext["importAsset"]> {
+  return context.importAsset(Buffer.from(`variant ${String(context.params["prompt"])}`), {
     mime: "video/mp4",
-    name: "take.mp4",
+    name: "variant.mp4",
   });
 }
 
@@ -90,21 +90,21 @@ describe("Scheduler", () => {
     const first = gate();
     m.runner.registerOperation(
       operation({
-        name: "shot.render_ref2va",
-        component: "shot",
+        name: "image.generate_ref2va",
+        component: "image",
         execute: async (context) => {
           const prompt = String(context.params["prompt"]);
           if (prompt === "A") await first.promise;
           order.push(prompt);
           seenInputs.push(context.inputs);
-          return { outputs: [importTake(context)] };
+          return { outputs: [importVariant(context)] };
         },
       }),
     );
 
-    const a = await schedule(m, project, "shot.render_ref2va", "A");
-    const b = await schedule(m, project, "shot.render_ref2va", "B", { after: [a.id] });
-    const c = await schedule(m, project, "shot.render_ref2va", "C", {
+    const a = await schedule(m, project, "image.generate_ref2va", "A");
+    const b = await schedule(m, project, "image.generate_ref2va", "B", { after: [a.id] });
+    const c = await schedule(m, project, "image.generate_ref2va", "C", {
       inputs: [{ role: "reference", ref: { record: b.id, output: 0 } }],
     });
     expect(m.store.getRecord(project, c.id).inputs[0]?.resolved_asset).toBeNull();
@@ -112,9 +112,9 @@ describe("Scheduler", () => {
     await m.scheduler.wait(project);
 
     expect(order).toEqual(["A", "B", "C"]);
-    const take = m.store.getRecord(project, b.id).outputs[0];
-    expect(m.store.getRecord(project, c.id).inputs[0]?.resolved_asset).toBe(take);
-    expect(seenInputs[2]?.[0]?.resolved_asset).toBe(take);
+    const variant = m.store.getRecord(project, b.id).outputs[0];
+    expect(m.store.getRecord(project, c.id).inputs[0]?.resolved_asset).toBe(variant);
+    expect(seenInputs[2]?.[0]?.resolved_asset).toBe(variant);
   });
 
   it("keeps at most one gpu record running", async () => {
@@ -129,8 +129,8 @@ describe("Scheduler", () => {
     let mostGpu = 0;
     m.runner.registerOperation(
       operation({
-        name: "shot.render_ref2va",
-        component: "shot",
+        name: "image.generate_ref2va",
+        component: "image",
         resource: "gpu",
         execute: async (context) => {
           const prompt = String(context.params["prompt"]);
@@ -145,8 +145,8 @@ describe("Scheduler", () => {
     );
     m.runner.registerOperation(
       operation({
-        name: "timeline.clip_insert",
-        component: "timeline",
+        name: "batch.item_insert",
+        component: "batch",
         execute: (context) => {
           started.push(String(context.params["prompt"]));
           return Promise.resolve({ outputs: [] });
@@ -154,9 +154,9 @@ describe("Scheduler", () => {
       }),
     );
 
-    await schedule(m, project, "shot.render_ref2va", "gpu 1");
-    const second = await schedule(m, project, "shot.render_ref2va", "gpu 2");
-    const edit = await schedule(m, project, "timeline.clip_insert", "edit");
+    await schedule(m, project, "image.generate_ref2va", "gpu 1");
+    const second = await schedule(m, project, "image.generate_ref2va", "gpu 2");
+    const edit = await schedule(m, project, "batch.item_insert", "edit");
 
     await vi.waitFor(() => {
       expect(m.store.getRecord(project, edit.id).status).toBe("done");
@@ -179,18 +179,18 @@ describe("Scheduler", () => {
     const executed: string[] = [];
     m.runner.registerOperation(
       operation({
-        name: "shot.render_ref2va",
-        component: "shot",
+        name: "image.generate_ref2va",
+        component: "image",
         execute: async (context) => {
           executed.push(String(context.params["prompt"]));
           await held.promise;
-          throw new Error("The renderer ran out of memory.");
+          throw new Error("The generator ran out of memory.");
         },
       }),
     );
 
-    const a = await schedule(m, project, "shot.render_ref2va", "A");
-    const b = await schedule(m, project, "shot.render_ref2va", "B", {
+    const a = await schedule(m, project, "image.generate_ref2va", "A");
+    const b = await schedule(m, project, "image.generate_ref2va", "B", {
       inputs: [{ role: "reference", ref: { record: a.id, output: 0 } }],
     });
     held.resolve();
@@ -213,18 +213,18 @@ describe("Scheduler", () => {
     const seen: Array<string | null> = [];
     m.runner.registerOperation(
       operation({
-        name: "shot.render_ref2va",
-        component: "shot",
+        name: "image.generate_ref2va",
+        component: "image",
         execute: async () => {
           await held.promise;
-          throw new Error("The renderer ran out of memory.");
+          throw new Error("The generator ran out of memory.");
         },
       }),
     );
     m.runner.registerOperation(
       operation({
-        name: "timeline.create",
-        component: "timeline",
+        name: "batch.create",
+        component: "batch",
         pendingInputRoles: ["reference"],
         execute: (context) => {
           seen.push(...context.inputs.map((input) => input.resolved_asset));
@@ -232,26 +232,26 @@ describe("Scheduler", () => {
         },
       }),
     );
-    const render = await schedule(m, project, "shot.render_ref2va", "A");
-    const inputs = [{ role: "reference", ref: { record: render.id, output: 0 } }];
+    const gen = await schedule(m, project, "image.generate_ref2va", "A");
+    const inputs = [{ role: "reference", ref: { record: gen.id, output: 0 } }];
 
-    // Without `after`, the call executes at once; with `after`, it starts before the render finishes.
+    // Without `after`, the call executes at once; with `after`, it starts before the generation finishes.
     const immediate = await m.runner.run({
       project,
-      operation: "timeline.create",
+      operation: "batch.create",
       params: {},
       inputs,
       ...userOrigin(),
     });
     expect(immediate.record).toMatchObject({ status: "done", inputs: [{ resolved_asset: null }] });
-    const scheduled = await schedule(m, project, "timeline.create", "B", { inputs });
+    const scheduled = await schedule(m, project, "batch.create", "B", { inputs });
     await m.scheduler.wait(project, [scheduled.id]);
-    expect(m.store.getRecord(project, render.id).status).toBe("running");
+    expect(m.store.getRecord(project, gen.id).status).toBe("running");
 
-    // The render's failure leaves both calls done.
+    // The generation's failure leaves both calls done.
     held.resolve();
     await m.scheduler.wait(project);
-    expect(m.store.getRecord(project, render.id).status).toBe("failed");
+    expect(m.store.getRecord(project, gen.id).status).toBe("failed");
     expect(m.store.getRecord(project, scheduled.id).status).toBe("done");
     expect(seen).toEqual([null, null]);
   });
@@ -262,15 +262,15 @@ describe("Scheduler", () => {
     const followUps: RecordId[] = [];
     m.runner.registerOperation(
       operation({
-        name: "shot.batch",
-        component: "shot",
+        name: "image.batch",
+        component: "image",
         // The call schedules one more record while it runs.
         execute: async () => {
           await new Promise((resolve) => setTimeout(resolve, 10));
           const scheduled = await m.runner.run({
             project,
-            operation: "shot.render_ref2va",
-            params: { prompt: "shot 1" },
+            operation: "image.generate_ref2va",
+            params: { prompt: "image 1" },
             inputs: [],
             after: [],
             ...userOrigin(),
@@ -283,17 +283,17 @@ describe("Scheduler", () => {
     );
     m.runner.registerOperation(
       operation({
-        name: "shot.render_ref2va",
-        component: "shot",
+        name: "image.generate_ref2va",
+        component: "image",
         resource: "gpu",
         execute: async (context) => {
           await new Promise((resolve) => setTimeout(resolve, 20));
-          return { outputs: [importTake(context)] };
+          return { outputs: [importVariant(context)] };
         },
       }),
     );
 
-    const batch = await schedule(m, project, "shot.batch", "batch 1");
+    const batch = await schedule(m, project, "image.batch", "batch 1");
     await m.scheduler.wait(project);
 
     expect(m.store.getRecord(project, batch.id).status).toBe("done");

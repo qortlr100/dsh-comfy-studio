@@ -330,9 +330,9 @@ export function projTools(project: CsProject, deps: ProjToolDeps): ToolDefinitio
     defineTool({
       name: "cs_proj_create",
       description:
-        "Make this conversation's folder a video project, only when the conversation has no project yet. " +
-        "DreamVerse keeps the project's files in the folder's hidden .comfy-studio directory and leaves the other files as " +
-        "they are. Then import references and build the video with the other DreamVerse tools.",
+        "Make this conversation's folder a project, only when the conversation has no project yet. " +
+        "The project's files are kept in the folder's hidden .comfy-studio directory; the other files are left as " +
+        "they are. Then do the work with the other cs_ tools.",
       parameters: { title: { type: "string", required: true } },
       output: writeOutput,
       execute: async (args, exec) => {
@@ -448,7 +448,7 @@ export function projTools(project: CsProject, deps: ProjToolDeps): ToolDefinitio
       name: "cs_proj_stale_accept",
       description:
         "Accept a stale record as it is: its stale mark and the marks it passed to records made from it go away. " +
-        "Call it only when the user accepts an out-of-date result instead of rendering it again.",
+        "Call it only when the user accepts an out-of-date result instead of running it again.",
       parameters: {
         record: { type: "string", required: true, description: "The stale record ID." },
       },

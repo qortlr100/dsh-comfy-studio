@@ -16,7 +16,7 @@ const EVENT: ProjectEvent = {
     operation: "proj.create",
     operation_version: "1",
     actor: "user",
-    surface: "canvas",
+    surface: "view",
     turn: null,
     session: null,
     tool_call: null,

@@ -5,7 +5,7 @@
  * @module @cs/project/folder
  */
 
-/** The hidden directory of a project folder that holds every DreamVerse file; the user's own files stay beside it. */
+/** The hidden directory of a project folder that holds every file of the project layer; the user's own files stay beside it. */
 export const PROJECT_DIR = ".comfy-studio";
 
 /**

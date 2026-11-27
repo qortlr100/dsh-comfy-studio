@@ -35,8 +35,8 @@ describe("citation grammar", () => {
   });
 
   it("reads the kind and the ID of any citation URI, which the writer writes back", () => {
-    expect(citationTarget("cs:clip/c%201")).toEqual({ kind: "clip", id: "c 1" });
-    expect(formatCitation("Clip", "clip", "c 1")).toBe("@[Clip](cs:clip/c%201)");
+    expect(citationTarget("cs:item/c%201")).toEqual({ kind: "item", id: "c 1" });
+    expect(formatCitation("Item", "item", "c 1")).toBe("@[Item](cs:item/c%201)");
     expect([citationTarget("https://x"), citationTarget("cs:nothing")]).toEqual([null, null]);
   });
 
