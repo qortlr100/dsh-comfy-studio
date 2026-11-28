@@ -1,6 +1,6 @@
 # 아키텍처
 
-만들 구조를 적는다. 만들어진 것은 프로젝트 계층(2-0, 2026-11-27)과 화면용 API(2-2, 2026-11-28)뿐이므로 각 절에서 **정해진 것**과 **설계 과제**를 구분한다. 근거가 된 조사는 `docs/DSH.md`·`docs/DREAMVERSE.md`·`docs/LEGACY.md`에, 결정의 출처는 `docs/DECISIONS.md`에, 만드는 순서는 `docs/ROADMAP.md`에 있다. 낱말의 뜻은 `AGENTS.md` "용어"를 따른다.
+만들 구조를 적는다. 만들어진 것은 프로젝트 계층(2-0, 2026-11-27. 제안 장치는 2-3a), 화면용 API(2-2), 카탈로그 계약(2-1), 셸(3-0), 연동 라이브러리(4-0)이므로 각 절에서 **정해진 것**과 **설계 과제**를 구분한다. 근거가 된 조사는 `docs/DSH.md`·`docs/DREAMVERSE.md`·`docs/LEGACY.md`에, 결정의 출처는 `docs/DECISIONS.md`에, 만드는 순서는 `docs/ROADMAP.md`에 있다. 낱말의 뜻은 `AGENTS.md` "용어"를 따른다.
 
 ## 목표와 제약
 
@@ -117,7 +117,7 @@ export function apply(ctx: Context): void {
 - 프로젝트 폴더의 `.comfy-studio/`에 `records.jsonl`(기록 줄과 갱신 줄, 추가만 한다)과 `line.json`(히스토리의 끝 `tip`과 현재 위치 `at`)이 있다. 이 디렉터리는 프로젝트 계층만 읽고 쓴다.
 - 에이전트에게 가는 것: 연산마다의 도구 `cs_<연산 이름>`, 프로젝트 도구 여덟 개(`cs_proj_create`, `_rename`, `_state`, `_history_list`, `_undo`, `_redo`, `_stale_accept`, `_wait`), 시스템 프롬프트의 `cs:project` 절(규칙만), 대화에 덧붙는 프로젝트 상태 메시지와 갱신 메시지. 에이전트가 이 도구들을 받고 규칙 절과 두 메시지가 실제 턴에 붙는다(**띄워 확인**, 2026-11-28: 실제 모델과 조합 시험 `tests/integration/chat.test.ts`. `docs/DSH.md` "실제 모델로 확인한 것").
 - 설정(번들의 `cs-project` 행): `projectsFolder`(새 프로젝트 폴더를 둘 곳. 환경 변수 `CS_PROJECTS_FOLDER`에서 읽고, 없거나 비어 있으면 `<사용자 홈>/comfy-studio-projects`), `cpuConcurrency`(4), `gpuConcurrency`(1), `promptSectionOrder`(4900).
-- 프로젝트 규칙 절은 DreamVerse의 것을 뜻 그대로 옮겼다("모든 호출은 바로 히스토리의 단계다. 사용자가 변경을 승인하지 않는다"). 기존 앱의 "제안 후 승인"(삭제, 그래프 패치)과 맞추는 일은 기능 컴포넌트를 만드는 2-3에서 한다.
+- 프로젝트 규칙 절은 DreamVerse의 것을 뜻 그대로 옮겼다("모든 호출은 바로 히스토리의 단계다. 사용자가 변경을 승인하지 않는다"). 2-3a에서 예외를 더했다: 설명에 제안이라고 적힌 도구는 아무것도 바꾸지 않고 사용자의 결정을 기다린다(아래 "제안과 승인").
 
 ### 변경 하나가 흐르는 길
 
@@ -140,6 +140,28 @@ export function apply(ctx: Context): void {
 - **우리 화면의 버튼이 만드는 세션은 늘 이 프리셋이다.** 셸이 세션을 만들 때 프리셋을 명시한다. dsh의 기본 제공 프리셋은 끄지 않았다(끄면 그 프리셋의 기존 세션에 글이 보내지지 않는다).
 - **dsh 자체의 진입점은 설정의 기본 프리셋을 따른다**(브랜드에 키보드로 Enter, 새 세션 단축키, 새 브라우저의 시작 복원, Automation tasks의 New task). 기본값은 번들이 우리 것으로 두지만 사용자가 설정에서 바꿀 수 있다. 그래서 **셸이 프로젝트의 빈 채팅을 지켜보다가 우리 프리셋이 아니면 우리 것으로 되돌린다**(사용자가 정했다, 2026-11-28. `packages/ui-shell/src/client/follow.ts`의 `followAgentPreset`). 남는 것: 만들자마자 글이 들어가는 세션(예약이 실행되며 만드는 새 세션)과 이미 대화가 있는 세션은 가진 프리셋 그대로다. 사용자가 기본값을 `standard`로 바꾼 home에서만 생긴다.
 - 프로젝트 문서는 파일이 아니라 기능 컴포넌트의 연산으로 만든다(`docs/LEGACY.md` "대응표").
+
+### 제안과 승인
+
+기존 앱의 규칙 "에이전트는 아무것도 직접 지우지 않는다, 캐릭터 프로필과 프리셋을 직접 쓰지 않는다"를 지키는 장치다. 사용자가 "제안 기록 + 승인"으로 정했고(2026-11-28, `docs/DECISIONS.md` "확정") 2-3a에서 프로젝트 계층에 만들었다. 아래의 동작은 단위 시험과 조합 시험으로 확인했다(**띄워 확인**, 2026-11-29: `tests/integration/proposal.test.ts`가 가짜 LLM으로 실제 dsh에서 제안 → 승인 → 실행 → 다음 턴의 갱신을 본다).
+
+연산마다 에이전트가 부르면 무엇이 되는지를 `OperationSpec.agent`로 정한다.
+
+| 값 | 에이전트 도구 | 에이전트가 부르면 | 쓰는 곳 |
+| --- | --- | --- | --- |
+| `run`(적지 않으면 이것) | 있다 | 바로 실행된다. 히스토리의 단계다 | 대부분의 연산 |
+| `propose` | 있다 | 실행되지 않고 제안이 남는다. 사용자가 승인하면 같은 연산이 사용자 이름으로 실행된다 | 삭제, 캐릭터 프로필 쓰기 |
+| `none` | 없다 | — | 사용자만 하는 일: 채택과 보류, 화면에서 올린 파일의 가져오기 |
+
+- **화면과 에이전트가 같은 연산을 부른다는 규칙은 그대로다.** 사용자는 화면에서 `propose` 연산을 바로 실행한다. 제안 전용 연산은 없다.
+- **한 곳에서 막는다.** `ctx.csProject.run`은 `actor: "agent"`인 요청이 `propose`·`none` 연산을 부르면 기록 없이 거절한다(`agent_not_allowed`).
+- **제안은 히스토리 밖의 기록이다.** `proj.propose`(연산 이름, 파라미터, 입력)와 `proj.proposal_decide`(제안, 결정, 승인으로 실행된 기록) 둘이고, 단계가 아니라서 실행 취소로 사라지지 않고 뒤 단계를 버리지 않는다. `proj` 조각의 `proposals`가 이 둘에서 계산한 목록이다(`pending`·`accepted`·`rejected`).
+- **제안할 때와 승인할 때 둘 다 검사한다.** `ctx.csProject.propose(request)`는 `run`이 기록 전에 하는 검사(파라미터, 입력, `precondition`)를 그때의 상태로 하고, 걸리면 기록 없이 거절한다(에이전트에게는 도구 오류다). `ctx.csProject.decideProposal(project, proposal, "accept" | "reject", origin)`의 승인은 연산을 사용자 origin으로 `run`하므로 그때의 상태로 다시 검사된다. 기록 전에 거절되면 제안은 대기로 남고 오류가 사용자에게 간다.
+- **두 번 실행되지 않는다.** 이미 결정된 제안의 결정은 아무것도 쓰지 않고 지금 상태를 돌려준다. 같은 제안의 결정이 진행 중이면 `proposal_busy`다. 결정은 사용자만 한다(`actor: "agent"`인 결정은 `agent_not_allowed`). 같은 세션이 같은 연산·파라미터·입력으로 낸 대기 중 제안은 하나로 접힌다.
+- **에이전트가 아는 것.** 도구 결과가 "제안했고 아직 바뀐 것은 없다"를 말한다(오류가 아니다). 대기 중인 제안은 프로젝트 요약의 `proposals`에, 사용자의 결정은 프로젝트 갱신 메시지의 줄로 간다. 프로젝트 규칙 절이 제안 도구를 되풀이해 부르지 말라고 적는다.
+- **화면이 하는 것.** 제안 목록은 상태(`GET /api/cs/state`)의 `components.proj.proposals`에 있고, 결정은 `POST /api/cs/proposal/decide`다. 채팅 안의 카드는 3-4에서 그린다. 그때까지 화면에는 승인하는 곳이 없다.
+- 만료는 없다. 결정된 제안도 상태에 남는다.
+- 프리셋은 프로젝트 밖의 데이터라(아래 "데이터가 사는 곳") 프리셋 변경의 제안이 이 장치를 쓸지는 2-3f에서 정한다.
 
 ## 두 계약
 
@@ -222,11 +244,12 @@ export function apply(ctx: Context): void {
 | `/api/cs/redo` | POST | `{project}` | `{tip, at}` |
 | `/api/cs/stale/accept` | POST | `{project, record, session?, surface?}` | `proj.stale_accept` 기록 |
 | `/api/cs/history` | POST | `{project, actor?, component?, operation?, kind?, status?, session?, turn?, tool_call?, records?, before?, limit?}` | `WireHistory`(`{entries, assets}`). `limit`은 1~200, 기본 50 |
+| `/api/cs/proposal/decide` | POST | `{project, proposal, decision: "accept" \| "reject", surface?, session?}` | `{proposal, record}`: 결정 뒤의 제안과, 승인으로 실행된 연산의 기록(거절이거나 이미 결정된 제안이면 `null`). 2-3a |
 | `/api/cs/catalog` | GET | — | `WireCatalogEntry[]`(`{primitive, provider, target, description, abilities, facts, problem}`): 카탈로그의 항목. 카탈로그가 없으면 `[]` |
 | `/cs/events?project=<id>` | GET | — | `text/event-stream`: `ready` 뒤에 `record`(기록 추가), `update`(기록 갱신), `line`(현재 위치나 끝이 바뀜), `catalog`(카탈로그가 바뀜. 데이터 없음) |
 
 - **쓰는 요청은 전부 프로젝트 계층의 연산 실행을 지난다.** `actor: "user"`로 부르고, 기록의 `surface`는 요청의 `surface`가 `chat`이면 `chat`, 그 밖은 `view`다. `session`을 주면 그 채팅 세션이 기록에 남는다.
-- **오류**는 라우트와 스트림이 같은 본문 `{error, code, ...details}`로 답한다: `invalid_params`·`invalid_inputs`·`input_not_ready`·`read_only_operation`(400), `unknown_project`·`unknown_record`·`unknown_operation`·`unknown_asset`(404), 그 밖의 프로젝트 계층 거절(409. 예: `nothing_to_undo`), `internal_error`(500. 호스트 로그에도 남는다). 인증에서 걸린 요청(401·403)은 dsh가 답하는 꼴이라 이 본문이 아니다.
+- **오류**는 라우트와 스트림이 같은 본문 `{error, code, ...details}`로 답한다: `invalid_params`·`invalid_inputs`·`input_not_ready`·`read_only_operation`(400), `unknown_project`·`unknown_record`·`unknown_operation`·`unknown_asset`(404), 그 밖의 프로젝트 계층 거절(409. 예: `nothing_to_undo`, `proposal_busy`, `agent_not_allowed`), `internal_error`(500. 호스트 로그에도 남는다). 인증에서 걸린 요청(401·403)은 dsh가 답하는 꼴이라 이 본문이 아니다.
 - 제목과 폴더 이름은 제어 문자가 없고 200바이트 이하여야 한다. 만들기는 한 번에 하나씩 처리되어 동시에 온 같은 제목도 서로 다른 번호를 받는다. 읽기 전용 연산은 이 API로 실행하지 못한다.
 - **인증은 dsh의 것을 그대로 탄다.** fetch 라우트는 dsh `connection` 서비스의 정확 일치 라우트라, dsh가 Host·Origin과 브라우저 세션 쿠키를 검사한 뒤에 부르고 소유자만 닿는다. 이벤트 스트림은 `webServer`의 날 라우트라 요청마다 `connection.admit`으로 같은 검사를 하고 소유자일 때만 연다. `connection`이 없으면 스트림 라우트를 등록하지 않는다. 쿠키 없는 요청은 둘 다 401이다(**띄워 확인**). 플러그인이 내려가면 열린 스트림을 모두 끝내고(브라우저의 `EventSource`가 다시 잇는다), 읽지 않는 클라이언트의 버퍼가 4MiB를 넘어도 끝낸다.
 - **화면은 상태를 들고 있지 않는다.** 스트림에 이벤트가 오면 `/api/cs/state`를 다시 읽는다. 상태는 통째로 온다(부분 갱신 라우트는 없다).
@@ -307,7 +330,8 @@ DreamVerse처럼 기본 dsh 화면을 교체한다. 3-0에서 셸을 만들었�
 | LLM 프로바이더·모델 설정                                  | dsh(프로필의 `cordis.patch.yml`)                                                                                  | dsh                                    |
 | 비밀값                                                    | dsh 자격 증명 저장소(`$DSH_HOME/.credentials.yaml`). 설정에는 참조만 둔다.                                         | dsh. 플러그인에서 쓰는 법은 미확인(4-1) |
 | ComfyUI 서버 목록, 서버별 모델 파일 목록                  | 미정                                                                                                              | 설계 과제(4-1)                         |
-| 프로젝트를 넘는 것(캐릭터 라이브러리, 프리셋)             | 미정                                                                                                              | 설계 과제(2-3)                         |
+| 워크플로 템플릿, 캐릭터                                   | 프로젝트의 기록이다(프로젝트마다 따로). 다른 프로젝트의 것을 복사해 오는 연산을 둔다                              | 사용자가 정했다(2026-11-28). 2-3c, 2-3e에서 만든다 |
+| 프리셋(에이전트의 규칙과 메모)                            | 프로젝트 밖, dsh home의 저장소. 모든 프로젝트에 적용된다                                                          | 사용자가 정했다(2026-11-28). 저장소의 모양은 2-3f |
 
 개발용 `DSH_HOME`은 본 체크아웃의 `.dsh-home` 하나이고 모든 워크트리가 같이 쓴다(`docs/DSH.md` "워크트리와 DSH_HOME").
 
@@ -412,7 +436,8 @@ scripts/             프로필 만들기, 실행, 합성 구성 찍기(`dsh.ts`,
 | 재시작 후 실행 이어받기(프로젝트 계층은 재시작 때 끝나지 않은 기록을 끝낸다)          | 4-2         |
 | 카탈로그를 읽는 에이전트 도구                                                         | 2-3         |
 | 기존 관계형 데이터(폴더, 태그, 검토 상태, 배치)를 기록과 리듀서로 옮기는 모양         | 2-3         |
-| 프로젝트를 넘는 데이터의 자리                                                         | 2-3, 4-1    |
+| ComfyUI 서버 목록과 서버별 모델 목록의 자리                                           | 4-1         |
+| 프리셋 저장소의 모양(dsh 저장소 도메인), 프리셋 변경의 제안이 프로젝트 계층의 장치를 쓸지 | 2-3f        |
 | 자체 부품의 범위와 디자인 문서                                                        | 3-1         |
 | 브라우저에서 연산 선언(`WireOperation`)을 타입으로 쓰는 법                            | 3-3         |
 | ComfyUI 서버 키를 dsh 자격 증명에 두는 법                                             | 4-1         |

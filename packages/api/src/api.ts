@@ -1,7 +1,7 @@
 /**
  * The handlers behind the browser routes, independent of transport: list, create, rename, remove and summarize
  * projects, read the project state, list operations, run an operation as the human, undo and redo, accept a stale
- * record, and list the history. The Fetch routes and the tests call these methods directly.
+ * record, decide an agent's proposal, and list the history. The Fetch routes and the tests call these methods directly.
  *
  * Every write goes through `csProject` with actor `user`, the surface the request names, and the chat session the view
  * sits beside (`session`, when the request names one); it becomes a step after the project's current position.
@@ -40,6 +40,7 @@ import {
   type WireCatalogEntry,
   type WireHistory,
   type WireProject,
+  type WireProposalDecision,
   type WireState,
 } from "./wire.ts";
 
@@ -116,6 +117,8 @@ const STATUS_OF: Partial<Record<ProjectError["code"], 400 | 404 | 409>> = {
   invalid_params: 400,
   invalid_inputs: 400,
   input_not_ready: 400,
+  agent_not_allowed: 409,
+  proposal_busy: 409,
 };
 
 /**
@@ -532,9 +535,41 @@ export class ApiHandlers {
    */
   getState(project: unknown): WireState {
     const projectId = this.requireProject(project);
-    return toWireState(this.project.getState(projectId), this.project.line(projectId), (id) =>
-      this.assetOrNull(id),
+    const state = this.project.getState(projectId);
+    return toWireState(
+      state,
+      this.project.line(projectId),
+      (id) => this.assetOrNull(id),
+      (ref) => this.project.assetsOf(state, ref),
     );
+  }
+
+  /**
+   * Accept or reject a proposal as the human, from a view. Accepting runs the proposed operation as the user, after the
+   * current position; a refusal of that run leaves the proposal pending and answers with the refusal. A proposal that
+   * was decided already is answered as it stands, with `record: null`.
+   * @param raw - `{project, proposal, decision: 'accept' | 'reject', surface?, session?}`.
+   * @returns the proposal after the decision and the record the accepted call wrote (null for none).
+   * @throws ApiRequestError (400 `invalid_params`, 404 `unknown_project` or `unknown_record`, 409 `proposal_busy`, or
+   *   the refusal of the accepted run).
+   */
+  async decideProposal(raw: unknown): Promise<WireProposalDecision> {
+    const body = objectOf(raw);
+    const projectId = this.requireProject(body["project"]);
+    const proposal = brandString<RecordId>(stringOf(body["proposal"], "proposal"));
+    const decision = body["decision"];
+    if (decision !== "accept" && decision !== "reject") {
+      throw invalid("'decision' must be accept or reject.");
+    }
+    const outcome = await refused(() =>
+      this.project.decideProposal(
+        projectId,
+        proposal,
+        decision,
+        humanOrigin(body, `${decision} proposal ${proposal}`),
+      ),
+    );
+    return { proposal: outcome.proposal, record: outcome.result?.record ?? null };
   }
 
   /** @returns the declaration of every registered operation that a view can run: every operation that is not `readOnly`. */

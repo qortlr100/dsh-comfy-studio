@@ -766,3 +766,100 @@ describe("csProjectSight fold", () => {
     );
   });
 });
+
+/** Register `asset.delete`, whose agent call proposes. */
+function registerDelete(fixture: Fixture): void {
+  fixture.project.registerOperation({
+    name: "asset.delete",
+    component: "asset",
+    version: "1",
+    description: "Delete an asset.",
+    params: { name: { type: "string", required: true } },
+    inputs: {},
+    outputs: [],
+    deterministic: false,
+    resource: "none",
+    agent: "propose",
+    summarize: (record) => `deleted ${String(record.params["name"])}`,
+    execute: () => Promise.resolve({ outputs: [] }),
+  });
+}
+
+/** The `proposals` field of the summary that `cs_proj_state` returns now; logs the result. */
+async function summaryProposals(fixture: Fixture): Promise<unknown> {
+  const result = await fixture.call("cs_proj_state", {});
+  if (result.isError) throw new Error(result.error.message);
+  fixture.log.toolResult(result);
+  return standIn<Record<string, unknown>>(result.value)["proposals"];
+}
+
+/** The record of the newest `proj.proposal_decide`. */
+function lastDecision(fixture: Fixture): ProjectRecord {
+  const record = fixture.project
+    .listRecords(fixture.projectId)
+    .findLast((entry) => entry.operation === "proj.proposal_decide");
+  if (record === undefined) throw new Error("no decision was written");
+  return record;
+}
+
+describe("proposals in the project messages", () => {
+  it("lists pending proposals in the summary, and the user's decisions as update lines", async () => {
+    const fixture = await start();
+    registerDelete(fixture);
+    fixture.log.step();
+    expect(await summaryProposals(fixture)).toBeUndefined();
+
+    // The agent's own proposal: its tool result showed it, so no update repeats it.
+    const proposed = await fixture.call("cs_asset_delete", {
+      reason: "the user wants the knife gone",
+      name: "knife",
+    });
+    if (proposed.isError) throw new Error(proposed.error.message);
+    fixture.log.toolResult(proposed);
+    const first = brandString<RecordId>(standIn<{ record: string }>(proposed.value).record);
+    expect(fixture.log.step()).toBeNull();
+    expect(await summaryProposals(fixture)).toEqual([
+      { proposal: first, tool: "cs_asset_delete", reason: "the user wants the knife gone" },
+    ]);
+    // The project state message carries the same field.
+    const state = projectMessage(fixture.project, fixture.deps, SESSION, { from: null });
+    expect(state === null ? "" : textOf(state)).toContain(`"proposal": "${first}"`);
+
+    // The user accepts it in the app: the run's record and then the decision.
+    const accepted = await fixture.project.decideProposal(
+      fixture.projectId,
+      first,
+      "accept",
+      user(`accept proposal ${first}`),
+    );
+    const ran = accepted.result?.record;
+    if (ran === null || ran === undefined) throw new Error("the acceptance ran nothing");
+    expect(fixture.log.step()).toBe(
+      update(
+        `- done ${ran.id} (user in the app): deleted knife`,
+        `- done ${lastDecision(fixture).id} (user in the app): accepted proposal ${first} of cs_asset_delete; it ran as record ${ran.id}`,
+      ),
+    );
+    expect(fixture.log.step()).toBeNull();
+    expect(await summaryProposals(fixture)).toBeUndefined();
+
+    // A proposal of another chat is listed; the user's rejection of it names the proposal and the tool.
+    const other = await fixture.project.propose({
+      ...agentOrigin("s2"),
+      intent: "tidy up",
+      project: fixture.projectId,
+      operation: "asset.delete",
+      params: { name: "fork" },
+      inputs: [],
+    });
+    expect(fixture.log.step()).toBe(
+      update(`- done ${other.id} (another chat): proposed cs_asset_delete: tidy up`),
+    );
+    await fixture.project.decideProposal(fixture.projectId, other.id, "reject", user("reject"));
+    expect(fixture.log.step()).toBe(
+      update(
+        `- done ${lastDecision(fixture).id} (user in the app): rejected proposal ${other.id} of cs_asset_delete; nothing ran`,
+      ),
+    );
+  });
+});

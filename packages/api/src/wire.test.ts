@@ -24,6 +24,7 @@ function sampleState(): ProjectState {
           },
         ],
         created_by: { a1: "r1", a3: "r-discarded" },
+        proposals: {},
       },
     },
   });
@@ -38,6 +39,11 @@ function storeOf(held: string[]): (id: AssetId) => WireAsset | null {
     held.includes(id) ? { id, mime: "image/png", name: `${id}.png`, url: `/assets/${id}` } : null;
 }
 
+/** A stand-in proposal with the fields `mentionedAssets` reads. */
+function proposal(id: string, status: string, inputs: unknown[]): unknown {
+  return { id, status, inputs };
+}
+
 describe("mentionedAssets", () => {
   it("lists created assets first, then record outputs and resolved inputs, each once", () => {
     expect(mentionedAssets(sampleState())).toEqual(["a1", "a3", "a2"]);
@@ -45,9 +51,41 @@ describe("mentionedAssets", () => {
 
   it("is empty for a state with no records", () => {
     const state = standIn<ProjectState>({
-      components: { proj: { records: [], created_by: {} } },
+      components: { proj: { records: [], created_by: {}, proposals: {} } },
     });
     expect(mentionedAssets(state)).toEqual([]);
+  });
+
+  it("adds the assets that the inputs of pending proposals name, and none of decided ones", () => {
+    const base = sampleState();
+    const state = standIn<ProjectState>({
+      ...base,
+      components: {
+        proj: {
+          ...base.components.proj,
+          proposals: {
+            p1: proposal("p1", "pending", [
+              { role: "s", ref: { asset: "a9" } },
+              { role: "s", ref: { record: "r1", output: 0 } },
+              { role: "s", ref: { record: "r-gone", output: 0 } },
+              { role: "s", ref: { test_style: "st", version: 2 } },
+            ]),
+            p2: proposal("p2", "rejected", [{ role: "s", ref: { asset: "a8" } }]),
+          },
+        },
+      },
+    });
+    expect(mentionedAssets(state)).toEqual(["a1", "a3", "a2", "a9"]);
+    // A version names its assets through the view API's lookup.
+    expect(mentionedAssets(state, () => [standIn<AssetId>("a7")])).toEqual([
+      "a1",
+      "a3",
+      "a2",
+      "a9",
+      "a7",
+    ]);
+    const wire = toWireState(state, standIn({ tip: "r2", at: "r2" }), storeOf(["a9", "a8"]));
+    expect(wire.assets).toEqual([expect.objectContaining({ id: "a9", made_by: null })]);
   });
 });
 
@@ -107,6 +145,7 @@ describe("toWireOperation", () => {
   it("keeps only the declaration, with no executable parts", () => {
     const wire = toWireOperation(spec());
     expect(Object.keys(wire).toSorted()).toEqual([
+      "agent",
       "description",
       "deterministic",
       "inputs",
@@ -121,7 +160,14 @@ describe("toWireOperation", () => {
       version: "2",
       deterministic: true,
       resource: "gpu",
+      agent: "run",
     });
+  });
+
+  it("states what an agent's call does, run when the operation declares nothing", () => {
+    expect(toWireOperation(spec({ agent: "propose" })).agent).toBe("propose");
+    expect(toWireOperation(spec({ agent: "none" })).agent).toBe("none");
+    expect(toWireOperation(spec({ agent: "run" })).agent).toBe("run");
   });
 
   it("adds the label only when the operation declares one", () => {

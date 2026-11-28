@@ -231,6 +231,116 @@ describe("agent tools", () => {
     expect(fixture.project.listOperations()).toEqual([]);
   });
 
+  it("registers a tool for each agent call: run and propose have one, none has none", async () => {
+    const fixture = await start();
+    fixture.project.registerOperation(
+      operation({ name: "asset.delete", component: "asset", agent: "propose", resource: "cpu" }),
+    );
+    fixture.project.registerOperation(
+      operation({ name: "asset.keep", component: "asset", agent: "none" }),
+    );
+    fixture.project.registerOperation(
+      operation({ name: "asset.crop", component: "asset", agent: "run" }),
+    );
+    const names = fixture.context.tools.schemas().map((tool) => tool.name);
+    expect(names).toEqual(expect.arrayContaining(["cs_asset_delete", "cs_asset_crop"]));
+    expect(names).not.toContain("cs_asset_keep");
+    expect(
+      fixture.context.tools.schemas().find((tool) => tool.name === "cs_asset_delete"),
+    ).toMatchObject({
+      description:
+        "A test operation. Runs on the CPU. Calling this tool does not run it: the call writes a proposal that the " +
+        "user accepts or rejects in the app.",
+    });
+    // A rebuild of every tool (a new reference kind) still leaves the none operation without one.
+    fixture.project.registerComponent("test_library");
+    fixture.project.registerReferenceKind(testKind("test_style"));
+    expect(fixture.context.tools.get("cs_asset_keep")).toBeUndefined();
+    expect(fixture.context.tools.get("cs_asset_delete")).toBeDefined();
+  });
+
+  it("writes a proposal for a call of a propose tool, runs nothing, and shows the proposal as done", async () => {
+    const fixture = await start();
+    let runs = 0;
+    fixture.project.registerOperation(
+      operation({
+        name: "asset.delete",
+        component: "asset",
+        agent: "propose",
+        execute: () => {
+          runs += 1;
+          return Promise.resolve({ outputs: [] });
+        },
+      }),
+    );
+    const projectId = await boundProject(fixture);
+    const line = fixture.project.line(projectId);
+    const asset = fixture.assets.importAsset(projectId, Buffer.from("knife"), {
+      mime: "image/png",
+      name: "knife.png",
+    });
+    const result = await fixture.call("cs_asset_delete", {
+      reason: "the user wants the knife gone",
+      prompt: "knife",
+      inputs: { reference: asset },
+    });
+    const proposed = value(result);
+    expect(proposed).toEqual({
+      project: projectId,
+      record: expect.any(String),
+      status: "proposed",
+      summary:
+        "the call of cs_asset_delete waits for the user to accept or reject it in the app; nothing has changed " +
+        "yet. The user's decision reaches you as a project update; do not propose the same call again while it waits.",
+      outputs: [],
+      scheduled: [],
+      params: { prompt: "knife" },
+    });
+    expect(result.isError ? [] : result.content).toEqual([
+      {
+        type: "text",
+        text: `proposed ${proposed.record}: ${proposed.summary}\nparams: {"prompt":"knife"}`,
+      },
+    ]);
+    expect(result.meta).toEqual({
+      record: proposed.record,
+      tool: "asset.delete",
+      status: "proposed",
+      outputs: [],
+      cs_seen: { project: projectId, records: { [proposed.record]: "done" } },
+    });
+    expect(runs).toBe(0);
+    expect(fixture.project.line(projectId)).toEqual(line);
+    const record = fixture.project.getRecord(projectId, brandString<RecordId>(proposed.record));
+    expect(record).toMatchObject({
+      operation: "proj.propose",
+      actor: "agent",
+      session: "s1",
+      intent: "the user wants the knife gone",
+      params: { operation: "asset.delete", params: { prompt: "knife" } },
+    });
+    // The same proposal again folds into the pending one.
+    const again = value(
+      await fixture.call("cs_asset_delete", {
+        reason: "again",
+        prompt: "knife",
+        inputs: { reference: asset },
+      }),
+    );
+    expect(again.record).toBe(proposed.record);
+    // A proposal that its checks refuse is a tool error and writes nothing.
+    const records = fixture.project.listRecords(projectId).length;
+    const refused = await fixture.call("cs_asset_delete", {
+      reason: "a missing asset",
+      prompt: "knife",
+      inputs: { reference: "f".repeat(64) },
+    });
+    expect(refused.isError && refused.error.message).toBe(
+      `Input 'reference' names an unknown asset ${"f".repeat(64)}.`,
+    );
+    expect(fixture.project.listRecords(projectId)).toHaveLength(records);
+  });
+
   it("refuses a call with an argument the tool does not declare, such as a project, before any record", async () => {
     const fixture = await start();
     fixture.project.registerOperation(operation({ name: "asset.crop", component: "asset" }));
@@ -464,7 +574,13 @@ describe("agent tools", () => {
         "cs_proj_state reads the whole project at any time.",
     );
     expect(unbound).toContain(
-      "is a step of the project history at once; the user does not accept changes.",
+      "- Every call of yours, except a call of a tool whose description says it writes a proposal, and every edit " +
+        "of the user is a step of the project history at once; the user does not accept those changes.",
+    );
+    expect(unbound).toContain(
+      "- A tool whose description says the call writes a proposal changes nothing: the user accepts or rejects the " +
+        "proposal in the app, and only an accepted proposal runs. Say in your reply what you proposed, then wait for " +
+        "the decision, which reaches you as a project update; never repeat a proposal that waits.",
     );
     expect(unbound).toContain("cs_proj_redo goes forward one step. These moves add no step.");
     expect(unbound).toContain(

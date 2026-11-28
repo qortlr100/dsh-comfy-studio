@@ -12,6 +12,9 @@ import {
   type ApiFixture,
 } from "./testing/support.ts";
 
+/** A placeholder that a test replaces once the real function exists. */
+const noopRelease = (): void => undefined;
+
 /**
  * @param fixture - the mounted API.
  * @param project - the project.
@@ -73,6 +76,12 @@ describe("answer", () => {
     });
     expect(other.status).toBe(409);
     expect(await other.json()).toEqual({ error: "nothing", code: "nothing_to_undo" });
+    for (const code of ["agent_not_allowed", "proposal_busy"] as const) {
+      const refused = await answer(() => {
+        throw new ProjectError(code, "refused");
+      });
+      expect(refused.status).toBe(409);
+    }
   });
 
   it("answers any other throw with 500 internal_error", async () => {
@@ -720,6 +729,167 @@ describe("stale accept", () => {
     expect(
       (await f.call(ROUTES.acceptStale, { json: { project: "nothing", record: "x" } })).status,
     ).toBe(404);
+  });
+});
+
+/**
+ * Register `probe_note.remove`, whose agent call proposes, and propose one call of it as the agent.
+ * @param f - the mounted API.
+ * @param execute - the operation's execute.
+ * @returns the project, the asset the proposal names and the `proj.propose` record.
+ */
+async function proposed(
+  f: ApiFixture,
+  execute: () => Promise<{ outputs: [] }> = () => Promise.resolve({ outputs: [] }),
+): Promise<{ project: ProjectId; asset: string; proposal: ProjectRecord }> {
+  f.project.registerOperation({
+    name: "probe_note.remove",
+    component: "probe_note",
+    version: "1",
+    description: "Remove an image.",
+    params: { text: { type: "string", required: true } },
+    inputs: { source: { type: "image", description: "The image." } },
+    outputs: [],
+    deterministic: false,
+    resource: "none",
+    agent: "propose",
+    summarize: () => "removed",
+    execute,
+  });
+  const project = await f.newProject();
+  // An asset that no record of the project names: only the proposal does.
+  const asset = f.assets.importAsset(project, Buffer.from("loose"), {
+    mime: "image/png",
+    name: "loose.png",
+  });
+  const proposal = await f.project.propose({
+    ...agentOrigin("turn-1", { intent: "remove the loose image" }),
+    project,
+    operation: "probe_note.remove",
+    params: { text: "loose" },
+    inputs: [{ role: "source", ref: { asset } }],
+  });
+  return { project, asset, proposal };
+}
+
+describe("proposals", () => {
+  it("declares what an agent's call of each operation does", async () => {
+    const f = await mountApi();
+    await proposed(f);
+    const operations = standIn<Array<Record<string, unknown>>>(
+      (await f.call(ROUTES.operations)).json,
+    );
+    const agentOf = new Map(operations.map((operation) => [operation["name"], operation["agent"]]));
+    expect(agentOf.get("probe_note.remove")).toBe("propose");
+    expect(agentOf.get("probe_note.add")).toBe("run");
+  });
+
+  it("shows a pending proposal in the state with the assets its inputs name, and accepts it through the route", async () => {
+    const f = await mountApi();
+    const { project, asset, proposal } = await proposed(f);
+    const state = f.api.getState(project);
+    expect(state.components.proj.proposals[proposal.id]).toMatchObject({
+      operation: "probe_note.remove",
+      status: "pending",
+      intent: "remove the loose image",
+    });
+    expect(state.assets).toEqual([
+      expect.objectContaining({ id: asset, name: "loose.png", made_by: null }),
+    ]);
+    // Nothing ran: the history list holds the project's first record only.
+    expect((await historyOf(f, project)).map((record) => record.operation)).toEqual([
+      "proj.create",
+    ]);
+
+    const accepted = await f.call(ROUTES.proposalDecide, {
+      json: { project, proposal: proposal.id, decision: "accept", session: "s1" },
+    });
+    expect(accepted.status).toBe(200);
+    const body = standIn<{ proposal: Record<string, unknown>; record: ProjectRecord }>(
+      accepted.json,
+    );
+    expect(body.record).toMatchObject({
+      operation: "probe_note.remove",
+      actor: "user",
+      surface: "view",
+      session: "s1",
+      intent: "accept proposal: remove the loose image",
+      status: "done",
+    });
+    expect(body.proposal).toMatchObject({ status: "accepted", record: body.record.id });
+    expect((await historyOf(f, project))[0]?.id).toBe(body.record.id);
+    // The asset stays in the state, now as an input of the record the acceptance wrote.
+    expect(f.api.getState(project).assets.map((entry) => entry.id)).toEqual([asset]);
+
+    const again = await f.call(ROUTES.proposalDecide, {
+      json: { project, proposal: proposal.id, decision: "reject" },
+    });
+    expect(again).toEqual({ status: 200, json: { proposal: body.proposal, record: null } });
+  });
+
+  it("rejects a proposal through the route without running it", async () => {
+    const f = await mountApi();
+    let runs = 0;
+    const { project, proposal } = await proposed(f, () => {
+      runs += 1;
+      return Promise.resolve({ outputs: [] });
+    });
+    const rejected = await f.call(ROUTES.proposalDecide, {
+      json: { project, proposal: proposal.id, decision: "reject", surface: "chat" },
+    });
+    expect(rejected.status).toBe(200);
+    expect(asRecord(rejected.json)["record"]).toBeNull();
+    expect(asRecord(asRecord(rejected.json)["proposal"])["status"]).toBe("rejected");
+    expect(runs).toBe(0);
+    // A decided proposal's inputs are no longer among the state's assets.
+    expect(f.api.getState(project).assets).toEqual([]);
+    const decision = f.project
+      .listRecords(project)
+      .find((record) => record.operation === "proj.proposal_decide");
+    expect(decision).toMatchObject({
+      actor: "user",
+      surface: "chat",
+      intent: `reject proposal ${proposal.id}`,
+    });
+  });
+
+  it("answers 400 for a malformed request, 404 for an unknown project or proposal, and 409 while a decision is in flight", async () => {
+    const f = await mountApi();
+    let release = noopRelease;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { project, proposal } = await proposed(f, async () => {
+      await held;
+      return { outputs: [] };
+    });
+    const cases: Array<[unknown, number, string]> = [
+      [{ project, proposal: proposal.id }, 400, "invalid_params"],
+      [{ project, proposal: proposal.id, decision: "maybe" }, 400, "invalid_params"],
+      [{ project, decision: "accept" }, 400, "invalid_params"],
+      [{ project: "nothing", proposal: proposal.id, decision: "accept" }, 404, "unknown_project"],
+      [{ project, proposal: "nope", decision: "accept" }, 404, "unknown_record"],
+    ];
+    for (const [json, status, code] of cases) {
+      const result = await f.call(ROUTES.proposalDecide, { json });
+      expect(result.status).toBe(status);
+      expect(asRecord(result.json)["code"]).toBe(code);
+    }
+    const first = f.call(ROUTES.proposalDecide, {
+      json: { project, proposal: proposal.id, decision: "accept" },
+    });
+    await vi.waitFor(() => {
+      expect(
+        f.project.listRecords(project).some((record) => record.operation === "probe_note.remove"),
+      ).toBe(true);
+    });
+    const busy = await f.call(ROUTES.proposalDecide, {
+      json: { project, proposal: proposal.id, decision: "reject" },
+    });
+    expect(busy.status).toBe(409);
+    expect(asRecord(busy.json)["code"]).toBe("proposal_busy");
+    release();
+    expect((await first).status).toBe(200);
   });
 });
 

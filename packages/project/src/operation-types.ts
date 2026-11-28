@@ -7,6 +7,7 @@
  */
 import type { ParameterSchemaSpec, ToolRunContext } from "@deepseek-ai/dsh-tools";
 import type {
+  AgentCall,
   OperationContext,
   OperationInput,
   OperationOutput,
@@ -66,6 +67,13 @@ export interface OperationSpec {
   resource: "none" | "cpu" | "gpu";
   /** A read: the runner writes no record and takes no lock. */
   readOnly?: boolean;
+  /**
+   * What an agent's call does. `run` (the default) runs the operation at once. `propose` writes a proposal that the
+   * user accepts or rejects; the operation runs only when the user accepts, as the user. `none` gives agents no tool.
+   * `run` refuses a request with actor `agent` for a `propose` or `none` operation (`agent_not_allowed`), and
+   * registration refuses `propose` on a `readOnly` operation (`invalid_params`).
+   */
+  agent?: AgentCall;
   /** Whether this call may overlap other agent tool calls; the provider must own resource reservation. */
   isConcurrencySafe?(params: Record<string, unknown>): boolean;
   /**

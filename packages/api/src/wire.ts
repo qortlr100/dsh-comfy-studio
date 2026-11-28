@@ -20,8 +20,11 @@ import type {
   ProjectId,
   ProjectInfo,
   ProjectLine,
+  ProjectRecord,
   ProjectState,
+  Proposal,
   RecordId,
+  RecordInputRef,
 } from "@cs/project/types";
 
 /**
@@ -77,13 +80,33 @@ export interface WireProject {
   path: string;
 }
 
+/** What `POST /api/cs/proposal/decide` answers. */
+export interface WireProposalDecision {
+  /** The proposal after the decision. */
+  proposal: Proposal;
+  /** The record the accepted call wrote; null for a rejection or a proposal that was decided already. */
+  record: ProjectRecord | null;
+}
+
 /**
- * Collect the assets the project's current state mentions: its created assets, and the outputs and resolved inputs of
- * its records. An asset of a step after the current position, or of a discarded step, is left out.
+ * The assets a version reference stands for, or null when no registered reference kind has the version; the view API
+ * answers it with `csProject.assetsOf` on the current state.
+ */
+export type VersionAssets = (ref: RecordInputRef) => AssetId[] | null;
+
+/**
+ * Collect the assets the project's current state mentions: its created assets, the outputs and resolved inputs of
+ * its records, and the assets that the inputs of its pending proposals name (an asset; an output of a record of the
+ * current state that has it; a version, through `versionAssets`). An asset of a step after the current position, or of
+ * a discarded step, is left out.
  * @param state - the project's current state.
+ * @param versionAssets - the assets of a version reference; none by default.
  * @returns the asset IDs, each once, in first-mention order.
  */
-export function mentionedAssets(state: ProjectState): AssetId[] {
+export function mentionedAssets(
+  state: ProjectState,
+  versionAssets: VersionAssets = () => null,
+): AssetId[] {
   const { proj } = state.components;
   const seen = new Set<AssetId>();
   for (const id of Object.keys(proj.created_by)) seen.add(brandString<AssetId>(id));
@@ -91,6 +114,18 @@ export function mentionedAssets(state: ProjectState): AssetId[] {
     for (const id of record.outputs) seen.add(id);
     for (const input of record.inputs) {
       if (input.resolved_asset !== null) seen.add(input.resolved_asset);
+    }
+  }
+  // A proposal card draws what the proposed call would read.
+  const byId = new Map(proj.records.map((record) => [record.id, record]));
+  for (const proposal of Object.values(proj.proposals)) {
+    if (proposal.status !== "pending") continue;
+    for (const { ref } of proposal.inputs) {
+      if ("asset" in ref) seen.add(ref.asset);
+      else if ("record" in ref) {
+        const output = byId.get(ref.record)?.outputs[ref.output];
+        if (output !== undefined) seen.add(output);
+      } else for (const id of versionAssets(ref) ?? []) seen.add(id);
     }
   }
   return [...seen];
@@ -101,16 +136,18 @@ export function mentionedAssets(state: ProjectState): AssetId[] {
  * @param state - the current state.
  * @param line - the last step and the current position.
  * @param asset - looks an asset up; unknown IDs return null and are left out.
+ * @param versionAssets - the assets of a version reference that a pending proposal's input names; none by default.
  * @returns the wire state.
  */
 export function toWireState(
   state: ProjectState,
   line: ProjectLine,
   asset: (id: AssetId) => WireAsset | null,
+  versionAssets: VersionAssets = () => null,
 ): WireState {
   const { proj } = state.components;
   const byId = new Map(proj.records.map((record) => [record.id, record]));
-  const assets = mentionedAssets(state).flatMap((id): ProjectAsset[] => {
+  const assets = mentionedAssets(state, versionAssets).flatMap((id): ProjectAsset[] => {
     const found = asset(id);
     if (found === null) return [];
     const creator = proj.created_by[id];
