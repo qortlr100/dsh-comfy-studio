@@ -11,6 +11,7 @@ import type {} from "@deepseek-ai/dsh-client-ui-workspace/client";
 import { CHAT_TAB_KIND } from "./ids.ts";
 import type { SessionInfo, WorkspaceRow } from "./navigation.ts";
 import { strings } from "./strings.ts";
+import { claimFirstVisit, pageStorage } from "./visit.ts";
 
 /** A value that changes; call the members as methods (dsh's stores need their `this`). */
 export interface HostSource<T> {
@@ -63,6 +64,11 @@ export interface ShellHost {
   openChatTab(): void;
   /** Collapse the right panel when it is expanded. Never throws. */
   collapseRightPanel(): void;
+  /**
+   * Whether this is the browser's first visit, by the shell's own marker (never dsh's saved
+   * state). It marks the browser as visited, so call it once per page load. Never throws.
+   */
+  claimFirstVisit(): boolean;
 }
 
 /**
@@ -110,6 +116,7 @@ export function hostOf(ctx: Context): ShellHost {
     openChatTab() {
       ctx.sidebarRight.openTab(CHAT_TAB_KIND);
     },
+    claimFirstVisit: () => claimFirstVisit(pageStorage()),
     collapseRightPanel() {
       try {
         if (ctx.sidebarRight.isExpanded()) ctx.sidebarRight.toggleExpanded();

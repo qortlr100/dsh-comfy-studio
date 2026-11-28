@@ -12,5 +12,8 @@ export const CHAT_TAB_KIND = "cs-chat";
 /** The list slot the center declares for the views of an open project. */
 export const CENTER_VIEW_SLOT = "cs.center.view";
 
+/** The `localStorage` key of the shell's own "this browser has been here" marker. */
+export const VISITED_KEY = "cs.shell.visited";
+
 /** The id of the failure toast in `shell.overlay`. */
 export const FAILURE_TOAST_ID = "cs.shell.failure";

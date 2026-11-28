@@ -68,7 +68,7 @@ function openOn(sessionId: string) {
   return createShellStore({ projects: [project("A"), project("B")], sessionId, projectId: "A" });
 }
 
-function fakeHost(ready = true) {
+function fakeHost(ready = true, firstVisit = false) {
   const workspaces = source<HostWorkspaceList>({
     phase: ready ? "ready" : "pending",
     items: ROWS,
@@ -77,6 +77,8 @@ function fakeHost(ready = true) {
   const sessions = source<HostSessionList>({ phase: "ready", byId: {} });
   const mounted = source<string | undefined>(undefined);
   const chatTab = vi.fn<() => void>();
+  const collapse = vi.fn<() => void>();
+  const claimed = vi.fn<() => void>();
   const host: ShellHost = {
     workspaces,
     sessions,
@@ -89,9 +91,15 @@ function fakeHost(ready = true) {
     openChatTab: () => {
       chatTab();
     },
-    collapseRightPanel: unused,
+    collapseRightPanel: () => {
+      collapse();
+    },
+    claimFirstVisit: () => {
+      claimed();
+      return firstVisit;
+    },
   };
-  return { host, workspaces, mounted, chatTab };
+  return { host, workspaces, mounted, chatTab, collapse, claimed };
 }
 
 async function settle(): Promise<void> {
@@ -204,6 +212,104 @@ describe("open project follows the main session", () => {
     expect(store.getSnapshot().projectId).toBe("A");
     store.set({ projects: [project("B")] });
     expect(store.getSnapshot().projectId).toBeNull();
+    stop();
+  });
+});
+
+/** The projects are listed and dsh has not picked a session yet. */
+function freshStore() {
+  return createShellStore({ projects: [project("A"), project("B")] });
+}
+
+describe("first visit", () => {
+  it("claims the marker once at start, whatever the answer", () => {
+    const { host, claimed } = fakeHost(true, false);
+    const stop = followShellWith(host, freshStore(), noRead);
+    expect(claimed).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
+  it("swallows dsh's startup restore: home stays, the panel folds, the session is recorded", () => {
+    const { host, collapse } = fakeHost(true, true);
+    const store = freshStore();
+    const stop = followShellWith(host, store, noRead);
+    store.set({ sessionId: "s2" });
+    expect(store.getSnapshot().projectId).toBeNull();
+    expect(store.getSnapshot().restoredSession).toBe("s2");
+    expect(collapse).toHaveBeenCalledTimes(1);
+    // Later sync passes over the same session change nothing.
+    store.set({ sessionId: "s2" });
+    expect(store.getSnapshot().projectId).toBeNull();
+    expect(collapse).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
+  it("swallows the restore that is already there when the lists become ready", () => {
+    const { host, workspaces, collapse } = fakeHost(false, true);
+    const store = createShellStore({
+      projects: [project("A"), project("B")],
+      sessionId: "s1",
+    });
+    const stop = followShellWith(host, store, noRead);
+    workspaces.set({ ...workspaces.getSnapshot(), phase: "ready" });
+    expect(store.getSnapshot().projectId).toBeNull();
+    expect(collapse).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
+  it("follows a later move of the main session after the swallow", () => {
+    const { host } = fakeHost(true, true);
+    const store = freshStore();
+    const stop = followShellWith(host, store, noRead);
+    store.set({ sessionId: "s1" });
+    expect(store.getSnapshot().projectId).toBeNull();
+    store.set({ sessionId: "s2" });
+    expect(store.getSnapshot().projectId).toBe("B");
+    stop();
+  });
+
+  it("does not swallow when the user navigated before the restore resolved", () => {
+    const { host, collapse } = fakeHost(true, true);
+    const store = freshStore();
+    const stop = followShellWith(host, store, noRead);
+    // What `begin` and `beginProject` do for a click on a project.
+    store.set({ navigations: 1 });
+    store.set({ projectId: "B" });
+    store.set({ sessionId: "s1" });
+    expect(store.getSnapshot().projectId).toBe("B");
+    expect(collapse).not.toHaveBeenCalled();
+    stop();
+  });
+
+  it("does not swallow a session the user opened by a navigation that opens no project", () => {
+    const { host } = fakeHost(true, true);
+    const store = freshStore();
+    const stop = followShellWith(host, store, noRead);
+    store.set({ navigations: 1 });
+    store.set({ sessionId: "s2" });
+    expect(store.getSnapshot().projectId).toBe("B");
+    stop();
+  });
+
+  it("waits through a main session outside any project", () => {
+    const { host } = fakeHost(true, true);
+    const store = freshStore();
+    const stop = followShellWith(host, store, noRead);
+    store.set({ sessionId: "w1" });
+    store.set({ sessionId: "s1" });
+    expect(store.getSnapshot().projectId).toBeNull();
+    expect(store.getSnapshot().restoredSession).toBe("s1");
+    stop();
+  });
+
+  it("opens the restored project on a browser that has been here before", () => {
+    const { host, collapse } = fakeHost(true, false);
+    const store = freshStore();
+    const stop = followShellWith(host, store, noRead);
+    store.set({ sessionId: "s2" });
+    expect(store.getSnapshot().projectId).toBe("B");
+    expect(store.getSnapshot().restoredSession).toBeUndefined();
+    expect(collapse).not.toHaveBeenCalled();
     stop();
   });
 });

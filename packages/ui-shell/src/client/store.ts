@@ -13,6 +13,8 @@ export function createShellStore(initial?: Partial<ShellState>): ShellStore {
     projectId: null,
     sessionId: undefined,
     chatRequest: 0,
+    navigations: 0,
+    restoredSession: undefined,
     failure: null,
     ...initial,
   };
