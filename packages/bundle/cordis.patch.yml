@@ -31,6 +31,11 @@
     - id: cs-asset
       name: "@cs/asset"
 
+    # The workflow feature component: a project's ComfyUI workflows (graph templates with exposed
+    # fields), made from uploaded files and changed only through graph patches saved as variants.
+    - id: cs-workflow
+      name: "@cs/workflow"
+
     # Our agent preset (decided by the user, 2026-11-28; docs/archive/PLAN_1-4.md "고른 것"). The agent
     # changes a project only through the project layer's operations, so it gets no shell and no
     # file tools. Our own tools (cs_proj_* and the operation tools) are not listed here:
