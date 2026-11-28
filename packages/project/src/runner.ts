@@ -438,13 +438,20 @@ export class Runner {
       const inputs = request.inputs.map(({ role, ref }) => ({ role, ref }));
       const paramsKey = canonicalJson(request.params);
       const inputsKey = canonicalJson(inputs);
+      // What the accepted call would replace is part of the call: a proposal that names other records is another one.
+      const linksKey = canonicalJson({
+        based_on: request.based_on ?? null,
+        supersedes: request.supersedes ?? [],
+      });
       const same = Object.values(state.components.proj.proposals).find(
         (proposal) =>
           proposal.status === "pending" &&
           proposal.session === request.session &&
           proposal.operation === spec.name &&
           canonicalJson(proposal.params) === paramsKey &&
-          canonicalJson(proposal.inputs) === inputsKey,
+          canonicalJson(proposal.inputs) === inputsKey &&
+          canonicalJson({ based_on: proposal.based_on, supersedes: proposal.supersedes }) ===
+            linksKey,
       );
       if (same !== undefined) return store.getRecord(request.project, same.id);
       return store.appendOutsideHistory(request.project, {

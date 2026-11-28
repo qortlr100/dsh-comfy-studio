@@ -380,6 +380,13 @@ export interface Reducer<K extends ComponentKey = ComponentKey> {
     state: ProjectState,
     session: SessionId,
   ): Record<string, JsonValue>;
+  /**
+   * The assets this slice names besides the outputs and inputs of the records of the history list, such as the
+   * assets a record outside the history brought in. The view API sends the store's entry of each with the state.
+   * @param slice - the slice of the current state.
+   * @returns the asset IDs; repeats are fine.
+   */
+  mentions?(slice: ComponentStates[K]): AssetId[];
 }
 
 /** The state of a project at one record: the result of the chain that ends there. */
@@ -485,6 +492,26 @@ export type ProjectShown =
       base: number;
     };
 
+/** What the asset store knows about one asset. Only the media type and the name are always there. */
+export interface AssetFacts {
+  /** The media type, such as `image/png` or `video/mp4`. */
+  mime: string;
+  /** The display name. */
+  name: string;
+  /** The size of the bytes. */
+  size_bytes?: number;
+  /** When the store first received the bytes, ISO-8601 UTC. */
+  created_at?: string;
+  /** Pixel width of an image or a video; null when the store could not read it. */
+  width?: number | null;
+  /** Pixel height of an image or a video; null when the store could not read it. */
+  height?: number | null;
+  /** Duration of audio or video in seconds; null when the store could not read it. */
+  duration_sec?: number | null;
+  /** The URL of a small preview image; null for an asset that has none. */
+  thumb_url?: string | null;
+}
+
 /** The read side of the {@link AssetStore}: what a caller outside the project layer may ask about an asset. */
 export type AssetReader = Pick<AssetStore, "has" | "get" | "read" | "url">;
 
@@ -507,9 +534,9 @@ export interface AssetStore {
   has(asset: AssetId): boolean;
   /**
    * @param asset - an asset the pool holds.
-   * @returns its media type and display name. Throws for an unknown asset.
+   * @returns its media type, display name, and the facts the store knows. Throws for an unknown asset.
    */
-  get(asset: AssetId): { mime: string; name: string };
+  get(asset: AssetId): AssetFacts;
   /**
    * @param asset - an asset the pool holds.
    * @returns its bytes. Throws for an unknown asset.

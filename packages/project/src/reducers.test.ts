@@ -25,7 +25,7 @@ import type {
   RecordInput,
 } from "./types.ts";
 
-declare module "@cs/project" {
+declare module "@cs/project/types" {
   interface ComponentStates {
     /** The slice of the counting test reducer: how many `batch` records the chain holds. */
     reducers_test?: { count: number };

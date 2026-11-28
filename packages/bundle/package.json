@@ -17,7 +17,9 @@
   },
   "dependencies": {
     "@cs/api": "workspace:*",
+    "@cs/asset": "workspace:*",
     "@cs/catalog": "workspace:*",
+    "@cs/ffmpeg": "workspace:*",
     "@cs/project": "workspace:*",
     "@cs/ui-shell": "workspace:*"
   }

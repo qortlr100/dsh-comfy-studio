@@ -273,11 +273,18 @@ describe("propose", () => {
     const otherName = await m.runner.propose(proposal(fixture, { params: { name: "fork" } }));
     const noInput = await m.runner.propose(proposal(fixture, { inputs: [] }));
     expect(new Set([first.id, other.id, otherName.id, noInput.id]).size).toBe(4);
+    // So does naming a record the accepted call would build on: accepting it is not the same call.
+    const [created] = m.store.listRecords(project);
+    const based = await m.runner.propose(proposal(fixture, { based_on: defined(created).id }));
+    expect(based.id).not.toBe(first.id);
+    expect(await m.runner.propose(proposal(fixture, { based_on: defined(created).id }))).toEqual(
+      based,
+    );
     // Once the first is decided, the same call is a new proposal.
     await fixture.decider.decide(project, first.id, "reject", DECIDER);
     const after = await m.runner.propose(proposal(fixture));
     expect(after.id).not.toBe(first.id);
-    expect(recordsOf(fixture, PROPOSE_OPERATION)).toHaveLength(5);
+    expect(recordsOf(fixture, PROPOSE_OPERATION)).toHaveLength(6);
   });
 
   it("keeps proposals and their decisions across undo, redo, a later step and a reload", async () => {

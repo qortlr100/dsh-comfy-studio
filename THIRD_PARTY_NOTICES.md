@@ -9,9 +9,9 @@
 | 저장소      | https://github.com/fastvideo-project/dreamverse-harness                                      |
 | 커밋        | `ec0ac62760e3b7b2ba058941eaf6a15c3a16a3cf`                                                    |
 | 라이선스    | MIT                                                                                          |
-| 가져온 것   | `packages/dv/project/`의 `src/`, `tests/`, `CONTRACTS.md`. `packages/dv/api/`의 `src/` 가운데 `index.ts`, `api.ts`, `wire.ts`, `events.ts`, `summaries.ts`, `projects-admin.ts`. `packages/dv/models/`의 `src/index.ts`와 `src/types.ts`의 틀 |
-| 이 저장소의 자리 | `packages/project/`(`@cs/project`). 시험은 `src/*.test.ts`와 `src/testing/`으로 옮겼다. `packages/api/`(`@cs/api`). `packages/catalog/`(`@cs/catalog`) |
-| 가져온 때   | 2026-11-27(단계 2-0), 2026-11-28(단계 2-2, 2-1, 3-0)                                         |
+| 가져온 것   | `packages/dv/project/`의 `src/`, `tests/`, `CONTRACTS.md`. `packages/dv/api/`의 `src/` 가운데 `index.ts`, `api.ts`, `wire.ts`, `events.ts`, `summaries.ts`, `projects-admin.ts`. `packages/dv/models/`의 `src/index.ts`와 `src/types.ts`의 틀. `packages/dv/ffmpeg/`의 `src/index.ts`와 `tests/ffmpeg.spec.ts`. `packages/dv/asset-pool/`의 `src/index.ts` 가운데 저장소 부분과 `src/types.ts`의 `Asset` |
+| 이 저장소의 자리 | `packages/project/`(`@cs/project`). 시험은 `src/*.test.ts`와 `src/testing/`으로 옮겼다. `packages/api/`(`@cs/api`). `packages/catalog/`(`@cs/catalog`). `packages/ffmpeg/`(`@cs/ffmpeg`). `packages/asset/src/store.ts`(`@cs/asset`) |
+| 가져온 때   | 2026-11-27(단계 2-0), 2026-11-28(단계 2-2, 2-1, 3-0), 2026-11-29(단계 2-3b)                  |
 
 `packages/project/`에서 바꾼 것(상세는 `docs/archive/PLAN_2-0.md`):
 
@@ -40,6 +40,21 @@
 - 가져오지 않은 것: 작업 구분(`TaskMap`)과 작업 이름의 표시 글, 에이전트 도구(`dv_models_list`, `dv_models_get`)와 모델 고르기 스킬, 항목의 프롬프트 스킬, 대화별 모델 선택(`selection.ts`), 모델 적재 제어, 렌더 타이밍 읽기.
 - 동작을 고친 곳: 열쇠의 부분에 `/`가 들어가도 서로 섞이지 않는다(원본은 `/`로 이어 붙인 글을 열쇠로 쓴다). 듣는 쪽이 던져도 등록과 다른 듣는 쪽이 그대로 간다(원본은 등록이 던진다). 요약은 닿지 못한 항목에 이유를 싣는다.
 - 시험은 옮기지 않고 새로 썼다.
+
+`packages/ffmpeg/`에서 바꾼 것(상세는 `docs/archive/PLAN_2-3b.md`):
+
+- 이름: `@dv/ffmpeg` → `@cs/ffmpeg`, `dvFfmpeg` → `csFfmpeg`.
+- 두 실행 파일의 경로는 설정에 없으면 `PATH`의 `ffmpeg`·`ffprobe`다(원본은 둘 다 필수다).
+- 더한 것: 동시에 도는 프로세스 수의 한도(`concurrency`, 기본 2. 넘으면 차례를 기다린다), ffmpeg을 띄울 수 있는지 한 번 확인하는 `available()`.
+- 동작을 고친 곳: ffprobe의 출력이 JSON이 아니면 `FfmpegError`로 거절한다(원본은 `SyntaxError`가 그대로 나간다). 출력은 타입 가드로 읽는다.
+- 시험: 원본의 경우를 옮기고 가짜 실행 파일로 도는 경우를 더했다. 실제 ffmpeg이 필요한 경우는 ffmpeg이 없으면 건너뛴다.
+
+`packages/asset/src/store.ts`에서 가져온 것과 바꾼 것(상세는 같은 문서):
+
+- 가져온 것은 저장소다: 바이트의 SHA-256을 id로 프로젝트 폴더에 두는 방식, 추가만 하는 색인, 다른 프로젝트 폴더에서 에셋을 찾는 방식, ffprobe로 크기와 길이를 덧붙이는 방식.
+- 이름: `@dv/asset-pool` → `@cs/asset`, 디렉터리 `.dreamverse/assets` → `.comfy-studio/assets`.
+- 가져오지 않은 것: 연산(`asset.import`, `asset.grab_still`, `asset.cut_segment`, `asset.place`), 캔버스에 기대는 부분, 인증 없는 날 라우트(`/dv/assets/<id>`). 연산, 리듀서, 라우트, 썸네일은 새로 썼다.
+- 동작을 고친 곳: 파일로 받은 것은 전체를 메모리에 올리지 않고 조각으로 읽어 해시를 내며 복사한다. 색인의 줄은 스키마로 읽고 틀린 줄과 파일이 없는 줄은 건너뛴다.
 
 `packages/ui-shell/`이 본으로 삼은 것(상세는 `docs/archive/PLAN_3-0.md`):
 

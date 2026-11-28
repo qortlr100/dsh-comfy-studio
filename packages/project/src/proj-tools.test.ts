@@ -19,7 +19,14 @@ import CsProject, {
   type ProjectId,
   type SessionId,
 } from "./index.ts";
-import { MemoryAssets, STAND_IN_COMPONENTS, standIn, tempRoot } from "./testing/support.ts";
+import {
+  MemoryAssets,
+  STAND_IN_COMPONENTS,
+  defined,
+  standIn,
+  tempRoot,
+  userOrigin,
+} from "./testing/support.ts";
 import {
   provideChatServices,
   type TestChatServices,
@@ -28,7 +35,7 @@ import {
   mountTools,
 } from "./testing/workspaces.ts";
 
-declare module "@cs/project" {
+declare module "@cs/project/types" {
   interface ComponentStates {
     /** The slice of the test reducer that adds a field to the project summary: the assets of finished records. */
     proj_tools_test?: { assets: AssetId[] };
@@ -419,6 +426,50 @@ describe("cs_proj_* tools", () => {
       json(await fixture.call("cs_proj_history_list", { operation: "asset.crop" })),
     ).toHaveLength(1);
     expect(json(await fixture.call("cs_proj_history_list", {}))).toHaveLength(3);
+  });
+
+  it("refuses a move across a step that only the user decides, back or forward", async () => {
+    const fixture = await start();
+    fixture.project.registerOperation(still());
+    fixture.project.registerOperation(still({ name: "asset.keep", agent: "none" }));
+    fixture.project.registerOperation(still({ name: "asset.drop", agent: "propose" }));
+    const projectId = brandString<ProjectId>(
+      String(json(await fixture.call("cs_proj_create", { title: "guarded" }))["project_id"]),
+    );
+    const first = value(await fixture.call("cs_asset_crop", { reason: "first", prompt: "one" }));
+    const asUser = async (operation: string): Promise<string> => {
+      const result = await fixture.project.run({
+        ...userOrigin(),
+        project: projectId,
+        operation,
+        params: { prompt: operation },
+        inputs: [],
+      });
+      return defined(result.record).id;
+    };
+    // The user's step of an operation without a tool: the agent can neither undo it nor jump back over it.
+    const kept = await asUser("asset.keep");
+    expect(errorOf(await fixture.call("cs_proj_undo", {}))).toContain(
+      `would undo step ${kept} of asset.keep, which only the user decides`,
+    );
+    expect(errorOf(await fixture.call("cs_proj_undo", { to: first.record }))).toContain(kept);
+    expect(fixture.project.line(projectId).at).toBe(kept);
+    // The user undoes it: the agent cannot bring it back, by redo or by naming it.
+    await fixture.project.undo(projectId);
+    expect(errorOf(await fixture.call("cs_proj_redo", {}))).toContain(
+      `would bring back step ${kept}`,
+    );
+    expect(errorOf(await fixture.call("cs_proj_undo", { to: kept }))).toContain("would bring back");
+    expect(fixture.project.line(projectId).at).toBe(first.record);
+    // Moves across the agent's own steps still work.
+    expect(json(await fixture.call("cs_proj_undo", {}))).toMatchObject({ records: 1 });
+    expect(json(await fixture.call("cs_proj_redo", {}))).toMatchObject({ head: first.record });
+    // The same holds for a step of an operation whose agent call proposes.
+    const dropped = await asUser("asset.drop");
+    expect(errorOf(await fixture.call("cs_proj_undo", {}))).toContain(
+      `would undo step ${dropped} of asset.drop`,
+    );
+    expect(fixture.project.line(projectId).at).toBe(dropped);
   });
 
   it("moves back and forward without writing a record, discards the later steps on a write, and accepts a stale record only when called", async () => {

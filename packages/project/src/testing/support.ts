@@ -29,7 +29,7 @@ import type {
   TurnId,
 } from "../types.ts";
 
-declare module "@cs/project" {
+declare module "@cs/project/types" {
   interface ComponentStates {
     /**
      * The slice of the test reducers that stand in for the reference noun plugins: the assets and the creating record
@@ -168,7 +168,7 @@ export class MemoryAssets implements AssetStore {
   get(asset: AssetId): { mime: string; name: string } {
     const file = this.files.get(asset);
     if (file === undefined) throw new Error(`unknown asset ${asset}`);
-    return file;
+    return { mime: file.mime, name: file.name };
   }
 
   read(asset: AssetId): Uint8Array {

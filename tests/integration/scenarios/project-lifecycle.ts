@@ -19,7 +19,7 @@ interface NoteSlice {
   texts: string[];
 }
 
-declare module "@cs/project" {
+declare module "@cs/project/types" {
   interface ComponentStates {
     /** The slice of this scenario's throwaway component. */
     probe_note?: NoteSlice;

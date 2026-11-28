@@ -62,6 +62,51 @@ export interface ProjToolDeps {
   chatFolder(session: SessionId): string | null;
 }
 
+/**
+ * Refuse an agent's move through the history that would undo or bring back a step only the user decides: a step of
+ * an operation whose `agent` is `propose` or `none`. Without this an agent could redo a deletion the user undid, or
+ * undo the user's review, with no proposal. A move the history itself refuses (no step, an unknown or discarded
+ * record) is left to it.
+ * @param project - the Project service.
+ * @param projectId - the project.
+ * @param target - one step back, one step forward, or the record to go to.
+ * @throws ProjectError `agent_not_allowed` naming the first such step.
+ */
+export function refuseGuardedMove(
+  project: Pick<CsProject, "listHistory" | "listOperations">,
+  projectId: ProjectId,
+  target: "back" | "forward" | RecordId,
+): void {
+  // Newest first: a step back is the next index, a step forward the one before.
+  const entries = project.listHistory({ project: projectId });
+  const current = entries.findIndex((entry) => entry.place === "current");
+  if (current === -1) return;
+  const to =
+    target === "back"
+      ? current + 1
+      : target === "forward"
+        ? current - 1
+        : entries.findIndex((entry) => entry.record.id === target);
+  if (to < 0 || to >= entries.length) return;
+  const guarded = new Set(
+    project
+      .listOperations()
+      .filter((spec) => spec.agent === "propose" || spec.agent === "none")
+      .map((spec) => spec.name),
+  );
+  // The steps between the two positions: the later of the two is crossed, the earlier one stays in effect.
+  const crossed = entries
+    .slice(Math.min(current, to), Math.max(current, to))
+    .find(({ record }) => record.operation !== null && guarded.has(record.operation));
+  if (crossed === undefined) return;
+  throw new ProjectError(
+    "agent_not_allowed",
+    `This move would ${to > current ? "undo" : "bring back"} step ${crossed.record.id} of ` +
+      `${crossed.record.operation ?? "an operation"}, which only the user decides. ` +
+      "Ask the user to undo or redo it in the app.",
+  );
+}
+
 /** The recent records a project summary lists. */
 const RECENT_RECORDS = 12;
 
@@ -471,7 +516,8 @@ export function projTools(project: CsProject, deps: ProjToolDeps): ToolDefinitio
         "cs_proj_history_list, before or after the current one: the project shows its state just after that step. A move adds " +
         "no step. The steps after the current one stay until a new change is made; a new change discards them for good. " +
         "When the user asks to roll back, return to an earlier version or undo several changes, use this tool; never rebuild " +
-        "the old state with new edits.",
+        "the old state with new edits. A move across a step that only the user decides (a step of a tool that proposes, " +
+        "or of an operation without a tool) is refused: the user makes that move in the app.",
       parameters: {
         to: {
           type: "string",
@@ -481,20 +527,29 @@ export function projTools(project: CsProject, deps: ProjToolDeps): ToolDefinitio
       output: stateOutput,
       execute: async (args, exec) => {
         const projectId = projectOf(exec);
-        await (args.to === undefined
-          ? project.undo(projectId)
-          : project.moveTo(projectId, brandString<RecordId>(args.to)));
+        const to = args.to === undefined ? undefined : brandString<RecordId>(args.to);
+        // Checked under the project lock, so no step can land between the check and the move.
+        const check = (): void => {
+          refuseGuardedMove(project, projectId, to ?? "back");
+        };
+        await (to === undefined
+          ? project.undo(projectId, check)
+          : project.moveTo(projectId, to, check));
         return summary(exec, projectId);
       },
     }),
     defineTool({
       name: "cs_proj_redo",
-      description: "Move the project one step forward again, after an undo. A move adds no step.",
+      description:
+        "Move the project one step forward again, after an undo. A move adds no step. Bringing back a step that only " +
+        "the user decides is refused, as in cs_proj_undo.",
       parameters: {},
       output: stateOutput,
       execute: async (_args, exec) => {
         const projectId = projectOf(exec);
-        await project.redo(projectId);
+        await project.redo(projectId, () => {
+          refuseGuardedMove(project, projectId, "forward");
+        });
         return summary(exec, projectId);
       },
     }),

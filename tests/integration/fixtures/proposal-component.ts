@@ -10,7 +10,7 @@ interface CardSlice {
   removed: string[];
 }
 
-declare module "@cs/project" {
+declare module "@cs/project/types" {
   interface ComponentStates {
     /** The slice of this fixture's component. */
     probe_card?: CardSlice;

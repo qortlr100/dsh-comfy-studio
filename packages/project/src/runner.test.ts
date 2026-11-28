@@ -24,7 +24,7 @@ import { Scheduler } from "./scheduler.ts";
 import { OperationFailure } from "./shared.ts";
 import type { AssetId, ProjectId, ProjectRecord, RecordOrigin, RunRequest } from "./types.ts";
 
-declare module "@cs/project" {
+declare module "@cs/project/types" {
   interface ComponentStates {
     /** The slice of the test setting outside the history: the `prompt` of each choice, in write order. */
     runner_setting?: { values: string[] };

@@ -12,7 +12,7 @@ import type { FakeLlm, FakeReply, FakeRequest, FakeScript } from "../harness/llm
 import {
   DSH_SIDEBAR,
   MEMO_TOOL,
-  PROJECT_TOOLS,
+  BUNDLE_TOOLS,
   STEP_TIMEOUT_MS,
   agentRequests,
   createProject,
@@ -47,7 +47,7 @@ const DSH_TOOLS = [
   "web_fetch",
 ];
 
-const EXPECTED_TOOLS = [...PROJECT_TOOLS, MEMO_TOOL, ...DSH_TOOLS].toSorted();
+const EXPECTED_TOOLS = [...BUNDLE_TOOLS, MEMO_TOOL, ...DSH_TOOLS].toSorted();
 
 /** The persona of our preset as the model reads it, with `{{model}}` filled in. */
 const PERSONA =

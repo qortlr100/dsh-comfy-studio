@@ -18,6 +18,19 @@
     - id: cs-api
       name: "@cs/api"
 
+    # The one place that runs ffmpeg and ffprobe. Without the two variables it finds them on PATH;
+    # when they are not installed, assets get no pixel size, duration or preview and nothing fails.
+    - id: cs-ffmpeg
+      name: "@cs/ffmpeg"
+      config:
+        ffmpegPath: !!js process.env.CS_FFMPEG_PATH || undefined
+        ffprobePath: !!js process.env.CS_FFPROBE_PATH || undefined
+
+    # The asset feature component: the asset store in each project folder, the asset library
+    # (folders, tags, review state), its operations, and the /api/cs/asset* routes.
+    - id: cs-asset
+      name: "@cs/asset"
+
     # Our agent preset (decided by the user, 2026-11-28; docs/archive/PLAN_1-4.md "고른 것"). The agent
     # changes a project only through the project layer's operations, so it gets no shell and no
     # file tools. Our own tools (cs_proj_* and the operation tools) are not listed here:

@@ -386,6 +386,18 @@ export class ReducerRegistry {
    * @param session - the session whose agent reads the summary.
    * @returns one field object per such reducer.
    */
+  /**
+   * @param state - a project state.
+   * @returns the assets the slices name through `Reducer.mentions`, each once, in registration order.
+   */
+  mentions(state: ProjectState): AssetId[] {
+    const seen = new Set<AssetId>();
+    for (const [key, reducer] of this.reducers) {
+      for (const asset of reducer.mentions?.(sliceOf(state, key, reducer)) ?? []) seen.add(asset);
+    }
+    return [...seen];
+  }
+
   agentSummaries(
     state: ProjectState,
     assets: Pick<AssetStore, "url">,
