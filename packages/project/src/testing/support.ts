@@ -168,7 +168,7 @@ export class MemoryAssets implements AssetStore {
   get(asset: AssetId): { mime: string; name: string } {
     const file = this.files.get(asset);
     if (file === undefined) throw new Error(`unknown asset ${asset}`);
-    return file;
+    return { mime: file.mime, name: file.name };
   }
 
   read(asset: AssetId): Uint8Array {

@@ -541,6 +541,7 @@ export class ApiHandlers {
       this.project.line(projectId),
       (id) => this.assetOrNull(id),
       (ref) => this.project.assetsOf(state, ref),
+      this.project.mentionedAssets(state),
     );
   }
 
@@ -781,8 +782,8 @@ export class ApiHandlers {
   private assetOrNull(id: AssetId): WireAsset | null {
     const store = this.project.assets();
     if (!store.has(id)) return null;
-    const { mime, name } = store.get(id);
-    return { id, mime, name, url: store.url(id) };
+    // The store's facts travel as they are; the ID and the URL are ours.
+    return { ...store.get(id), id, url: store.url(id) };
   }
 
   /**

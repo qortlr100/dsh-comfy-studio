@@ -42,6 +42,18 @@ export interface WireAsset {
   name: string;
   /** The URL that serves the bytes. */
   url: string;
+  /** The size of the bytes; absent when the store does not say. */
+  size_bytes?: number;
+  /** When the store first received the bytes, ISO-8601 UTC; absent when the store does not say. */
+  created_at?: string;
+  /** Pixel width of an image or a video; null when the store could not read it. */
+  width?: number | null;
+  /** Pixel height of an image or a video; null when the store could not read it. */
+  height?: number | null;
+  /** Duration of audio or video in seconds; null when the store could not read it. */
+  duration_sec?: number | null;
+  /** The URL of a small preview image; null for an asset that has none. */
+  thumb_url?: string | null;
 }
 
 /** An asset as one project sees it: the store entry and the operation that made it. */
@@ -101,11 +113,13 @@ export type VersionAssets = (ref: RecordInputRef) => AssetId[] | null;
  * a discarded step, is left out.
  * @param state - the project's current state.
  * @param versionAssets - the assets of a version reference; none by default.
+ * @param more - the assets the component slices name (`csProject.mentionedAssets`); none by default.
  * @returns the asset IDs, each once, in first-mention order.
  */
 export function mentionedAssets(
   state: ProjectState,
   versionAssets: VersionAssets = () => null,
+  more: readonly AssetId[] = [],
 ): AssetId[] {
   const { proj } = state.components;
   const seen = new Set<AssetId>();
@@ -128,6 +142,7 @@ export function mentionedAssets(
       } else for (const id of versionAssets(ref) ?? []) seen.add(id);
     }
   }
+  for (const id of more) seen.add(id);
   return [...seen];
 }
 
@@ -137,6 +152,7 @@ export function mentionedAssets(
  * @param line - the last step and the current position.
  * @param asset - looks an asset up; unknown IDs return null and are left out.
  * @param versionAssets - the assets of a version reference that a pending proposal's input names; none by default.
+ * @param more - the assets the component slices name (`csProject.mentionedAssets`); none by default.
  * @returns the wire state.
  */
 export function toWireState(
@@ -144,10 +160,11 @@ export function toWireState(
   line: ProjectLine,
   asset: (id: AssetId) => WireAsset | null,
   versionAssets: VersionAssets = () => null,
+  more: readonly AssetId[] = [],
 ): WireState {
   const { proj } = state.components;
   const byId = new Map(proj.records.map((record) => [record.id, record]));
-  const assets = mentionedAssets(state, versionAssets).flatMap((id): ProjectAsset[] => {
+  const assets = mentionedAssets(state, versionAssets, more).flatMap((id): ProjectAsset[] => {
     const found = asset(id);
     if (found === null) return [];
     const creator = proj.created_by[id];

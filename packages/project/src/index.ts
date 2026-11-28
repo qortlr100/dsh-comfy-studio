@@ -737,6 +737,16 @@ export default class CsProject extends Service {
   }
 
   /**
+   * The assets the component slices of a state name through `Reducer.mentions`: assets that no record of the history
+   * list names, such as the ones a record outside the history brought in.
+   * @param state - a project state.
+   * @returns the asset IDs, each once.
+   */
+  mentionedAssets(state: ProjectState): AssetId[] {
+    return this.reducers.mentions(state);
+  }
+
+  /**
    * Turn the `inputs` argument of a tool call or a view request into run inputs: `<record>#<n>` names output n of a
    * record, `<id>@<n>` a version of a reference kind, anything else an asset.
    * @param operation - a registered operation name.
