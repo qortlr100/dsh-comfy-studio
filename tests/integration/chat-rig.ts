@@ -59,8 +59,17 @@ export const WORKFLOW_TOOLS = [
   "cs_workflow_save_variant",
 ];
 
-/** Every tool of ours that reaches an agent with the bundle alone. */
-export const BUNDLE_TOOLS = [...PROJECT_TOOLS, ...ASSET_TOOLS, ...WORKFLOW_TOOLS];
+/**
+ * The tools of the generation component's operations (@cs/generation) that are always there. The
+ * setting only the user changes (gen.settings) has no tool.
+ */
+export const GEN_TOOLS = ["cs_gen_get", "cs_gen_list", "cs_gen_targets"];
+
+/** The run tool, which is there only while the catalog lists a place to run on. */
+export const GEN_RUN_TOOL = "cs_gen_run";
+
+/** Every tool of ours that reaches an agent with the bundle alone (no generation provider). */
+export const BUNDLE_TOOLS = [...PROJECT_TOOLS, ...ASSET_TOOLS, ...WORKFLOW_TOOLS, ...GEN_TOOLS];
 
 export const STEP_TIMEOUT_MS = 10_000;
 /** A turn here is a few model round trips of the fake plus dsh's own work between them. */

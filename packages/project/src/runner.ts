@@ -23,8 +23,9 @@ import type { ReducerRegistry } from "./reducers.ts";
 import type { RecordLineInput, RecordStore } from "./record-store.ts";
 import { isProposalRecord, PROPOSE_OPERATION } from "./proposals.ts";
 import type { Scheduler } from "./scheduler.ts";
-import { OperationFailure, ProjectError } from "./shared.ts";
+import { agentCallOf, OperationFailure, ProjectError } from "./shared.ts";
 import type {
+  AgentCall,
   AssetId,
   OperationCheck,
   OperationContext,
@@ -129,15 +130,27 @@ function originOf(request: RunRequest): RecordOrigin {
   };
 }
 
+/** The failure of a record the user stopped with `cancel`. */
+const STOPPED_BY_USER: RecordFailure = { code: "stopped", message: "Stopped by the user." };
+
+/** The abort reason of an execution that `cancel` stopped. */
+const USER_STOP = "user_stop";
+
 /**
- * Refuse an agent's request for an operation whose `agent` is `propose` or `none`, before anything is read or written;
- * the agent tools never send one, and this keeps the rule for every other caller too.
+ * Refuse an agent's request for an operation whose agent call is `propose` or `none`, before anything is written; the
+ * agent tools never send one, and this keeps the rule for every other caller too.
  * @param spec - the operation.
  * @param request - the call.
+ * @param state - the project's current state, which decides an `agent` function; null before the state is read, when
+ *   only a fixed `agent` is checked.
  */
-function refuseAgent(spec: OperationSpec, request: RunRequest): void {
-  const agent = spec.agent ?? "run";
-  if (request.actor !== "agent" || agent === "run") return;
+function refuseAgent(spec: OperationSpec, request: RunRequest, state: ProjectState | null): void {
+  if (request.actor !== "agent") return;
+  let agent: AgentCall;
+  if (state !== null) agent = agentCallOf(spec, state);
+  else if (typeof spec.agent === "function") return;
+  else agent = spec.agent ?? "run";
+  if (agent === "run") return;
   throw new ProjectError(
     "agent_not_allowed",
     agent === "propose"
@@ -146,14 +159,32 @@ function refuseAgent(spec: OperationSpec, request: RunRequest): void {
   );
 }
 
+/**
+ * The records a call waits for when it is scheduled.
+ * @param spec - the operation.
+ * @param request - the call.
+ * @returns the request's `after`; `[]` for a `background` operation's request without one; undefined for a call that
+ *   runs at once.
+ */
+function scheduledAfter(spec: OperationSpec, request: RunRequest): RecordId[] | undefined {
+  return request.after ?? (spec.background === true ? [] : undefined);
+}
+
 /** The operation registry and the change path. */
 export class Runner {
   private readonly operations = new Map<string, OperationSpec>();
   private readonly components = new Set<string>();
   /** The abort controller of every executing record, so a write that discards the record's step can stop it. */
   private readonly executing = new Map<RecordId, AbortController>();
+  /** The project of each executing record, for {@link forgetProject}. */
+  private readonly executingIn = new Map<RecordId, ProjectId>();
   /** Records a write discarded before they started executing; `execute` ends them at once. */
   private readonly discarded = new Set<RecordId>();
+  /**
+   * Records `cancel` stopped while they were neither queued nor executing; `execute` ends them at once. `cancel`
+   * removes its entry once the record has finished, in case another path ended it.
+   */
+  private readonly stopped = new Set<RecordId>();
 
   private readonly deps: RunnerDeps;
 
@@ -186,8 +217,10 @@ export class Runner {
 
   /**
    * Register an operation. Refused with `operation_exists` when the name is registered, and with `invalid_params` when
-   * `component` is not a registered component key, when `name` does not start with `<component>.`, or when a
-   * `readOnly` operation has `agent: 'propose'` (a read changes nothing to propose).
+   * `component` is not a registered component key, when `name` does not start with `<component>.`, when a `readOnly`
+   * operation has `agent: 'propose'` or an `agent` function (a read changes nothing to propose), or when a `readOnly`
+   * or `outsideHistory` operation is `background` (a read writes no record to schedule, and a setting takes effect at
+   * once).
    * @param spec - the operation.
    * @returns a function that removes the registration (only if it is still this spec).
    */
@@ -206,10 +239,18 @@ export class Runner {
         `Operation ${spec.name} does not start with its component key '${spec.component}.'.`,
       );
     }
-    if (spec.readOnly === true && spec.agent === "propose") {
+    if (spec.readOnly === true && (spec.agent === "propose" || typeof spec.agent === "function")) {
       throw new ProjectError(
         "invalid_params",
         `Operation ${spec.name} is a read, so an agent's call has nothing to propose.`,
+      );
+    }
+    if (spec.background === true && (spec.readOnly === true || spec.outsideHistory === true)) {
+      throw new ProjectError(
+        "invalid_params",
+        spec.readOnly === true
+          ? `Operation ${spec.name} is a read, which writes no record to schedule in the background.`
+          : `Operation ${spec.name} is a setting outside the history, which takes effect at once, not in the background.`,
       );
     }
     this.operations.set(spec.name, spec);
@@ -237,9 +278,10 @@ export class Runner {
 
   /**
    * Run one operation call. The steps are listed in `CONTRACTS.md` ("Runner: run"). Rejects with `ProjectError` only
-   * before a record exists (unknown operation, an agent's call of a `propose` or `none` operation, invalid params or
-   * inputs, input not ready, unknown project), or with the error of the operation's `precondition`. Once the record
-   * is written, resolves with it in its final status (`done`, `failed`, `cancelled`), or `pending` for a scheduled run.
+   * before a record exists (unknown operation, an agent's call that is `propose` or `none` in the current state,
+   * invalid params or inputs, input not ready, unknown project), or with the error of the operation's `precondition`.
+   * Once the record is written, resolves with it in its final status (`done`, `failed`, `cancelled`), or `pending` for
+   * a scheduled run: a request with `after`, or any request of a `background` operation.
    * @param request - the call.
    * @returns the record, its outputs and report.
    */
@@ -251,16 +293,20 @@ export class Runner {
         "unknown_operation",
         `Operation ${request.operation} is not registered.`,
       );
-    refuseAgent(spec, request);
+    refuseAgent(spec, request, null);
     store.getProject(request.project);
 
     if (spec.readOnly === true) return await this.runRead(spec, request);
 
+    // A background operation is always scheduled, as if the request had named `after: []`.
+    const after = scheduledAfter(spec, request);
     const pending = await store.lock(request.project, async () => {
       // The call is refused before the append, so that a refused call writes nothing; the state at the head is the
-      // state at the new record's parent, and the lock keeps it current.
+      // state at the new record's parent, and the lock keeps it current, so an `agent` function decides on the state
+      // the record follows.
       const state = reducers.getState(request.project);
-      const inputs = await this.refuse(spec, request, state, request.after !== undefined);
+      refuseAgent(spec, request, state);
+      const inputs = await this.refuse(spec, request, state, after !== undefined);
       // The operation names the records it replaces itself; the caller may name more.
       const supersedes = [
         ...new Set([
@@ -285,21 +331,24 @@ export class Runner {
         status: "pending",
         ...(request.started_by === undefined ? {} : { started_by: request.started_by }),
       };
-      return spec.outsideHistory === true
-        ? store.appendOutsideHistory(request.project, line)
-        : this.appendStep(request.project, line);
+      const appended =
+        spec.outsideHistory === true
+          ? store.appendOutsideHistory(request.project, line)
+          : this.appendStep(request.project, line);
+      // Queued under the lock, so that a `cancel` of the record always finds it queued, executing or started.
+      if (after !== undefined) {
+        scheduler.enqueue(
+          request.project,
+          appended.id,
+          spec.resource,
+          after,
+          spec.pendingInputRoles ?? [],
+        );
+      }
+      return appended;
     });
 
-    if (request.after !== undefined) {
-      scheduler.enqueue(
-        request.project,
-        pending.id,
-        spec.resource,
-        request.after,
-        spec.pendingInputRoles ?? [],
-      );
-      return { record: pending, outputs: [], report: null };
-    }
+    if (after !== undefined) return { record: pending, outputs: [], report: null };
     const final = await this.execute(request.project, pending.id, request.signal);
     return { record: final, outputs: final.outputs, report: final.report ?? null };
   }
@@ -321,6 +370,8 @@ export class Runner {
     const { store, reducers, assets } = this.deps;
     if (this.discarded.delete(record))
       return await this.finish(project, record, "cancelled", DISCARDED);
+    if (this.stopped.delete(record))
+      return await this.finish(project, record, "cancelled", STOPPED_BY_USER);
     const pending = store.getRecord(project, record);
     const spec = pending.operation === null ? undefined : this.operations.get(pending.operation);
     if (spec === undefined) {
@@ -351,7 +402,8 @@ export class Runner {
       });
     }
 
-    // The run request's signal stops the call ('stopped'); a write that discards the step aborts it too ('discarded').
+    // The run request's signal stops the call ('stopped'); a write that discards the step aborts it too ('discarded'),
+    // and so does the user's `cancel` (USER_STOP).
     const controller = new AbortController();
     const stop = (): void => {
       controller.abort("stopped");
@@ -359,6 +411,7 @@ export class Runner {
     if (signal?.aborted === true) stop();
     signal?.addEventListener("abort", stop, { once: true });
     this.executing.set(record, controller);
+    this.executingIn.set(record, project);
     const running = await this.update(project, {
       update: record,
       status: "running",
@@ -369,6 +422,9 @@ export class Runner {
       // `parents[0]` always exists: an operation record follows at least the project's `proj.create` record.
       const state = reducers.stateAt(project, running.parents[0] ?? running.id);
       scratchDir = await mkdtemp(join(tmpdir(), "cs-operation-"));
+      // A user's stop that came before the operation started ends the record without starting it.
+      if (controller.signal.reason === USER_STOP)
+        return await this.finish(project, record, "cancelled", STOPPED_BY_USER);
       const started = performance.now();
       const result = await spec.execute({
         project,
@@ -392,6 +448,8 @@ export class Runner {
     } catch (error: unknown) {
       if (controller.signal.reason === "discarded")
         return await this.finish(project, record, "cancelled", DISCARDED);
+      if (controller.signal.reason === USER_STOP)
+        return await this.finish(project, record, "cancelled", STOPPED_BY_USER);
       if (controller.signal.aborted) {
         return await this.finish(project, record, "cancelled", {
           code: "stopped",
@@ -404,6 +462,7 @@ export class Runner {
       });
     } finally {
       this.executing.delete(record);
+      this.executingIn.delete(record);
       signal?.removeEventListener("abort", stop);
       if (scratchDir !== null) await rm(scratchDir, { recursive: true, force: true });
     }
@@ -434,7 +493,7 @@ export class Runner {
     }
     return await store.lock(request.project, async () => {
       const state = reducers.getState(request.project);
-      await this.refuse(spec, request, state, request.after !== undefined);
+      await this.refuse(spec, request, state, scheduledAfter(spec, request) !== undefined);
       const inputs = request.inputs.map(({ role, ref }) => ({ role, ref }));
       const paramsKey = canonicalJson(request.params);
       const inputsKey = canonicalJson(inputs);
@@ -510,6 +569,67 @@ export class Runner {
   }
 
   /**
+   * Stop a record that has not finished; the rules are in `CONTRACTS.md` ("Runner: cancel"). Under the project lock: a
+   * finished record is returned as it is; a queued record leaves the queue and is updated to `cancelled` at once; an
+   * executing record's signal is aborted; a pending record that is neither (between its append and the start of its
+   * execution) is marked, and its execution ends it as soon as it starts. Every stopped record ends `cancelled` with
+   * `error {code: 'stopped', message: 'Stopped by the user.'}`, unless the operation finished first. Writes no record of
+   * its own and moves no history position.
+   * @param project - the project.
+   * @param record - the record.
+   * @param origin - who stops it; only the user does.
+   * @returns the record in its final status; for an aborted execution, once the operation has returned (without the
+   *   lock held meanwhile). Throws `agent_not_allowed` for an agent's origin, `unknown_project`, `unknown_record`.
+   */
+  async cancel(project: ProjectId, record: RecordId, origin: RecordOrigin): Promise<ProjectRecord> {
+    const { store, scheduler } = this.deps;
+    if (origin.actor === "agent") {
+      throw new ProjectError(
+        "agent_not_allowed",
+        `Only the user stops record ${record}; an agent's call ends when its turn is stopped.`,
+      );
+    }
+    store.getProject(project);
+    const ended = await store.lock(project, () => {
+      const current = store.getRecord(project, record);
+      if (current.status !== "pending" && current.status !== "running") return current;
+      const controller = this.executing.get(record);
+      if (controller !== undefined) {
+        controller.abort(USER_STOP);
+        return null;
+      }
+      if (scheduler.cancel(project, record)) {
+        return store.update(project, {
+          update: record,
+          status: "cancelled",
+          finished_at: new Date().toISOString(),
+          error: STOPPED_BY_USER,
+        });
+      }
+      this.stopped.add(record);
+      return null;
+    });
+    if (ended !== null) return ended;
+    try {
+      await scheduler.wait(project, [record]);
+    } finally {
+      this.stopped.delete(record);
+    }
+    return store.getRecord(project, record);
+  }
+
+  /**
+   * Abort the executing records of a project that was removed. Their final update cannot be written any more; the
+   * abort only stops the work (a generation on a server) from going on for nothing.
+   * @param project - the removed project.
+   */
+  forgetProject(project: ProjectId): void {
+    for (const [record, owner] of this.executingIn) {
+      if (owner === project) this.executing.get(record)?.abort("stopped");
+    }
+  }
+
+  /**
    * At service start, end the records an earlier process left unfinished: every `pending` or `running` operation
    * record is updated to `cancelled` with `error {code: 'stopped', message}`, so no record stays unfinished forever.
    */
@@ -546,14 +666,15 @@ export class Runner {
           "unknown_operation",
           `Operation ${request.operation} is not registered.`,
         );
-      refuseAgent(spec, request);
+      refuseAgent(spec, request, null);
       this.deps.store.getProject(request.project);
       const state = this.deps.reducers.getState(request.project);
+      refuseAgent(spec, request, state);
       await this.refuse(
         spec,
         request,
         state,
-        request.after !== undefined && spec.readOnly !== true,
+        scheduledAfter(spec, request) !== undefined && spec.readOnly !== true,
       );
       return { problems: [] };
     } catch (error) {

@@ -733,6 +733,102 @@ describe("stale accept", () => {
 });
 
 /**
+ * Register `probe_note.later`, a background gpu operation that waits for the returned release.
+ * @param f - the mounted API.
+ * @returns the release, and how many times the operation executed.
+ */
+function registerLater(f: ApiFixture): { release: () => void; runs: () => number } {
+  let release = noopRelease;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let runs = 0;
+  f.project.registerOperation({
+    name: "probe_note.later",
+    component: "probe_note",
+    version: "1",
+    description: "Make something in the background.",
+    params: {},
+    inputs: {},
+    outputs: [],
+    deterministic: false,
+    resource: "gpu",
+    background: true,
+    summarize: () => "later",
+    execute: async () => {
+      runs += 1;
+      await held;
+      return { outputs: [] };
+    },
+  });
+  return { release: () => release(), runs: () => runs };
+}
+
+describe("background runs and stopping a record", () => {
+  it("answers the run of a background operation with its pending record at once", async () => {
+    const f = await mountApi();
+    const { release } = registerLater(f);
+    const project = await f.newProject();
+    const result = await f.call(ROUTES.operation, {
+      json: { project, operation: "probe_note.later" },
+    });
+    expect(result.status).toBe(200);
+    const record = standIn<ProjectRecord>(result.json);
+    expect(record).toMatchObject({
+      operation: "probe_note.later",
+      actor: "user",
+      status: "pending",
+    });
+    release();
+    await f.project.wait(project, [record.id]);
+    expect(f.project.getRecord(project, record.id).status).toBe("done");
+  });
+
+  it("stops a queued record through the route, as the user, and answers a finished one as it is", async () => {
+    const f = await mountApi();
+    const { release, runs } = registerLater(f);
+    const project = await f.newProject();
+    const first = await f.api.runOperation({ project, operation: "probe_note.later" });
+    const queued = await f.api.runOperation({ project, operation: "probe_note.later" });
+    await vi.waitFor(() => {
+      expect(runs()).toBe(1);
+    });
+    const line = f.project.line(project);
+    const stopped = await f.call(ROUTES.recordCancel, {
+      json: { project, record: queued.id, session: "s1", surface: "chat" },
+    });
+    expect(stopped.status).toBe(200);
+    expect(asRecord(stopped.json)).toMatchObject({
+      id: queued.id,
+      status: "cancelled",
+      error: { code: "stopped", message: "Stopped by the user." },
+    });
+    expect(f.project.line(project)).toEqual(line);
+    release();
+    await f.project.wait(project);
+    expect(runs()).toBe(1);
+    const done = await f.call(ROUTES.recordCancel, { json: { project, record: first.id } });
+    expect(done.status).toBe(200);
+    expect(asRecord(done.json)).toMatchObject({ id: first.id, status: "done" });
+  });
+
+  it("answers 404 for an unknown record or project and 400 for a missing record", async () => {
+    const f = await mountApi();
+    const project = await f.newProject();
+    const cases: Array<[unknown, number, string]> = [
+      [{ project, record: "no-such-record" }, 404, "unknown_record"],
+      [{ project: "nothing", record: "x" }, 404, "unknown_project"],
+      [{ project }, 400, "invalid_params"],
+    ];
+    for (const [json, status, code] of cases) {
+      const result = await f.call(ROUTES.recordCancel, { json });
+      expect(result.status).toBe(status);
+      expect(asRecord(result.json)["code"]).toBe(code);
+    }
+  });
+});
+
+/**
  * Register `probe_note.remove`, whose agent call proposes, and propose one call of it as the agent.
  * @param f - the mounted API.
  * @param execute - the operation's execute.
@@ -782,6 +878,25 @@ describe("proposals", () => {
     const agentOf = new Map(operations.map((operation) => [operation["name"], operation["agent"]]));
     expect(agentOf.get("probe_note.remove")).toBe("propose");
     expect(agentOf.get("probe_note.add")).toBe("run");
+    // An operation that decides at each call from the project's state.
+    f.project.registerOperation({
+      name: "probe_note.maybe",
+      component: "probe_note",
+      version: "1",
+      description: "Maybe add a note.",
+      params: {},
+      inputs: {},
+      outputs: [],
+      deterministic: false,
+      resource: "none",
+      agent: () => "propose",
+      summarize: () => "maybe",
+      execute: () => Promise.resolve({ outputs: [] }),
+    });
+    const listed = f.api
+      .listOperations()
+      .find((operation) => operation.name === "probe_note.maybe");
+    expect(listed?.agent).toBe("by_state");
   });
 
   it("shows a pending proposal in the state with the assets its inputs name, and accepts it through the route", async () => {

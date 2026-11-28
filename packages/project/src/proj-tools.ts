@@ -32,7 +32,7 @@ import {
 import { DECIDE_OPERATION, PROPOSE_OPERATION } from "./proposals.ts";
 import type CsProject from "./index.ts";
 import type { OperationSpec } from "./operation-types.ts";
-import { ProjectError, SEEN_META_KEY } from "./shared.ts";
+import { agentCallOf, ProjectError, SEEN_META_KEY } from "./shared.ts";
 import type {
   AssetStore,
   ProjectId,
@@ -64,16 +64,16 @@ export interface ProjToolDeps {
 
 /**
  * Refuse an agent's move through the history that would undo or bring back a step only the user decides: a step of
- * an operation whose `agent` is `propose` or `none`. Without this an agent could redo a deletion the user undid, or
- * undo the user's review, with no proposal. A move the history itself refuses (no step, an unknown or discarded
- * record) is left to it.
+ * an operation whose agent call is `propose` or `none` in the project's current state (`agentCallOf`). Without this an
+ * agent could redo a deletion the user undid, or undo the user's review, with no proposal. A move the history itself
+ * refuses (no step, an unknown or discarded record) is left to it.
  * @param project - the Project service.
  * @param projectId - the project.
  * @param target - one step back, one step forward, or the record to go to.
  * @throws ProjectError `agent_not_allowed` naming the first such step.
  */
 export function refuseGuardedMove(
-  project: Pick<CsProject, "listHistory" | "listOperations">,
+  project: Pick<CsProject, "listHistory" | "listOperations" | "getState">,
   projectId: ProjectId,
   target: "back" | "forward" | RecordId,
 ): void {
@@ -88,21 +88,37 @@ export function refuseGuardedMove(
         ? current - 1
         : entries.findIndex((entry) => entry.record.id === target);
   if (to < 0 || to >= entries.length) return;
+  // The state is read only when an operation decides by state; the caller holds the project lock, so it is current.
+  let state: ProjectState | null = null;
   const guarded = new Set(
     project
       .listOperations()
-      .filter((spec) => spec.agent === "propose" || spec.agent === "none")
+      .filter((spec) => {
+        if (typeof spec.agent !== "function")
+          return spec.agent === "propose" || spec.agent === "none";
+        state ??= project.getState(projectId);
+        return agentCallOf(spec, state) !== "run";
+      })
       .map((spec) => spec.name),
   );
+  // A step of an operation that is not registered now (its plugin is off, or it is only there while something else
+  // is, like a generation while no server is listed) is guarded too: its rule cannot be asked. The layer's own
+  // operations are never registered here and are never guarded.
+  const registered = new Set(project.listOperations().map((spec) => spec.name));
+  const isGuarded = (operation: string): boolean =>
+    guarded.has(operation) || !(registered.has(operation) || operation.startsWith("proj."));
   // The steps between the two positions: the later of the two is crossed, the earlier one stays in effect.
   const crossed = entries
     .slice(Math.min(current, to), Math.max(current, to))
-    .find(({ record }) => record.operation !== null && guarded.has(record.operation));
+    .find(({ record }) => record.operation !== null && isGuarded(record.operation));
   if (crossed === undefined) return;
+  const operation = crossed.record.operation ?? "an operation";
   throw new ProjectError(
     "agent_not_allowed",
     `This move would ${to > current ? "undo" : "bring back"} step ${crossed.record.id} of ` +
-      `${crossed.record.operation ?? "an operation"}, which only the user decides. ` +
+      (registered.has(operation)
+        ? `${operation}, which only the user decides. `
+        : `${operation}, an operation that is not available now, so only the user moves across it. `) +
       "Ask the user to undo or redo it in the app.",
   );
 }

@@ -9,7 +9,10 @@
  *
  * An operation whose `agent` is `propose` has a tool whose call writes a proposal (`csProject.propose`) instead of
  * running; its result has the status `proposed` and stores the proposal record as `done`. An operation whose `agent`
- * is `none` has no tool (the service registers none).
+ * is `none` has no tool (the service registers none). An operation whose `agent` is a function has a tool, which asks
+ * the function with the project's current state at each call: `propose` writes a proposal, `run` runs, and `none` is
+ * refused by `run` (`agent_not_allowed`). A call of a `background` operation, like a call scheduled behind an
+ * unfinished producer, returns its record as `pending`.
  *
  * The record's turn is the DSH turn number of the calling agent's session, read from the DSH agent registry
  * (`agents.turnBoundaryOf`).
@@ -37,7 +40,7 @@ import type { JsonValue } from "@deepseek-ai/dsh-util-values";
 import { splitInputRef } from "./grammar.ts";
 import type { OperationSpec } from "./operation-types.ts";
 import type { Sessions } from "./sessions.ts";
-import { ProjectError, SEEN_META_KEY } from "./shared.ts";
+import { agentCallOf, ProjectError, SEEN_META_KEY } from "./shared.ts";
 import type {
   AssetId,
   AssetStore,
@@ -111,6 +114,10 @@ export const OUTPUT_SCHEMA = {
 export const PROPOSE_HINT =
   "Calling this tool does not run it: the call writes a proposal that the user accepts or rejects in the app.";
 
+/** The last sentence of the description of a tool whose operation's `agent` is a function of the project's state. */
+export const BY_STATE_HINT =
+  "Whether this call runs or only writes a proposal depends on the project's settings; the result's status says which.";
+
 /** The status of the result of a call that wrote a proposal. */
 export const PROPOSED = "proposed";
 
@@ -145,8 +152,8 @@ const RESULT_SCHEMA = {
       type: "string",
       required: true,
       description:
-        "done; pending (scheduled behind records that have not finished); or proposed (a proposal that the user " +
-        "accepts or rejects; nothing ran).",
+        "done; pending (scheduled: behind records that have not finished, or for an operation that always runs in " +
+        "the background); or proposed (a proposal that the user accepts or rejects; nothing ran).",
     },
     summary: { type: "string", required: true },
     outputs: { type: "array", required: true, items: OUTPUT_SCHEMA },
@@ -494,7 +501,11 @@ export class AgentTools {
         : spec.deterministic
           ? "Repeating a call with the same inputs and params reuses the earlier result."
           : "",
-      spec.agent === "propose" ? PROPOSE_HINT : "",
+      spec.agent === "propose"
+        ? PROPOSE_HINT
+        : typeof spec.agent === "function"
+          ? BY_STATE_HINT
+          : "",
     ].filter((hint) => hint !== "");
     return defineTool({
       name,
@@ -581,8 +592,14 @@ export class AgentTools {
     };
     await spec.prepareToolCall?.({ args, request, state, exec });
     if (this.waitsForProducer(project, spec, request.inputs)) request.after = [];
-    // A proposing operation writes a proposal for the user instead of running; nothing else changes.
-    if (spec.agent === "propose") {
+    // A proposing operation writes a proposal for the user instead of running; nothing else changes. An `agent`
+    // function decides on the state now; a call it makes `none` goes to `run`, which refuses it as it refuses any
+    // agent's call of such an operation.
+    const agentCall =
+      typeof spec.agent === "function"
+        ? agentCallOf(spec, this.deps.currentState(project))
+        : (spec.agent ?? "run");
+    if (agentCall === "propose") {
       const proposal = await this.deps.propose(request);
       return {
         project,

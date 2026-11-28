@@ -22,8 +22,12 @@ export interface WireOperation {
   deterministic: boolean;
   /** The scheduler class: `none` for operations that wait in neither the CPU nor the GPU queue. */
   resource: OperationSpec["resource"];
-  /** What an agent's call does: `run` (also for an operation that declares none), `propose` or `none`. */
-  agent: AgentCall;
+  /**
+   * What an agent's call does: `run` (also for an operation that declares none), `propose` or `none`; `by_state` for
+   * an operation whose `agent` is a function, which decides at each call from the project's state (it runs, proposes,
+   * or is refused).
+   */
+  agent: AgentCall | "by_state";
 }
 
 /**
@@ -42,6 +46,6 @@ export function toWireOperation(spec: OperationSpec): WireOperation {
     outputs: spec.outputs,
     deterministic: spec.deterministic,
     resource: spec.resource,
-    agent: spec.agent ?? "run",
+    agent: typeof spec.agent === "function" ? "by_state" : (spec.agent ?? "run"),
   };
 }

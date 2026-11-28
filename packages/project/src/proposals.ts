@@ -1,5 +1,6 @@
 /**
- * Proposals: an agent's call of an operation whose `agent` is `propose` does not run; the runner writes a
+ * Proposals: an agent's call of an operation whose `agent` is `propose` (or a function that answers `propose` for the
+ * project's current state) does not run; the runner writes a
  * `proj.propose` record instead (`Runner.propose`), and the user accepts or rejects it later. Accepting runs the same
  * operation as the user through `Runner.run`; either decision writes one `proj.proposal_decide` record. Both records
  * are written outside the history (`RecordStore.appendOutsideHistory`): they are no step, undo never removes them, and
@@ -154,7 +155,9 @@ export class ProposalDecider {
    * @param id - the `proj.propose` record.
    * @param decision - `accept` runs the proposed call as `origin`; `reject` only records the decision.
    * @param origin - who decides, from where; an agent cannot decide.
-   * @returns the proposal after the call and the accepted run's result. Throws `unknown_project`, `unknown_record`
+   * @returns the proposal after the call and the accepted run's result; for a scheduled run (an input behind an
+   *   unfinished record, or a `background` operation) the result holds the `pending` record and the decision is
+   *   written without waiting for the execution. Throws `unknown_project`, `unknown_record`
    *   for an ID that names no proposal, `agent_not_allowed` for an agent's decision, `proposal_busy` while another
    *   decision of the proposal is in flight, or the refusal of the accepted run (the proposal stays pending).
    */
