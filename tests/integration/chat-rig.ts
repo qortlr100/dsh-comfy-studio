@@ -46,8 +46,21 @@ export const ASSET_TOOLS = [
   "cs_asset_tag",
 ];
 
+/**
+ * The tools of the workflow component's operations (@cs/workflow). The operations only the user
+ * runs (workflow.create, workflow.update, workflow.copy) have no tool.
+ */
+export const WORKFLOW_TOOLS = [
+  "cs_workflow_check_patch",
+  "cs_workflow_delete",
+  "cs_workflow_get",
+  "cs_workflow_graph",
+  "cs_workflow_list",
+  "cs_workflow_save_variant",
+];
+
 /** Every tool of ours that reaches an agent with the bundle alone. */
-export const BUNDLE_TOOLS = [...PROJECT_TOOLS, ...ASSET_TOOLS];
+export const BUNDLE_TOOLS = [...PROJECT_TOOLS, ...ASSET_TOOLS, ...WORKFLOW_TOOLS];
 
 export const STEP_TIMEOUT_MS = 10_000;
 /** A turn here is a few model round trips of the fake plus dsh's own work between them. */

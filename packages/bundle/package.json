@@ -21,6 +21,7 @@
     "@cs/catalog": "workspace:*",
     "@cs/ffmpeg": "workspace:*",
     "@cs/project": "workspace:*",
-    "@cs/ui-shell": "workspace:*"
+    "@cs/ui-shell": "workspace:*",
+    "@cs/workflow": "workspace:*"
   }
 }
