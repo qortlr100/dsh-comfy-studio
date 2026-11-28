@@ -155,7 +155,7 @@ DreamVerse는 dsh 0.1.7-rc.1에서 갈라졌다. 서버 쪽 코드가 지금 쓰
 | 프로바이더 여섯                                        | 가져오지 않는다  | 영상·이미지 모델 서버용이다. 프로바이더 하나의 모양만 본다.                                                              |
 | `@dv/shot-render`, `@dv/timeline`, `@dv/audio-*`, `@dv/location`, `@dv/style`, `@dv/workflow-story` | 가져오지 않는다 | 영상 제작 전용이다.                                                              |
 | `@dv/text-node`, `@dv/hardware`, `@dv/minimax-skills`, `@dv/mcp-presets`, `@dv/fastvideo-generation-client`와 그 화면 패키지 | 읽지 않았다 | 줄 수만 셌다. 필요해 보이면 그때 읽는다.                         |
-| `@dv/bundle`의 에이전트 프리셋                         | 방식을 가져온다  | 자기 프리셋을 기본으로 두는 방식이다. 프리셋에 무엇을 넣을지는 미정이다(1-4).                                            |
+| `@dv/bundle`의 에이전트 프리셋                         | 방식을 가져온다  | 자기 프리셋을 기본으로 두는 방식이다. 1-4에서 가져왔다(우리 프리셋 `comfy-studio`. `docs/DSH.md` "에이전트 프리셋").                                            |
 | `@dv/ui-shell`                                         | **방식을 가져왔다**(3-0) | 슬롯 교체, 우측 탭, 주 세션과 열린 프로젝트를 맞추는 규칙을 본으로 `packages/ui-shell`을 다시 썼다. 파일을 옮기지는 않았다. 가져오지 않은 것: 입구 화면의 채팅과 첫 메시지 때의 프로젝트 자동 생성(포크 전용 이벤트), URL 해시 미러, 탭마다 따로 두는 빈 세션, 왼쪽 사이드바 자동 접기, 우측 패널의 기본 폭, 세션 전환기, 궤적 탭, 패널 목록·입력창 요소 숨김, 문구 바꾸기, 테마. 0.2.2-rc.5에서는 새 세션 버튼을 슬롯(`sidebar.session.action`)으로 바꿀 수 있어 CSS로 숨기지 않았다. 확인 결과는 `docs/DSH.md` "화면 교체"에 있다. |
 | `@dv/ui-kit`, `@dv/ui-history`, `@dv/ui-asset-pool`    | 참고             | API 클라이언트, 상태를 다시 읽는 훅, 기록 패널, 에셋 패널.                                                               |
 | `@dv/ui-composer`, `@dv/ui-text-node`, `@dv/ui-mcp-presets` | 가져오지 않는다 | 포크 전용 확장점이 있어야 돈다.                                                                                      |

@@ -17,3 +17,155 @@
     # The view API: the /api/cs/* routes and the /cs/events stream the browser views use.
     - id: cs-api
       name: "@cs/api"
+
+    # Our agent preset (decided by the user, 2026-11-28; docs/archive/PLAN_1-4.md "고른 것"). The agent
+    # changes a project only through the project layer's operations, so it gets no shell and no
+    # file tools. Our own tools (cs_proj_* and the operation tools) are not listed here:
+    # @cs/project registers them on the tools service outside every preset, and they reach this
+    # agent too. The preset id must equal AGENT_PRESET in packages/ui-shell/src/client/ids.ts,
+    # which every session our screens create names explicitly. The rows kept follow dsh's own
+    # `standard` with its settings (upstream packages/bundle/web-app/presets/standard.patch.yml
+    # at dsh-v0.2.2-rc.5). Left out against standard:
+    # - the shell and file tools: tool-bash, tool-pwsh, tool-fs, tool-fs-search, tool-jobs
+    #   (bash, read, write, edit, read_image, glob, grep, job_kill, job_list, job_output);
+    # - tool-schedule (see the note where it would sit);
+    # - agent-instructions (user-global and project AGENTS.md-style files in the prompt);
+    # - the goal tools: command-goal, tool-goal (create_goal, get_goal, update_goal);
+    # - the planning group (plan-mode);
+    # - present and tool-office;
+    # - the plugin manager tools: tool-plugin-manager (plugin_manager) and tool-plugin-market
+    #   (off in standard too);
+    # - in delegation: the fork tool, the workflow tool and its engine, and the child's model
+    #   choice (see that group).
+    - id: preset-comfy-studio
+      name: "@deepseek-ai/dsh-agent-preset"
+      config:
+        id: comfy-studio
+        name: ComfyStudio
+        description: Makes images and video with ComfyUI in one project; no shell or file tools.
+        order: 0
+        plugins:
+          # Who the agent is. Not `complete: true`: that would drop every other prompt section,
+          # the project rules of @cs/project among them (upstream packages/preset/persona).
+          - id: persona
+            name: "@deepseek-ai/dsh-persona"
+            config:
+              prefix: >-
+                You are the assistant of ComfyStudio, a studio for making images and video with
+                ComfyUI, powered by the {{model}} model. You work in one project and change it
+                only through the project's tools.
+
+          # The current date and time in the agent's context, so it knows what day it is.
+          - id: time-context
+            name: "@deepseek-ai/dsh-time-context"
+
+          # Skills from dsh's default roots only: the project's .dsh/skills and .agents/skills,
+          # $DSH_HOME/skills, ~/.agents/skills, and DSH_BUNDLED_SKILL_DIR when set. standard
+          # also adds the agent-preset package's own skills (customSkillDirs); those are left
+          # out (upstream packages/skill/skill-filesystem/src/index.ts `roots`).
+          - id: skill-filesystem
+            name: "@deepseek-ai/dsh-skill-filesystem"
+
+          # skill: load a listed skill's body.
+          - id: tool-skill
+            name: "@deepseek-ai/dsh-tool-skill"
+
+          # ask_user_question.
+          - id: tool-ask-user
+            name: "@deepseek-ai/dsh-tool-ask-user"
+
+          # web_fetch only. Search is off until a search backend of ours is chosen, so a model
+          # key that brings dsh's own search backend does not add web_search unasked.
+          - id: tool-web
+            name: "@deepseek-ai/dsh-tool-web"
+            config:
+              fetch: true
+              search: false
+
+          # No tool-schedule (decided by the user, 2026-11-28). Its tools let the agent list and
+          # edit every scheduled task of the home: delete one with no approval step, rewrite the
+          # prompt of a task that runs in a session of another preset (upstream
+          # packages/schedule/tool-schedule/src/index.ts; the row takes no config to narrow it).
+          # The user makes schedules in dsh's Automation tasks page, which does not need this row
+          # (its "Create manually" form); its "Create in a session" entry drafts a request to the
+          # agent, which has no schedule tool to act on it. A schedule tool of our own, seeing and
+          # editing only its own tasks and proposing deletions, is a later step.
+
+          # todo_write.
+          - id: tool-todo
+            name: "@deepseek-ai/dsh-tool-todo"
+            config:
+              allowParallelInProgress: true
+
+          # Context compaction, exactly as standard has it.
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: "@deepseek-ai/dsh-compaction-basic"
+              - id: command-compact
+                name: "@deepseek-ai/dsh-command-compact"
+              - id: tool-result-pruner
+                name: "@deepseek-ai/dsh-compaction-tool-result-pruner"
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+
+          # Delegation: subagent plus its controls (list_agents, send_message, wait_agent).
+          # Off against standard: the fork tool (subagent_fork), the workflow tool and its engine
+          # (workflow, workflow-ptc), and choosing a model for the child (the provider and model
+          # arguments of subagent, list_subagent_models): a child runs on its parent's model. No
+          # `isolate`:
+          # standard isolates `workflowEngine`, the only service of its group, which came from
+          # workflow-ptc; neither row left here provides a service. A child runs under this
+          # preset too, since none is named (upstream packages/subagent/tool-subagent).
+          - id: delegation
+            name: cordis:group
+            group: true
+            config:
+              - id: tool-subagent-control
+                name: "@deepseek-ai/dsh-tool-subagent-control"
+                config:
+                  interrupt: false
+              - id: tool-subagent
+                name: "@deepseek-ai/dsh-tool-subagent"
+                config:
+                  provider: spawn
+                  toolName: subagent
+                  modelSelection: false
+                  modelDiscovery: false
+
+# The default: sessions made without a preset named use ours. Keyed, not inserted, so the
+# settings page can still write the user's choice (`selectedDefault`) into the profile layer,
+# which wins over this one. What holds then:
+# - sessions our screens create name our preset and run it whatever the default;
+# - dsh's own entry points (the sidebar brand by keyboard, the session.new shortcut, the startup
+#   restore, Automation's "New task") name none and follow the default, ours unless the user
+#   changed it in settings;
+# - the shell puts a project's blank chat that went to another preset back on ours
+#   (packages/ui-shell/src/client/follow.ts `followAgentPreset`);
+# - a session that gets its first message as it is created (a scheduled task's run in a new
+#   session, under the task's preset or the default) or already has a conversation keeps the
+#   preset it has.
+- id: agent-preset-registry
+  config:
+    default: comfy-studio
+
+# Host rows that reach every agent whatever its preset (so built-in presets lose them too):
+# working_directory moves a session's folder, and the project layer finds a session's project by
+# that folder.
+- id: tool-working-directory
+  disabled: true
+
+# Notes on developing dsh itself, added to the system prompt.
+- id: harness-dev-context
+  disabled: true
+
+# Office skills, written for the office tool that our preset does not give.
+- id: skill-office
+  disabled: true

@@ -14,8 +14,9 @@ describe("host scenarios", () => {
     const result = await runHostScenario<ToolNamesResult>(scenario("tool-names"), { input });
 
     expect(result.input).toEqual(input);
-    // A global tool dsh registers on its own; it is only there once startup has settled.
-    expect(result.names).toContain("working_directory");
+    // A global tool dsh registers on its own (Agent Teams' task board); it is only there once
+    // startup has settled. (Until 1-4 this was working_directory, whose row the bundle disables.)
+    expect(result.names).toContain("team_task_create");
   });
 
   test("a throwing scenario rejects with its message", async () => {

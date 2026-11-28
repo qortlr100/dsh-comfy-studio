@@ -17,7 +17,7 @@ import {
   STEP_TIMEOUT_MS,
   visibleChat,
   waitIdle,
-} from "./chat-helpers.ts";
+} from "./chat-rig.ts";
 
 const REPLY = "reply from the first browser";
 

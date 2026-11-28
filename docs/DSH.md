@@ -529,30 +529,67 @@ dsh 웹(`dsh-web-app` 번들)에서 에이전트가 가질 도구·스킬·페�
 - 기본 제공 프리셋은 `standard`(기본값), `ptc`, `minimal`, `cordis` 넷이고 `dsh-web-app` 번들의 `presets/*.patch.yml`에 있다. 우리 프로필의 합성 구성에도 이 행들이 있다(`--dump-config`로 확인, 2026-11-25).
 - **`standard`의 에이전트는 셸과 파일 도구를 가진다.** 싣는 플러그인(**소스 확인**): `persona`, `agent-instructions`, `time-context`, `tool-bash`, `tool-pwsh`, `tool-fs`, `tool-fs-search`, `tool-jobs`, `tool-schedule`, `skill-filesystem`, `tool-skill`, `command-goal`, `tool-goal`, `tool-ask-user`, `tool-todo`, `tool-web`, `tool-present`, `tool-office`, 플러그인 관리 도구 둘, 그리고 planning·compaction·delegation 묶음. `minimal`은 `persona`, `tool-fs`, compaction, persistent-shell이다.
 - 새 프리셋이나 기본 제공 프리셋의 덮어쓰기는 번들 패치로 한다: `@deepseek-ai/dsh-agent-preset` 행을 `insert`하거나, 그 행의 `id`로 패치한다(**소스 확인**).
-- 사용자가 설정 화면에서 고른 기본 프리셋(`selectedDefault`)이 `config.default`보다 우선한다(**소스 확인**). 그래서 우리 프리셋을 기본으로 두는 것만으로는 사용자가 `standard`로 바꾸는 것을 막지 못한다.
-- 세션을 만들 때 프리셋을 줄 수 있다(`ctx.sessions.create({ agentPreset })`, **소스 확인**).
+- 사용자가 설정 화면에서 고른 기본 프리셋(`selectedDefault`)이 `config.default`보다 우선한다(**띄워 확인**, 2026-11-28). 그래서 우리 프리셋을 기본으로 두는 것만으로는 사용자가 `standard`로 바꾸는 것을 막지 못한다.
+- 세션을 만들 때 프리셋을 줄 수 있고, 그러면 기본값이 무엇이든 그 프리셋으로 돈다(**띄워 확인**, 2026-11-28. 브라우저 쪽은 `ctx.uiWorkspace.openWorkspace(id, undefined, { agentPreset })`와 `ctx.sessions.create({ agentPreset })`).
 - **DreamVerse가 한 것**(**소스 확인(DreamVerse)**): 자기 프리셋 `dreamverse`를 기본으로 두고 그 안에 `persona`, `skill-filesystem`(자기 스킬 폴더만), `tool-skill`, `tool-ask-user`, compaction 묶음만 넣었다. 셸·파일 도구가 없다. 연산 도구(`dv_*`)는 프리셋 안이 아니라 `@dv/project`가 `tools` 서비스에 등록한다(`ctx.inject(['tools'], …)`). 레지스트리에는 `modeSelectionEnabled: false`를 준다(이름으로 보아 프리셋 고르기를 끄는 설정이다. 동작은 읽지 않았다). 이 필드는 0.2.2-rc.5의 레지스트리에서 빠졌다(업스트림 문서가 "retired"라고 적는다).
-- 프리셋 밖에서 `tools` 서비스에 등록한 도구는 프리셋의 에이전트에게 보인다(`standard`에서 **띄워 확인**, 2026-11-28. "호스트 쪽"의 "등록한 도구의 자리"). DreamVerse의 방식(연산 도구는 프리셋 밖에서 등록하고 프리셋에는 셸·파일 도구를 넣지 않는다)을 그대로 쓸 수 있다는 뜻이다.
+- 프리셋 밖에서 `tools` 서비스에 등록한 도구는 프리셋의 에이전트에게 보인다(`standard`와 우리 프리셋에서 **띄워 확인**, 2026-11-28. "호스트 쪽"의 "등록한 도구의 자리"). DreamVerse의 방식(연산 도구는 프리셋 밖에서 등록하고 프리셋에는 셸·파일 도구를 넣지 않는다)을 그대로 쓸 수 있다는 뜻이다.
 - `standard` 프리셋의 에이전트가 받는 도구는 우리 것을 빼고 31개였다(2026-11-28, 모델에게 간 요청에서 셌다): `ask_user_question`, `bash`, `create_goal`, `edit`, `get_goal`, `glob`, `grep`, `job_kill`, `job_list`, `job_output`, `list_agents`, `list_subagent_models`, `plugin_manager`, `present`, `read`, `read_image`, `schedule_create`·`_edit`·`_list`·`_view`, `send_message`, `skill`, `subagent`, `subagent_fork`, `todo_write`, `update_goal`, `wait_agent`, `web_fetch`, `workflow`, `working_directory`, `write`. 웹 검색 도구는 없었다(DeepSeek 키가 없는 구성이었다. 키가 있으면 생기는지는 **미확인**). 시스템 프롬프트는 "You are a coding agent…"으로 시작하고, 첫 턴에 작업 폴더·파일 정책·스킬 목록·시각이 메시지로 붙는다. 빈 프로젝트에서 한마디를 보내는 턴의 입력이 약 11,000토큰이었다.
-- 확인하지 못한 것: 0.2.2-rc.5에서 우리 프리셋을 넣어 띄우는 것, 기본 제공 프리셋 행을 끄거나 덮었을 때의 동작(1-4).
-- **에이전트에게 무엇을 줄지는 정해지지 않았다**(`docs/DECISIONS.md` "미정", 1-4).
+- 0.2.2-rc.5에서 우리 프리셋을 넣어 띄웠다(**띄워 확인**, 2026-11-28. 아래 "우리 프리셋").
+
+### 우리 프리셋
+
+**정해진 것**(사용자, 2026-11-28. `docs/DECISIONS.md` "확정"): 우리 프리셋은 기능은 주되 **셸과 파일 도구를 주지 않는다.** dsh의 기본 제공 프리셋은 끄지 않고, 번들이 우리 것을 기본으로 두며, 우리 화면이 만드는 세션에는 우리 프리셋을 명시한다. 프리셋은 `packages/bundle/cordis.patch.yml`의 `preset-comfy-studio` 행이고 id는 `comfy-studio`다(셸의 `packages/ui-shell/src/client/ids.ts` `AGENT_PRESET`과 같아야 한다).
+
+| 넣은 플러그인 | 에이전트가 받는 것 | 설정과 이유 |
+| --- | --- | --- |
+| `persona` | 시스템 프롬프트의 페르소나 | `prefix`에 우리 문장. `complete: true`는 쓰지 않는다. 프로젝트 규칙 절까지 지운다(**소스 확인**: 업스트림 `packages/preset/persona/src/index.ts`) |
+| `time-context` | 지금 시각 | 에이전트가 날짜를 안다 |
+| `skill-filesystem`, `tool-skill` | 스킬 목록과 `skill` | 설정 없이 dsh의 기본 스킬 폴더만 읽는다: 프로젝트의 `.dsh/skills`·`.agents/skills`, `$DSH_HOME/skills`, `~/.agents/skills`. `standard`가 더하는 프리셋 패키지의 스킬은 뺐다 |
+| `tool-ask-user` | `ask_user_question` | |
+| `tool-web` | `web_fetch` | `fetch: true`, `search: false`. 검색은 우리 검색 플러그인을 만들 때 켠다(2-3). 켜 두면 DeepSeek 계정이 있는 home에서 `web_search`가 저절로 생긴다 |
+| `tool-todo` | `todo_write` | `standard`와 같은 설정 |
+| 압축 묶음 | (도구 없음) | `standard`와 같다 |
+| `tool-subagent-control`, `tool-subagent` | `list_agents`, `send_message`, `wait_agent`, `subagent` | `modelSelection: false`, `modelDiscovery: false`: 자식은 부모의 모델로 돈다. `standard`의 `subagent_fork`, `workflow`와 그 엔진은 넣지 않았다. 묶음에 `isolate`가 없다(격리하던 서비스가 `workflow` 엔진의 것이다. **소스 확인**) |
+
+- **dsh의 예약 도구(`tool-schedule`)는 넣지 않았다**(사용자가 정했다, 2026-11-28). `schedule_list`와 `schedule_edit`는 그 세션이 만든 것뿐 아니라 home의 모든 예약을 보고 고치며, 삭제에 승인 단계가 없다. 다른 프리셋의 세션으로 가는 예약의 프롬프트도 바꿀 수 있다. 설정 키가 없어 좁힐 수 없다(**소스 확인**: 업스트림 `packages/schedule/tool-schedule/src/index.ts`). 예약은 사용자가 Automation tasks 화면에서 만든다. 그 화면의 "New"와 "Create in a session"은 에이전트에게 예약을 만들어 달라는 초안을 입력창에 넣는 길이라 우리 프리셋에서는 되지 않고, 메뉴의 "Create manually" 양식만 된다(**소스 확인**: 업스트림 `packages/client/ui-schedule/src/client/`).
+- **에이전트가 받는 도구는 정확히 열여섯 개다**: 위의 dsh 도구 여덟 개와 프로젝트 도구 여덟 개. 여기에 등록된 연산마다 연산 도구가 붙는다(**띄워 확인**: 조합 시험 `tests/integration/preset.test.ts`가 모델에게 간 요청의 도구 목록을 통째로 견준다). `bash`, `write`, `edit`, `read`, `glob`, `grep`, `working_directory`가 없다.
+- 시스템 프롬프트는 "You are an AI agent powered by DeepSeek Harness." 한 줄, 우리 페르소나, 도구들의 안내, 프로젝트 규칙 절의 순서다. 빈 프로젝트에 한마디를 보낸 첫 요청은 약 22,000자였다(`standard`에서는 약 47,000자. **띄워 확인**).
+- **프리셋 밖에서 붙는 호스트 행 셋을 껐다**: `tool-working-directory`(에이전트가 작업 폴더를 옮기는 도구. 프로젝트 계층이 세션의 프로젝트를 작업 폴더로 찾는다), `harness-dev-context`(dsh를 개발할 때의 안내 문단), `skill-office`(오피스 스킬 넷). dsh는 그대로 뜬다(**띄워 확인**). 호스트 행이라 기본 제공 프리셋의 세션도 이 셋을 잃는다.
+- **기본값**: 번들이 `agent-preset-registry` 행의 `config.default`를 `comfy-studio`로 덮는다. 행의 필수 키는 `default` 하나다. 번들 계층에서 덮었으므로 설정 화면이 사용자의 선택(`selectedDefault`)을 프로필 계층에 쓸 수 있고, 그 값이 이긴다(**띄워 확인**: `selectedDefault: standard`를 주면 프리셋을 정하지 않은 새 세션이 `standard`의 도구를 받는다). 행을 `--patch`나 home의 패치로 덮으면 설정 화면의 쓰기가 거절된다(**띄워 확인(실험)**).
+- **셸은 프리셋을 명시한다.** `hostOf(ctx).openWorkspace`가 `ctx.uiWorkspace.openWorkspace(id, undefined, { agentPreset })`를 부른다. 사용자의 기본값이 `standard`여도 우리 화면이 만든 채팅(프로젝트의 첫 채팅, "새 채팅")은 우리 도구를 받는다(**띄워 확인**: `preset.test.ts`). dsh는 프리셋이 없거나 같은 빈 세션만 다시 쓰고 아니면 새로 만든다(**소스 확인**: 업스트림 `packages/client/ui-workspace/src/client/navigation.ts`의 `createInWorkspace`).
+- **dsh 자체의 진입점은 프리셋을 정하지 않는다.** 사이드바의 브랜드 버튼(키보드로 Enter. 포인터는 우리 장치가 막는다), `session.new` 단축키, 저장된 상태가 없는 브라우저의 시작 복원, Automation tasks의 "New"가 그렇다. 그때 dsh는 프로젝트의 빈 세션을 프리셋을 가리지 않고 다시 쓰고 기본 프리셋을 그 세션에 고른다. 설정의 "Set as new task default"도 화면에 있는 빈 세션의 프리셋을 바꾼다(**소스 확인**: 업스트림 `packages/client/ui-workspace/src/client/navigation.ts`, `packages/api/session-controller/src/agent.ts`의 `reuseLive`, `packages/client/ui-agent-preset/src/client/`). 사용자가 기본값을 `standard`로 바꿔 두었으면 그 채팅이 `bash`를 받는다(**띄워 확인**: 브랜드에 Enter).
+- **그래서 셸이 프로젝트의 빈 채팅을 우리 프리셋으로 되돌린다**(사용자가 정했다, 2026-11-28. `packages/ui-shell/src/client/follow.ts`의 `followAgentPreset`, 규칙은 `navigation.ts`의 `presetToRestore`). 주 세션이 프로젝트의 세션이고 비어 있고 보관되지 않았고 dsh의 세션 목록이 알려 주는 프리셋이 우리 것이 아니면 우리 프리셋을 고른다. 고르는 길은 `ctx.sessions.create({ workspaceId, sessionId: <그 빈 세션>, agentPreset })`다: dsh가 빈 세션을 그 프리셋으로 다시 쓴다(dsh 자신이 빈 세션에 프리셋을 줄 때 쓰는 길이다. **소스 확인**: 업스트림 `packages/api/session-controller/src/client/contract/sessions.ts`). 세션의 프리셋은 세션 목록의 `byId[id].projectionValues.agentPreset`에서 읽는다(프리셋 레지스트리가 선언한 세션 프로젝션이다. 우리 타입 패키지에 그 선언이 없어 키를 가드로 읽는다). 둘 다 dsh 버전을 올릴 때 다시 본다. 조합 시험 `preset.test.ts`가 기본값이 `standard`인 home에서 브랜드에 Enter를 누른 뒤의 채팅이 우리 도구만 받는지를 본다(구독을 끄면 시험이 실패하는 것을 봤다. **띄워 확인**).
+- **되돌리지 않는 것**: 대화가 시작된 세션(dsh도 턴이 돈 세션의 구성은 바꾸지 않는다), 예약이 실행되며 만드는 새 세션(만들 때 글이 들어간다. 그 예약의 프리셋이나 기본값으로 돈다), 프로젝트 밖의 세션.
+- **기본 제공 프리셋은 끄지 않았다.** 네 행을 끄면 dsh는 뜨고 목록에 우리 것만 남지만, 그 프리셋으로 만든 기존 세션에 새 글이 보내지지 않는다. 화면에 오류도 없다(호스트에서는 `Unknown agent preset`. **띄워 확인(실험)**).
+- 우리 셸에서 프리셋을 고르는 곳은 설정 → Agent presets뿐이다. 새 세션의 프리셋 칩은 우리 채팅 탭에 없다(**띄워 확인(실험)**).
+- **서브에이전트의 자식은 부모의 프리셋으로 돈다.** 자식도 프로젝트 도구를 포함해 같은 도구를 받는다(**띄워 확인**: `tests/integration/dsh-features.test.ts`).
+- 예약 도구가 있는 프리셋의 에이전트가 예약을 만들면 그 예약의 새 세션은 만든 세션의 프리셋으로 돈다(**소스 확인**). dsh의 Automation tasks 화면에서 만든 예약의 새 세션이 어느 프리셋으로 도는지는 보지 않았다(**미확인**).
+- **MCP 서버의 도구는 프리셋을 가리지 않는다.** 호스트 행 `mcp-manager`에 붙인 서버의 도구는 우리 에이전트에게도 간다. 파일을 쓰거나 명령을 실행하는 도구를 가진 MCP 서버를 붙이면 "셸·파일 없음"이 깨진다. 붙일 서버를 고를 때 본다.
+- `subagent`의 `cwd` 인자로 자식을 다른 폴더에서 띄울 수 있다(**소스 확인**: 업스트림 `packages/subagent/tool-subagent/src/index.ts`. 설정으로 끌 수 없다). 프로젝트 계층은 세션의 작업 폴더로 프로젝트를 찾으므로 자식이 다른 프로젝트의 연산을 부를 수 있다. 연산을 거치므로 기록은 남는다.
+- `persona`의 `includeRuntimeContext`는 기본값(켬)이다. 끄면 파일 정책과 승인 줄이 빠지지만 서브에이전트의 자식에게 가는 위임 깊이와 권한 범위의 안내도 같이 빠진다(**띄워 확인(실험)**).
+- 파일 정책(작업 폴더 안 쓰기 허용 등)은 `sandbox-policy` 행의 것이고 사용자가 입력창의 칩으로 세션마다 바꾼다. 하위 폴더를 빼는 설정은 없다. `tool-fs`는 `write: false`, `edit: false`로 읽기 전용이 되지만 `bash`에는 그런 설정이 없다(**소스 확인**). 우리 프리셋에는 둘 다 없으므로 걸리지 않는다.
 
 ## dsh가 이미 주는 기능
 
-패키지와 문서로 확인했다(**소스 확인**). LLM 프로바이더(아래 "LLM 프로바이더 붙이기")와 원격 접속("리버스 프록시와 로그인")은 직접 써 봤다.
+1-4에서 써 봤다(2026-11-28). **띄워 확인**은 조합 시험 `tests/integration/dsh-features.test.ts`가 우리 프리셋 아래에서 지금도 보는 것이고, **띄워 확인(실험)**은 그 단계에서 가짜 LLM으로(일부는 실제 모델로) 한 번 돌려 본 것이다(실험은 `standard` 프리셋에서 했다. 무엇을 돌렸는지는 `docs/archive/PLAN_1-4.md`). 기존 기능이 어디로 가는지는 `docs/LEGACY.md` "대응표"에 있다.
 
-| 기능              | 내용                                                                                                                                                                              | 문서                                    |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
-| LLM 프로바이더    | 설정 → Models. DeepSeek, 내장 목록(`anthropic`, `openai`, `moonshotai`, `zai` …), 사용자 지정 API(네 가지 프로토콜). 키는 쓰기 전용이고 `$DSH_HOME/.credentials.yaml`에 저장된다. | `docs/user/guide/providers.md`          |
-| 예약 실행         | 모델이 `schedule_create` 등으로 만들거나 Automation tasks 화면에서 만든다. 반복 규칙은 RFC 5545다.                                                                                | `docs/user/guide/schedule.md`           |
-| MCP               | stdio 또는 Streamable HTTP 서버를 붙이면 도구가 `mcp__<서버>__<도구>`로 보인다.                                                                                                   | `docs/subsystems/mcp.md`                |
-| 스킬              | `skill`, `skill-filesystem`, `tool-skill` 행                                                                                                                                      | `docs/subsystems/skills.md`             |
-| 서브에이전트      | `subagent`, `tool-subagent` 행, 에이전트 프리셋                                                                                                                                   | `docs/subsystems/subagent.md`           |
-| 웹 검색           | `web-search-deepseek` 행. DeepSeek 외의 모델에서 되는지는 미확인                                                                                                                  | —                                       |
-| 기억              | 서드파티 MCP 기억 서버 세 가지의 예시 구성만 있다(기본 꺼짐)                                                                                                                      | `docs/user/guide/mcp-memory.md`         |
-| 원격 접속         | 리버스 프록시 + `--trusted-host`. 로그인은 토큰 주소 + 세션 쿠키. 띄워 봤다(아래 "리버스 프록시와 로그인")                                                                      | `docs/user/guide/public-deployments.md` |
+| 기능 | 되는 것 | 없는 것 | 문서(업스트림) |
+| --- | --- | --- | --- |
+| LLM 프로바이더 | 설정 → Models. DeepSeek, 내장 목록(`anthropic`, `openai`, `moonshotai`, `zai` …), 사용자 지정 API(네 가지 프로토콜). 키는 쓰기 전용이고 `$DSH_HOME/.credentials.yaml`에 저장된다(아래 "LLM 프로바이더 붙이기") | | `docs/user/guide/providers.md` |
+| 예약 | 예약 도구가 있는 프리셋(`standard`)의 에이전트가 `schedule_create`(`title`, `prompt`, `rrule`, `target`)로 만들면 정한 때에 그 세션에 메시지가 와서 턴이 돈다(**띄워 확인(실험)**). 우리 프리셋에는 이 도구가 없다(위 "우리 프리셋"). `rrule`은 `DTSTART:…Z` 줄과 `RRULE:…` 줄 둘이다. `target`은 `this_session`·`new_once`·`new`. 새 세션으로 도는 예약의 세션은 그 프로젝트에 붙어 우리 내비게이터에 뜬다. dsh를 껐다 같은 home으로 켜도 남고, 꺼진 동안 지난 것은 켠 직후에 한 번 돈다. "Automation tasks" 화면이 우리 셸에서도 열리고 에이전트 없이 만들 수 있다(**띄워 확인(실험)**) | 실행의 성공·실패 기록(dsh는 보냈다는 것만 남긴다), 연속 실패 뒤 자동 끄기, 실행별 안 읽음. 최소 간격은 60초다. 정확히 한 번을 보장하지 않는다(**소스 확인**) | `docs/user/guide/schedule.md` |
+| MCP | `mcp-manager` 행의 `config.servers.<이름>`에 stdio 서버(`transport`, `command`, `args`, `env`)를 적으면 도구가 `mcp__<서버>__<도구>`로 에이전트에게 가고 실행되며, 서버의 안내문이 시스템 프롬프트에 든다(**띄워 확인**). 비밀값은 `${credential:이름}`으로 참조만 적는다. 플러그인이 `ctx.mcpManager.register`로 서버를 등록할 수도 있다(**소스 확인**) | 서버를 더하는 설정 화면(브라우저 쪽 패키지에서 찾지 못했다). 프로필의 패치 파일로 더한다 | `docs/subsystems/mcp.md` |
+| 스킬 | 스킬 폴더의 `<이름>/SKILL.md`가 스킬 목록으로 에이전트에게 가고 `skill`이 본문을 읽는다(**띄워 확인**: `$DSH_HOME/skills`). 플러그인이 `ctx.skills.register({ name, description, source, content, invocation })`로 파일 없이 등록해도 같다(**띄워 확인(실험)**). 2-4의 작업 절차와 2-3의 프리셋이 이 길로 실린다 | 스킬을 가져오는 화면, 버전, 자동 개선 | `docs/subsystems/skills.md` |
+| 웹 가져오기 | `web_fetch`가 페이지를 가져와 Markdown으로 바꾸고 밖에서 온 글이라는 표시를 붙인다(**띄워 확인**) | | — |
+| 웹 검색 | 플러그인이 `ctx.web.registerSearchProvider({ id, available, search })`로 검색 백엔드를 등록하고 `web` 행의 `searchProvider`로 고르면 `web_search`가 생긴다(**띄워 확인(실험)**: 시험용 가짜 백엔드) | 검색 백엔드가 없으면 `web_search`는 도구 목록에 없다. dsh가 주는 백엔드(`web-search-deepseek`)는 DeepSeek 계정이나 키가 있어야 한다(**소스 확인**. 써 보지 못했다) | — |
+| 서브에이전트 | `subagent`(`description`, `prompt`)를 부르면 자식이 따로 돌고 끝나면 마지막 글이 부모에게 메시지로 와서 부모가 이어 간다. 자식은 부모의 구성을 물려받아 프로젝트 도구와 프로젝트 규칙·상태를 받는다(**띄워 확인**). 자식 세션은 우리 내비게이터에 줄로 뜨지 않는다(**띄워 확인(실험)**). `tool-subagent` 행의 `agentPreset`·`allowedAgentPresets`로 자식의 프리셋을 정하거나 고르게 할 수 있다(**소스 확인**) | 이름 있는 역할 에이전트, 검수 판정과 재시도, 위임 카드 | `docs/subsystems/subagent.md` |
+| 첨부 | 입력창이 파일을 받는다. 이미지(PNG·JPEG·WebP·GIF, 20장까지)는 모델 항목에 `input: [text, image]`가 있으면 요청에 이미지로 실린다. 없으면 보내기가 막힌다. 그 밖의 파일은 사본이 `$DSH_HOME/attachments/v1/…`에 생기고 에이전트에게는 그 경로를 알리는 글만 간다(**띄워 확인(실험)**). 호스트 플러그인은 `ctx.attachments`(`imageHostPath`, `fileHostPath`, `readImage`, `readFileStream`)로 참조에서 경로와 바이트를 얻는다(**소스 확인**) | 오디오·영상을 에이전트가 볼 수 있는 모양으로 바꾸는 것(2-6). 첨부가 프로젝트의 에셋이 되는 것(2-5. 저장소는 프로젝트 폴더가 아니라 home이다) | `docs/subsystems/attachment.md` |
+| 메시지 | 복사, 좋아요·싫어요, "Branch into a new conversation"(그 메시지에서 새 세션으로 갈라지고 우리 내비게이터에 뜬다. **띄워 확인(실험)**) | 답 다시 만들기, 보낸 글을 고쳐 다시 보내기(버튼도 메뉴도 문자열도 없다) | — |
+| 대화 검색 | 세션 전문 검색 백엔드(`session-query-sqlite`)와 세션 컨트롤러의 `search`, 입력창의 `@`로 다른 세션 참조(**소스 확인**) | 에이전트가 쓰는 검색 도구. 우리 셸의 검색 입력(3-6) | — |
+| 진행·안 읽음 | 브라우저 쪽 서비스 `uiSession.sessionStatus`가 세션별 `running`·`pendingInteraction`·`completionUnread`를 준다(**소스 확인**. 우리 플러그인에서 읽어 보지 않았다) | 우리 내비게이터의 표시(3-6) | — |
+| 기억 | 서드파티 MCP 기억 서버 세 가지의 예시 구성만 있다(기본 꺼짐) | | `docs/user/guide/mcp-memory.md` |
+| 원격 접속 | 리버스 프록시 + `--trusted-host`. 로그인은 토큰 주소 + 세션 쿠키(아래 "리버스 프록시와 로그인") | | `docs/user/guide/public-deployments.md` |
 
-예약 도구(`tool-schedule`)와 웹 도구(`tool-web`)는 `standard` 프리셋의 플러그인이다. 우리 프리셋에 무엇을 넣는지에 따라 에이전트가 쓸 수 있는 기능이 달라진다("에이전트 프리셋").
+에이전트가 이 기능을 쓰려면 프리셋에 그 도구의 플러그인이 있어야 한다(예약은 `tool-schedule`과 `time-context`. 우리 프리셋에는 넣지 않았다. 웹은 `tool-web`, 위임은 `tool-subagent`와 `tool-subagent-control`, 스킬은 `tool-skill`과 스킬을 주는 쪽). MCP의 도구와 첨부는 프리셋과 상관없이 호스트 행이 준다. 우리 프리셋의 구성은 위 "우리 프리셋"에 있다.
 
 ### LLM 프로바이더 붙이기
 
@@ -611,7 +648,7 @@ dsh 웹(`dsh-web-app` 번들)에서 에이전트가 가질 도구·스킬·페�
 | 기록 | 에이전트가 부른 연산의 기록에 `actor: agent`, `surface: chat`, 턴 번호, 세션, 도구 호출 id가 남는다 |
 | 세션 여럿 | 한 프로젝트에 대화가 있는 세션이 여럿이면 내비게이터에 제목과 함께 줄로 뜨고, 줄을 누르면 그 대화가 보인다. 새로고침해도 보던 세션이 열린다 |
 
-하지 않은 것: 채팅 안의 카드 슬롯에 우리 React 컴포넌트를 그리는 것(3-4), 승인을 묻는 도구(`ask_user_question`, 파일 정책에 걸리는 명령), 첨부와 이미지 입력, 서브에이전트·예약·스킬·웹 도구(1-4), 긴 대화의 압축, 재생성·편집·분기, DeepSeek 프로바이더에서의 추론 표시와 웹 검색.
+하지 않은 것: 채팅 안의 카드 슬롯에 우리 React 컴포넌트를 그리는 것(3-4), 승인을 묻는 도구(`ask_user_question`, 파일 정책에 걸리는 명령), 첨부와 이미지 입력, 긴 대화의 압축, 재생성·편집·분기, DeepSeek 프로바이더에서의 추론 표시와 웹 검색.
 
 ## 리버스 프록시와 로그인
 
@@ -812,7 +849,7 @@ const session = await openPage(dsh.url, { modelConfigured: true });
 - `llm.requests`는 온 요청의 목록이다: 도구 이름들(`tools`), 펴 놓은 메시지(`messages`의 `role`·`text`·`toolCalls`·`toolCallId`), 원래 본문(`body`), 상태(`state`: `open`·`done`·`aborted`·`failed`). dsh가 요청을 끊으면 `aborted`가 된다(중지 시험이 이것을 본다).
 - `llm.patch`는 `llm-pi-ai` 행에 프로바이더 `cs-test-llm`을, `agent-default-model` 행에 그 모델을 적은 패치다. 가짜 서버는 인증을 보지 않으므로 키 대신 자리 채우기용 `Authorization` 헤더(`Bearer cs-test`. 비밀이 아니다)를 준다.
 - dsh는 사용자의 글 뒤에 메시지를 끼워 넣고, 첫 메시지 뒤에 제목 요청을 따로 보낸다. 대본은 도구가 없는 요청(제목)과 마지막 메시지가 `tool`인 요청(도구 결과)을 먼저 가르고, 나머지는 사용자의 글에 넣어 둔 표시로 가른다.
-- dsh의 채팅 DOM에서 시험이 잡는 것(전송·중지 버튼, 접힌 턴, 추론, 도구 호출)은 공개 계약이 아니다. `chat.test.ts` 머리의 `DSH_CHAT` 한 곳에 모았다. 버전을 올리거나 언어 팩을 바꾸면(버튼은 영어 `aria-label`로 가른다) 다시 본다.
+- dsh의 채팅 DOM에서 시험이 잡는 것(전송·중지 버튼, 접힌 턴, 추론, 도구 호출)은 공개 계약이 아니다. `tests/integration/chat-rig.ts`의 `DSH_CHAT` 한 곳에 모았다(채팅을 도는 시험들이 같이 쓰는 도우미도 거기 있다). 버전을 올리거나 언어 팩을 바꾸면(버튼은 영어 `aria-label`로 가른다) 다시 본다.
 - 가짜 서버는 모델의 판단을 흉내 내지 않는다. 도구 설명을 읽고 모델이 맞는 도구를 고르는지 같은 것은 실제 모델로 본다("LLM 프로바이더 붙이기"의 구성으로 띄운다).
 
 알아 둘 것:
@@ -820,7 +857,7 @@ const session = await openPage(dsh.url, { modelConfigured: true });
 - 시험 하나가 dsh를 한 번 띄운다. 띄우고 내리는 데 약 2초, 브라우저까지 열면 약 3.5초다(2026-11-27).
 - 끝나면 dsh와 브라우저 프로세스, 임시 폴더(`cs-dsh-test-*`)가 남지 않아야 한다. 틀이 `stop()`과 `close()`에서 정리하므로 시험은 `try`/`finally`로 둘을 반드시 부른다.
 - 시험이 시간 초과로 끊기면 Vitest가 워커를 신호로 죽여서 `finally`가 돌지 않는다. 그때는 `tests/harness/global-setup.ts`의 전역 정리가 남은 dsh를 죽이고 그 실행의 임시 폴더를 지운다. Vitest 자체를 Ctrl+C나 SIGTERM으로 끊어도 같다(**띄워 확인**, 2026-11-27). 브라우저는 워커가 죽을 때 같이 닫혔다(브라우저까지 연 채 시간 초과가 난 경우를 봤다).
-- 조합 시험 전체는 시험 21개, 약 26초다(2026-11-28. 파일끼리는 병렬로 돈다. 가장 긴 것은 가짜 LLM으로 턴을 도는 `chat.test.ts`의 약 21초다).
+- 조합 시험 전체는 파일 11개, 시험 25개, 약 28초다(2026-11-28. 파일끼리는 병렬로 돈다. 가장 긴 것은 가짜 LLM으로 턴을 도는 `chat.test.ts`다).
 - 시험은 키 없이 돈다. 메시지와 도구 호출은 가짜 LLM으로 본다(위 "모델이 있어야 하는 시험").
 - 살아 있는 슬롯 트리는 dsh의 `cordis_inspect what:"client"`로 물어볼 수 있다고 업스트림 문서에 있다(미확인).
 
@@ -865,7 +902,7 @@ const session = await openPage(dsh.url, { modelConfigured: true });
 - **셸(3-0)에서 보지 못한 것.** 브라우저 탭 둘이 같은 프로젝트를 볼 때(대화가 있는 세션이 여럿일 때의 목록과 전환은 1-3에서 확인했다), 플러그인이 내려갈 때 두 장치가 되돌아가는지, 브랜드에 키보드로 닿아 Enter를 누르는 경우(CSS로는 막지 못한다), 접힌 사이드바의 모양.
 - **슬롯 등록의 `store` 칸.** `inject`(값, 콜백)와 `hooks`, TSX와 JSX 자동 런타임, dsh 타입으로 하는 타입 검사, 공유 모듈 열한 개만 external로 둔 빌드, Astryx가 전혀 없는 브라우저 번들은 1-1에서 확인했다(2026-11-26).
 - 서드파티 패키지가 같이 실린 브라우저 번들, 공유 모듈의 하위 경로(`zod/v4` 등), 플러그인이 내려갈 때 로더가 우리 `<style>`을 지우는 것, 호스트 절반을 고쳤을 때 다시 실리는지.
-- **에이전트 프리셋.** 우리 프리셋을 넣어 띄우는 것, 기본 제공 프리셋을 끄는 것(1-4).
+- **에이전트 프리셋에서 남은 것**(1-4): 실제 모델로 우리 프리셋을 쓰는 것(가짜 LLM으로만 봤다), 빈 채팅을 되돌리는 구독을 브랜드의 Enter 말고 다른 진입점(`session.new` 단축키, 설정의 "Set as new task default", Automation tasks의 "New")에서 띄워 보는 것(같은 경로라는 것은 소스로 봤다), 되돌리는 요청과 사용자의 첫 글이 겹칠 때(단위 시험으로만 봤다. 그때 dsh가 빈 세션을 하나 더 만든다), dsh의 Automation tasks 화면에서 만든 예약의 새 세션이 도는 프리셋, 사용자가 Agent Teams를 켠 세션에서 `team_task_*` 도구가 우리 에이전트에게 가는지, 끈 프리셋을 가리키는 `selectedDefault`가 남았을 때 새 세션이 실패하는지, 읽기 전용 샌드박스에서 `bash`의 쓰기가 막히는지.
 - DreamVerse의 서버 쪽 코드 가운데 프로젝트 계층과 화면용 API 밖의 것을 0.2.2-rc.5에서 실행하는 것(프로젝트 계층은 2-0, `@dv/api`는 2-2에서 옮겨 돌렸다. 에셋은 2-3).
 - dsh가 도는 중에 우리 서비스가 다시 실리거나 dsh를 다시 띄울 때 브라우저가 이벤트 스트림을 다시 잇는지.
 - **접속에서 남은 것**(1-5): 실제 인증서를 쓰는 nginx·Caddy, 그 둘의 Basic 인증과 forward auth, 경로 접두사 아래에 올리는 것, 큰 본문(수십 MB의 첨부)을 프록시로 보내는 것, 오래 조용하던 WebSocket의 시간 초과와 다시 잇기, `printUrl: false`, 서명 비밀을 지워 쿠키를 한꺼번에 무효로 만드는 것, 평문 HTTP(보안 컨텍스트가 아닌 출처)에서 클립보드처럼 보안 컨텍스트가 필요한 브라우저 기능.
@@ -873,5 +910,5 @@ const session = await openPage(dsh.url, { modelConfigured: true });
 - 가운데에 입력창을 끼운 첫 화면, `@` 메뉴에 우리 항목 추가.
 - `ctx.credentials`와 `ctx.storageDomain`을 저장소 밖 플러그인에서 쓰는 것(`ctx.tools`를 읽는 것은 1-2에서 확인했다).
 - 첫 실행 창을 설정으로 끄는 것, 같은 home으로 dsh를 다시 띄웠을 때의 화면(조합 시험은 늘 새 home이다).
-- 예약·MCP·스킬·서브에이전트·웹 검색의 실제 동작.
+- **dsh의 기능에서 남은 것**(1-4): DeepSeek 계정이 있을 때의 `web-search-deepseek`와 `web_search`, MCP 서버를 설정 화면(Plugins 페이지의 설정 편집)에서 더할 수 있는지, `list_agents`·`send_message`·`wait_agent`를 실제로 부르는 것, 실제 오디오·영상 파일의 첨부(크기와 형식의 한도), `uiSession.sessionStatus`를 우리 플러그인에서 읽는 것, 메시지 재생성·편집이 단축키로도 없는지.
 - Chrome 이외의 브라우저.
