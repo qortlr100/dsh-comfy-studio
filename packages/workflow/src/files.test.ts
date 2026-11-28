@@ -139,6 +139,18 @@ describe("readGraph", () => {
     expect(thrown(() => readGraph(encode("nope"))).code).toBe("invalid_inputs");
     expect(thrown(() => readGraph(encode("[]"))).code).toBe("invalid_inputs");
   });
+
+  it("reads back a patched graph whose new node is named like an export wrapper or a UI-format key", () => {
+    for (const id of ["prompt", "nodes", "links"]) {
+      const { result } = applyPatch(
+        sampleGraph(),
+        parsePatch([{ op: "add", id, class_type: "CLIPTextEncode", inputs: { text: "test" } }]),
+      );
+      const stored = readGraph(canonicalGraph(result.graph));
+      expect(Object.keys(stored).toSorted(), id).toEqual(Object.keys(result.graph).toSorted());
+      expect(stored[id], id).toEqual({ class_type: "CLIPTextEncode", inputs: { text: "test" } });
+    }
+  });
 });
 
 describe("trimField", () => {

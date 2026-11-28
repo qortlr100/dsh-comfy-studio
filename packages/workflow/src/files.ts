@@ -211,7 +211,11 @@ function parseGraphFileUnsafe(bytes: Uint8Array): ParsedGraphFile {
  */
 export function readGraph(bytes: Uint8Array): ApiGraph {
   try {
-    return parseApiGraph(JSON.parse(new TextDecoder().decode(bytes)));
+    // A stored blob is always the bare graph. The parser also accepts an export wrapper `{ prompt: {...} }` and tells
+    // a UI-format export by its `nodes` and `links`; wrapped here, a node whose ID is `prompt`, `nodes` or `links` is
+    // read as the node it is.
+    const graph: unknown = JSON.parse(new TextDecoder().decode(bytes));
+    return parseApiGraph({ prompt: graph });
   } catch (error) {
     throw new ProjectError(
       "invalid_inputs",
