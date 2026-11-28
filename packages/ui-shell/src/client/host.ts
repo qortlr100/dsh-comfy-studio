@@ -8,7 +8,7 @@ import type {} from "@deepseek-ai/dsh-api-workspace-controller/client";
 import type {} from "@deepseek-ai/dsh-client-ui-layout/client";
 import type {} from "@deepseek-ai/dsh-client-ui-sidebar-right/client";
 import type {} from "@deepseek-ai/dsh-client-ui-workspace/client";
-import { CHAT_TAB_KIND } from "./ids.ts";
+import { AGENT_PRESET, CHAT_TAB_KIND } from "./ids.ts";
 import type { SessionInfo, WorkspaceRow } from "./navigation.ts";
 import { strings } from "./strings.ts";
 
@@ -45,7 +45,8 @@ export interface ShellHost {
   /** Make a listed session the main session. Throws `strings.unknownSession` for an unlisted one. */
   openSession(sessionId: string): void;
   /**
-   * Make the workspace's blank session (reused or created by dsh) the main session.
+   * Make the workspace's blank session (reused or created by dsh) the main session. The session
+   * runs our agent preset (`AGENT_PRESET`), whatever default the user picked in dsh's settings.
    * Rejects with `strings.workspaceNotReady` when the workspace is not listed.
    */
   openWorkspace(workspaceId: string): Promise<void>;
@@ -99,7 +100,9 @@ export function hostOf(ctx: Context): ShellHost {
         .getSnapshot()
         .items.find((item) => item.workspaceId === workspaceId)?.workspaceId;
       if (typed === undefined) throw new Error(strings.workspaceNotReady);
-      await ctx.uiWorkspace.openWorkspace(typed);
+      // dsh reuses a blank that lists no preset or this one, or creates one under this preset
+      // (upstream packages/client/ui-workspace/src/client/navigation.ts `createInWorkspace`).
+      await ctx.uiWorkspace.openWorkspace(typed, undefined, { agentPreset: AGENT_PRESET });
     },
     beginNavigation() {
       ctx.layout.beginNavigation();

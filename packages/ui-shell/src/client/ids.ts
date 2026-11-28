@@ -14,3 +14,10 @@ export const CENTER_VIEW_SLOT = "cs.center.view";
 
 /** The id of the failure toast in `shell.overlay`. */
 export const FAILURE_TOAST_ID = "cs.shell.failure";
+
+/**
+ * The agent preset every session our screens create runs (`hostOf(ctx).openWorkspace`), so a
+ * default the user picks in dsh's settings does not change them. It must equal the preset id of
+ * the `preset-comfy-studio` row in packages/bundle/cordis.patch.yml.
+ */
+export const AGENT_PRESET = "comfy-studio";
