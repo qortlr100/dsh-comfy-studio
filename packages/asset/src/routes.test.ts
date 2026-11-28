@@ -3,9 +3,10 @@
  * and type hiding, thumbnails, the upload (validation, limit, temporary file, `asset.import` and `asset.move` calls)
  * and the stage route (bytes only).
  */
-import { readdirSync } from "node:fs";
+import { readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { describe, expect, it } from "vitest";
+import { join } from "node:path";
+import { describe, expect, it, vi } from "vitest";
 import { ProjectError, type AssetId, type RunRequest, type RunResult } from "@cs/project";
 import { standIn } from "@cs/project/testing/support";
 import { assetRoutes, type RouteDeps } from "./routes.ts";
@@ -18,6 +19,7 @@ const ORIGIN = "http://localhost";
 /** Everything a route test needs. */
 function setup(overrides: Partial<RouteDeps> = {}) {
   const store = testStore();
+  latestRoot = store.root;
   const project = store.addProject("p1");
   const ffmpeg = fakeFfmpeg();
   const runs: RunRequest[] = [];
@@ -69,9 +71,22 @@ function setup(overrides: Partial<RouteDeps> = {}) {
   return { store, project, runs, internal, probed, ffmpeg, routes, call, put };
 }
 
-/** The upload directories of this process that exist now. */
+/** The store root of the latest `setup()`, for the checks of leftovers. */
+let latestRoot = "";
+
+/**
+ * @param root - a store root.
+ * @returns the partial upload files under it.
+ */
+function partials(root: string): string[] {
+  return readdirSync(root, { recursive: true })
+    .map(String)
+    .filter((name) => name.endsWith(".partial"));
+}
+
+/** @returns the partial upload files left in the store of the latest `setup()`. */
 function uploadDirs(): string[] {
-  return readdirSync(tmpdir()).filter((name) => name.startsWith("cs-asset-upload-"));
+  return partials(latestRoot);
 }
 
 const BYTES = new Uint8Array(Array.from({ length: 100 }, (_, index) => index));
@@ -450,5 +465,83 @@ describe("stage route", () => {
       },
     );
     expect(unknown.status).toBe(404);
+  });
+});
+
+describe("missing and odd files", () => {
+  it("answers 404 unknown_asset when the object file is gone, whatever the index says", async () => {
+    const { call, put, store } = setup();
+    const id = put(BYTES, "image/png", "a.png");
+    rmSync(store.files.path(id));
+    for (const init of [{}, { method: "HEAD" }, { headers: { range: "bytes=0-9" } }]) {
+      const response = await call(ASSET_ROUTES.file, `/api/cs/asset?id=${id}`, init);
+      expect(response.status).toBe(404);
+      expect(await response.json()).toMatchObject({ code: "unknown_asset" });
+    }
+  });
+
+  it("takes the length from the file on disk", async () => {
+    const { call, put, store } = setup();
+    const id = put(BYTES, "image/png", "a.png");
+    writeFileSync(store.files.path(id), BYTES.slice(0, 40));
+    const response = await call(ASSET_ROUTES.file, `/api/cs/asset?id=${id}`);
+    expect(response.headers.get("content-length")).toBe("40");
+    expect((await response.arrayBuffer()).byteLength).toBe(40);
+  });
+
+  it("answers 404 no_thumbnail when the thumbnail file is gone", async () => {
+    const { call, put } = setup({
+      thumbs: { thumbOf: () => Promise.resolve(join(tmpdir(), "cs-no-such-thumb.webp")) },
+    });
+    const id = put(BYTES, "image/png", "a.png");
+    const response = await call(ASSET_ROUTES.thumb, `/api/cs/asset/thumb?id=${id}`);
+    expect(response.status).toBe(404);
+    expect(await response.json()).toMatchObject({ code: "no_thumbnail" });
+  });
+
+  it("serves a file whose name holds a lone surrogate", async () => {
+    const { call, put } = setup();
+    const id = put(BYTES, "image/png", "bad\uD800name.png");
+    const response = await call(ASSET_ROUTES.file, `/api/cs/asset?id=${id}&download=1`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-disposition")).toBe(
+      "attachment; filename*=UTF-8''bad%EF%BF%BDname.png",
+    );
+  });
+});
+
+describe("the upload path never copies a file", () => {
+  it("streams into a partial file of the project and never imports by path", async () => {
+    const { call, store, project } = setup();
+    const imports = vi.spyOn(store.files, "importAsset");
+    const begin = vi.spyOn(store.files, "beginUpload");
+    const commit = vi.spyOn(store.files, "commitUpload");
+    for (const path of [ASSET_ROUTES.upload, ASSET_ROUTES.stage]) {
+      const response = await call(path, path + query(project), { method: "POST", body: BYTES });
+      expect(response.status).toBe(200);
+    }
+    expect(imports).not.toHaveBeenCalled();
+    expect(begin).toHaveBeenCalledTimes(2);
+    expect(commit).toHaveBeenCalledTimes(2);
+    const id = idOf(BYTES);
+    expect(new Uint8Array(store.files.read(id))).toEqual(BYTES);
+    expect(uploadDirs()).toEqual([]);
+  });
+
+  it("leaves no partial file after a 413 or a refused project", async () => {
+    const big = setup({ maxUploadBytes: 50 });
+    const tooBig = await big.call(ASSET_ROUTES.upload, ASSET_ROUTES.upload + query(big.project), {
+      method: "POST",
+      body: BYTES,
+    });
+    expect(tooBig.status).toBe(413);
+    expect(partials(big.store.root)).toEqual([]);
+    const refused = setup();
+    const unknown = await refused.call(ASSET_ROUTES.upload, ASSET_ROUTES.upload + query("nope"), {
+      method: "POST",
+      body: BYTES,
+    });
+    expect(unknown.status).toBe(404);
+    expect(partials(refused.store.root)).toEqual([]);
   });
 });

@@ -140,6 +140,9 @@ function argvOf(seek: string[], output: string): string[] {
     "-y",
     "-loglevel",
     "error",
+    // Input options: a playlist-like file stored as an image or video must not make ffmpeg fetch a network URL.
+    "-protocol_whitelist",
+    "file",
     ...seek,
     "-i",
     "{{in:0}}",

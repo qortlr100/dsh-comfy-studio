@@ -2,7 +2,10 @@
  * Thumbnails with a fake ffmpeg: made once, concurrent requests share one run, failures are remembered, and
  * anything that is not an image or a video has none.
  */
-import { existsSync, readdirSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { Context } from "@deepseek-ai/cordis";
+import CsFfmpeg from "@cs/ffmpeg";
 import { describe, expect, it } from "vitest";
 import { fakeFfmpeg, idOf, testStore } from "./testing/files.ts";
 import { Thumbnails } from "./thumbs.ts";
@@ -127,5 +130,48 @@ describe("Thumbnails", () => {
     ffmpeg.availableNow = true;
     const back = setup();
     expect(await back.thumbs.thumbOf(back.image)).not.toBeNull();
+  });
+});
+
+const hasFfmpeg = spawnSync("ffmpeg", ["-version"]).status === 0;
+
+// A 1x1 PNG.
+const TINY_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64",
+);
+
+describe.skipIf(!hasFfmpeg)("Thumbnails with the real ffmpeg service", () => {
+  it("makes a WebP of a PNG with the exact argument line", async () => {
+    const context = new Context();
+    await context.plugin(CsFfmpeg, {}).await();
+    try {
+      const store = testStore();
+      const project = store.addProject("p1");
+      const image = store.files.importAsset(
+        project,
+        TINY_PNG,
+        { mime: "image/png", name: "tiny.png" },
+        null,
+      );
+      const thumbs = new Thumbnails({
+        entry: (asset) => store.files.find(asset),
+        path: (asset) => store.files.path(asset),
+        thumbPath: (asset) => store.files.thumbPath(asset),
+        ffmpeg: () => context.csFfmpeg,
+        warn: (message) => {
+          throw new Error(message);
+        },
+      });
+      const path = await thumbs.thumbOf(image);
+      expect(path).toBe(store.files.thumbPath(image));
+      expect(
+        readFileSync(path ?? "")
+          .subarray(0, 4)
+          .toString("latin1"),
+      ).toBe("RIFF");
+    } finally {
+      await context.fiber.dispose();
+    }
   });
 });

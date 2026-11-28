@@ -8,10 +8,9 @@
  *
  * @module @cs/asset/routes
  */
+import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { mkdtemp, open, rm, stat } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { open, stat } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { brandString } from "@deepseek-ai/dsh-brand";
 import type { ConnectionFetchRoute } from "@deepseek-ai/dsh-client-connection";
@@ -69,7 +68,7 @@ const STATUS_OF: Partial<Record<ProjectError["code"], 400 | 404>> = {
 
 /** What the routes ask of the host. */
 export interface RouteDeps {
-  files: Pick<AssetFiles, "find" | "path" | "importAsset">;
+  files: Pick<AssetFiles, "find" | "path" | "beginUpload" | "commitUpload" | "discardUpload">;
   thumbs: Pick<Thumbnails, "thumbOf">;
   project: {
     openProject(project: ProjectId): unknown;
@@ -140,7 +139,8 @@ function assetIdOf(request: Request): AssetId {
  * @returns the name as an RFC 5987 value for `filename*`.
  */
 function encodeName(name: string): string {
-  return encodeURIComponent(name).replace(
+  // A lone surrogate makes `encodeURIComponent` throw; it becomes U+FFFD first.
+  return encodeURIComponent(name.toWellFormed()).replace(
     /['()*]/g,
     (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
   );
@@ -189,13 +189,28 @@ function streamOf(path: string, range: { start: number; end: number } | null): R
   return Readable.toWeb(stream) as ReadableStream;
 }
 
+/**
+ * @param path - a file.
+ * @returns its size, or null when it does not exist.
+ */
+async function sizeOf(path: string): Promise<number | null> {
+  try {
+    return (await stat(path)).size;
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
 /** Serve the bytes of an asset. */
-function serveFile(deps: RouteDeps, request: Request): Response {
+async function serveFile(deps: RouteDeps, request: Request): Promise<Response> {
   const asset = assetIdOf(request);
   const entry = deps.files.find(asset);
   if (entry === undefined) throw new RouteError(404, `Unknown asset '${asset}'.`, "unknown_asset");
   const path = deps.files.path(asset);
-  const size = entry.size_bytes;
+  // The file on disk is the truth: an object that was removed answers 404 instead of a stream that breaks.
+  const size = await sizeOf(path);
+  if (size === null) throw new RouteError(404, `Unknown asset '${asset}'.`, "unknown_asset");
   const mime = entry.mime.split(";")[0]?.trim().toLowerCase() ?? "";
   const inline = INLINE_TYPES.has(mime);
   const download = new URL(request.url).searchParams.get("download") === "1";
@@ -230,9 +245,9 @@ async function serveThumb(deps: RouteDeps, request: Request): Promise<Response> 
   if (deps.files.find(asset) === undefined)
     throw new RouteError(404, `Unknown asset '${asset}'.`, "unknown_asset");
   const path = await deps.thumbs.thumbOf(asset);
-  if (path === null)
+  const size = path === null ? null : await sizeOf(path);
+  if (path === null || size === null)
     throw new RouteError(404, `Asset '${asset}' has no thumbnail.`, "no_thumbnail");
-  const { size } = await stat(path);
   return new Response(request.method === "HEAD" ? null : streamOf(path, null), {
     status: 200,
     headers: {
@@ -292,19 +307,19 @@ function uploadParamsOf(request: Request, deps: RouteDeps): UploadParams {
 }
 
 /**
- * Receive an upload body into a temporary file, count its bytes, and give the file to `consume`; the file is removed in
- * every case.
+ * Stream an upload body into a partial file of the project's own `objects` directory while hashing it, then give it its
+ * content address; the partial file is removed in every failure case. Nothing reads the file back.
  * @param request - the request.
  * @param deps - the route dependencies.
- * @param use - what to do with the file.
- * @returns what `consume` returned.
+ * @param params - the validated query.
+ * @returns the asset ID.
  * @throws RouteError `payload_too_large` (413) over the limit.
  */
-async function withUploadedFile<T>(
+async function storeUpload(
   request: Request,
   deps: RouteDeps,
-  consume: (path: string) => Promise<T>,
-): Promise<T> {
+  params: UploadParams,
+): Promise<AssetId> {
   const tooLarge = (): RouteError =>
     new RouteError(
       413,
@@ -313,12 +328,12 @@ async function withUploadedFile<T>(
     );
   const declared = Number(request.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > deps.maxUploadBytes) throw tooLarge();
-  const dir = await mkdtemp(join(tmpdir(), "cs-asset-upload-"));
+  const partial = deps.files.beginUpload(params.project);
   try {
-    const path = join(dir, "upload");
-    const file = await open(path, "w");
+    const hash = createHash("sha256");
+    let total = 0;
+    const file = await open(partial, "w");
     try {
-      let total = 0;
       if (request.body !== null) {
         const reader = request.body.getReader();
         try {
@@ -328,7 +343,12 @@ async function withUploadedFile<T>(
             total += value.byteLength;
             // The rest of the body is discarded by `receive`, so the answer reaches the client.
             if (total > deps.maxUploadBytes) throw tooLarge();
-            await file.write(value);
+            hash.update(value);
+            let offset = 0;
+            while (offset < value.byteLength) {
+              const { bytesWritten } = await file.write(value, offset);
+              offset += bytesWritten;
+            }
           }
         } finally {
           reader.releaseLock();
@@ -337,9 +357,16 @@ async function withUploadedFile<T>(
     } finally {
       await file.close();
     }
-    return await consume(path);
-  } finally {
-    await rm(dir, { recursive: true, force: true });
+    return deps.files.commitUpload(
+      params.project,
+      partial,
+      { id: brandString<AssetId>(hash.digest("hex")), size: total },
+      { mime: params.mime, name: params.name },
+      null,
+    );
+  } catch (error) {
+    deps.files.discardUpload(partial);
+    throw error;
   }
 }
 
@@ -415,16 +442,8 @@ async function receive(deps: RouteDeps, request: Request, library: boolean): Pro
 async function receiveBody(deps: RouteDeps, request: Request, library: boolean): Promise<Response> {
   const params = uploadParamsOf(request, deps);
   const query = new URL(request.url).searchParams;
-  const asset = await withUploadedFile(request, deps, async (path) => {
-    const id = deps.files.importAsset(
-      params.project,
-      { path },
-      { mime: params.mime, name: params.name },
-      null,
-    );
-    await deps.probe(id);
-    return id;
-  });
+  const asset = await storeUpload(request, deps, params);
+  await deps.probe(asset);
   if (!library) return json({ asset });
   const origin = {
     surface: query.get("surface") === "chat" ? ("chat" as const) : ("view" as const),

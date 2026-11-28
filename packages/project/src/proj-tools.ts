@@ -528,8 +528,13 @@ export function projTools(project: CsProject, deps: ProjToolDeps): ToolDefinitio
       execute: async (args, exec) => {
         const projectId = projectOf(exec);
         const to = args.to === undefined ? undefined : brandString<RecordId>(args.to);
-        refuseGuardedMove(project, projectId, to ?? "back");
-        await (to === undefined ? project.undo(projectId) : project.moveTo(projectId, to));
+        // Checked under the project lock, so no step can land between the check and the move.
+        const check = (): void => {
+          refuseGuardedMove(project, projectId, to ?? "back");
+        };
+        await (to === undefined
+          ? project.undo(projectId, check)
+          : project.moveTo(projectId, to, check));
         return summary(exec, projectId);
       },
     }),
@@ -542,8 +547,9 @@ export function projTools(project: CsProject, deps: ProjToolDeps): ToolDefinitio
       output: stateOutput,
       execute: async (_args, exec) => {
         const projectId = projectOf(exec);
-        refuseGuardedMove(project, projectId, "forward");
-        await project.redo(projectId);
+        await project.redo(projectId, () => {
+          refuseGuardedMove(project, projectId, "forward");
+        });
         return summary(exec, projectId);
       },
     }),

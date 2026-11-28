@@ -85,7 +85,11 @@ function counted(count: number, noun: string): string {
  * @param request - a call.
  * @param state - the project's current state, to find the outputs a `{record, output}` input names.
  * @param role - an input role.
- * @returns the assets the role's inputs name, without repeats, in order; an input that names no asset yet is left out.
+ * @returns the assets the role's inputs name, without repeats, in order.
+ * @throws ProjectError `invalid_inputs` for a reference this function cannot resolve against the current history (a
+ *   step outside it, such as an import record or an undone step, an output the step does not have, or a version
+ *   reference). The runner resolves such references through the record store, so letting them pass unchecked would
+ *   bypass the preconditions.
  */
 function inputsOf(request: RunRequest, state: ProjectState, role: string): AssetId[] {
   const found = new Set<AssetId>();
@@ -97,10 +101,22 @@ function inputsOf(request: RunRequest, state: ProjectState, role: string): Asset
     } else if ("record" in ref) {
       const producer = state.components.proj.records.find((record) => record.id === ref.record);
       const output = producer?.outputs[ref.output];
-      if (output !== undefined) found.add(output);
+      if (output === undefined) throw unresolvable();
+      found.add(output);
+    } else {
+      throw unresolvable();
     }
   }
   return [...found];
+}
+
+/** @returns the refusal for an input reference that names no asset of the current history. */
+function unresolvable(): ProjectError {
+  return new ProjectError(
+    "invalid_inputs",
+    "An input does not name an asset this call can check. Name assets by asset ID (from cs_asset_list), or by " +
+      "<record>#<n> of a step in the current history.",
+  );
 }
 
 /**

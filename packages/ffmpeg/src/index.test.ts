@@ -395,6 +395,29 @@ describe("csFfmpeg with fake binaries", () => {
     expect(await broken.ffmpeg.available()).toBe(false);
   });
 
+  it("caches a false answer for 60 seconds only, then checks again", async () => {
+    // Only Date is faked, so child processes and their timeouts run on real time.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const dir = mkdtempSync(join(tmpdir(), "cs-ffmpeg-late-"));
+      scratch.push(dir);
+      const late = join(dir, "ffmpeg");
+      const fixture = await start({ ffmpegPath: late });
+      expect(await fixture.ffmpeg.available()).toBe(false);
+      writeFileSync(late, "#!/usr/bin/env node\n");
+      chmodSync(late, 0o755);
+      vi.advanceTimersByTime(59_000);
+      // Within the window the answer stays false: the binary is not started again.
+      expect(await fixture.ffmpeg.available()).toBe(false);
+      vi.advanceTimersByTime(2_000);
+      expect(await fixture.ffmpeg.available()).toBe(true);
+      vi.advanceTimersByTime(3_600_000);
+      expect(await fixture.ffmpeg.available()).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("runs a fake command and maps argv[0] to the configured binary", async () => {
     const fake = fakeBinary(
       "ffmpeg",

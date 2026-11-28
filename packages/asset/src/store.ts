@@ -27,7 +27,7 @@ import {
   statSync,
   writeSync,
 } from "node:fs";
-import { join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { brandString } from "@deepseek-ai/dsh-brand";
 import {
   ProjectError,
@@ -45,6 +45,8 @@ const ASSETS_DIR = "assets";
 const OBJECTS_DIR = "objects";
 const THUMBS_DIR = "thumbs";
 const INDEX_FILE = "index.jsonl";
+/** The name of a file `beginUpload` hands out. */
+const PARTIAL_NAME = /^\.[0-9a-f-]{36}\.partial$/;
 /** Bytes read per step when a file is copied in, so that a large file never sits in memory. */
 const CHUNK_BYTES = 1024 * 1024;
 
@@ -118,24 +120,122 @@ export class AssetFiles {
   ): AssetId {
     const dir = this.assetsDir(project);
     const objects = join(dir, OBJECTS_DIR);
+    if (!(source instanceof Uint8Array)) {
+      // The source is this project's own object of an indexed asset: there is nothing to copy.
+      const own = this.ownObject(dir, source.path);
+      if (own !== null) return own;
+    }
     mkdirSync(objects, { recursive: true });
     // The ID is the hash of the bytes, known only after the copy, so the copy goes to a temporary name first.
     const partial = join(objects, `.${randomUUID()}.partial`);
-    let id: AssetId;
-    let size: number;
     try {
-      ({ id, size } =
-        source instanceof Uint8Array ? copyBytes(source, partial) : copyFile(source.path, partial));
-      if (this.entries(dir).has(id)) {
-        rmSync(partial, { force: true });
-        return id;
-      }
-      // A crash leaves only a `.partial` file, never a half-written object under its hash.
-      renameSync(partial, join(objects, id));
+      const content =
+        source instanceof Uint8Array ? copyBytes(source, partial) : copyFile(source.path, partial);
+      return this.settle(dir, partial, content, meta, createdBy);
     } catch (error) {
       rmSync(partial, { force: true });
       throw error;
     }
+  }
+
+  /**
+   * Start an upload that the caller streams to disk itself: make the project's `objects` directory and name a file in
+   * it to write the bytes to. The caller then hands the file to `commitUpload` or `discardUpload`.
+   * @param project - the project whose folder receives the bytes.
+   * @returns the path of a new partial file (not yet created).
+   * @throws ProjectError `unknown_project`.
+   */
+  beginUpload(project: ProjectId): string {
+    const objects = join(this.assetsDir(project), OBJECTS_DIR);
+    mkdirSync(objects, { recursive: true });
+    return join(objects, `.${randomUUID()}.partial`);
+  }
+
+  /**
+   * Finish an upload: move the partial file to its content address and index it, or drop it when the project already
+   * holds the bytes.
+   * @param project - the project the upload began in.
+   * @param partialPath - the path `beginUpload` returned, now holding the whole body.
+   * @param content - the SHA-256 ID and the byte count of the body, which the caller computed while writing.
+   * @param content.id - the asset ID.
+   * @param content.size - the size in bytes.
+   * @param meta - the media type, the display name, and the pixel size and duration when known.
+   * @param createdBy - the record that created the asset; null outside any record.
+   * @returns the asset ID.
+   * @throws Error when `partialPath` is not a partial file in this project's `objects` directory.
+   * @throws ProjectError `unknown_project`.
+   */
+  commitUpload(
+    project: ProjectId,
+    partialPath: string,
+    content: { id: AssetId; size: number },
+    meta: ImportMeta,
+    createdBy: RecordId | null,
+  ): AssetId {
+    const dir = this.assetsDir(project);
+    if (
+      resolve(partialPath) !== partialPath ||
+      dirname(partialPath) !== join(dir, OBJECTS_DIR) ||
+      !PARTIAL_NAME.test(basename(partialPath))
+    ) {
+      throw new Error("The file is not an upload of this project.");
+    }
+    try {
+      return this.settle(dir, partialPath, content, meta, createdBy);
+    } catch (error) {
+      rmSync(partialPath, { force: true });
+      throw error;
+    }
+  }
+
+  /**
+   * Remove a partial upload file; a file that is already gone is fine.
+   * @param partialPath - the path `beginUpload` returned.
+   * @throws Error when it is not a partial file of an `objects` directory in a project folder.
+   */
+  discardUpload(partialPath: string): void {
+    const objects = dirname(partialPath);
+    if (
+      resolve(partialPath) !== partialPath ||
+      !PARTIAL_NAME.test(basename(partialPath)) ||
+      basename(objects) !== OBJECTS_DIR ||
+      basename(dirname(objects)) !== ASSETS_DIR ||
+      basename(dirname(dirname(objects))) !== PROJECT_DIR
+    ) {
+      throw new Error("The file is not an upload.");
+    }
+    rmSync(partialPath, { force: true });
+  }
+
+  /**
+   * Put a finished partial file in place: drop it when the project holds the object, else move it to its address and
+   * index it. An indexed asset whose object file is missing gets its bytes back and keeps its entry.
+   * @param dir - the project's `assets/` directory.
+   * @param partial - the finished partial file, in `dir`'s `objects`.
+   * @param content - the ID and size of its bytes.
+   * @param content.id - the asset ID.
+   * @param content.size - the size in bytes.
+   * @param meta - the media facts for a new entry.
+   * @param createdBy - the creating record for a new entry.
+   * @returns the asset ID.
+   */
+  private settle(
+    dir: string,
+    partial: string,
+    content: { id: AssetId; size: number },
+    meta: ImportMeta,
+    createdBy: RecordId | null,
+  ): AssetId {
+    const { id, size } = content;
+    const object = join(dir, OBJECTS_DIR, id);
+    const indexed = this.entries(dir).has(id);
+    if (indexed && existsSync(object)) {
+      rmSync(partial, { force: true });
+      return id;
+    }
+    // A crash leaves only a `.partial` file, never a half-written object under its hash.
+    renameSync(partial, object);
+    if (indexed) return id;
     this.append(dir, {
       id,
       mime: meta.mime,
@@ -148,6 +248,19 @@ export class AssetFiles {
       duration_sec: meta.durationSec ?? null,
     });
     return id;
+  }
+
+  /**
+   * @param dir - a project's `assets/` directory.
+   * @param path - a source path.
+   * @returns the asset ID when the path is the object file of an indexed asset of that project and the file exists;
+   *   else null.
+   */
+  private ownObject(dir: string, path: string): AssetId | null {
+    const name = basename(path);
+    if (!/^[0-9a-f]{64}$/.test(name) || resolve(path) !== join(dir, OBJECTS_DIR, name)) return null;
+    const id = brandString<AssetId>(name);
+    return this.entries(dir).has(id) && existsSync(path) ? id : null;
   }
 
   /**
@@ -316,7 +429,10 @@ export class AssetFiles {
     const entries = new Map<AssetId, StoredAsset>();
     const indexPath = join(dir, INDEX_FILE);
     if (existsSync(indexPath)) {
-      for (const line of readFileSync(indexPath, "utf8").split("\n")) {
+      const text = readFileSync(indexPath, "utf8");
+      // A torn last line (a crash mid-append) must not swallow the next entry appended to it.
+      if (text !== "" && !text.endsWith("\n")) appendFileSync(indexPath, "\n");
+      for (const line of text.split("\n")) {
         const entry = parseLine(line);
         if (entry !== null && existsSync(join(dir, OBJECTS_DIR, entry.id)))
           entries.set(entry.id, entry);

@@ -507,3 +507,73 @@ describe("asset.list", () => {
     expect(report.items).toMatchObject([{ id: out, made_by: "cs_image_make", origin: "output" }]);
   });
 });
+
+describe("references the preconditions cannot resolve", () => {
+  const CALLS: Array<[string, Record<string, unknown>]> = [
+    ["asset.tag", { add: ["x"] }],
+    ["asset.move", {}],
+    ["asset.delete", {}],
+    ["asset.review", { review: "held" }],
+  ];
+
+  it.each(CALLS)(
+    "%s refuses a reference to an import record outside the history",
+    async (operation, params) => {
+      const f = await mount();
+      const a = f.stored("one");
+      const imported = f.id(
+        (await f.run("asset.import", {}, { role: "file", assets: [a] })).record,
+      );
+      // The reducer orders a delete after an import by timestamp, so the two must not share a millisecond.
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      await f.run("asset.delete", {}, { assets: [a] });
+      const before = f.count();
+      const failure = await refusal(
+        f.runRaw({
+          operation,
+          params,
+          inputs: [{ role: "asset", ref: { record: imported, output: 0 } }],
+        }),
+      );
+      expect(failure.code).toBe("invalid_inputs");
+      expect(failure.message).toContain("asset ID");
+      expect(f.count()).toBe(before);
+      expect(f.library().items[a]).toBeUndefined();
+    },
+  );
+
+  it.each(CALLS)(
+    "%s refuses a reference to the output of an undone step",
+    async (operation, params) => {
+      const f = await mount();
+      const made = await f.runGenerate("gen");
+      const step = f.id(made.record);
+      await f.undo();
+      const before = f.count();
+      const failure = await refusal(
+        f.runRaw({
+          operation,
+          params,
+          inputs: [{ role: "asset", ref: { record: step, output: 0 } }],
+        }),
+      );
+      expect(failure.code).toBe("invalid_inputs");
+      expect(f.count()).toBe(before);
+    },
+  );
+
+  it.each(CALLS)(
+    "%s still accepts a reference to a step in the current history",
+    async (operation, params) => {
+      const f = await mount();
+      const made = await f.runGenerate("gen");
+      const before = f.count();
+      await f.runRaw({
+        operation,
+        params,
+        inputs: [{ role: "asset", ref: { record: f.id(made.record), output: 0 } }],
+      });
+      expect(f.count()).toBe(before + 1);
+    },
+  );
+});

@@ -10,7 +10,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { brandString } from "@deepseek-ai/dsh-brand";
 import { ProjectError, type ProjectId } from "@cs/project";
@@ -246,5 +246,134 @@ describe("probeMedia", () => {
 describe("test helpers", () => {
   it("make separate temporary directories", () => {
     expect(tempDir()).not.toBe(tempDir());
+  });
+});
+
+const objectsOf = (root: string, name: string): string =>
+  join(root, name, PROJECT_DIR, "assets", "objects");
+
+describe("AssetFiles uploads", () => {
+  it("commits a streamed file as a new asset, keeping the bytes at their address", () => {
+    const { files, addProject, root } = testStore();
+    const project = addProject("p1");
+    const partial = files.beginUpload(project);
+    expect(dirname(partial)).toBe(objectsOf(root, "p1"));
+    const bytes = Buffer.from("streamed");
+    writeFileSync(partial, bytes);
+    const id = files.commitUpload(project, partial, { id: idOf(bytes), size: 8 }, PNG, null);
+    expect(id).toBe(idOf(bytes));
+    expect(files.read(id)).toEqual(bytes);
+    expect(files.get(id)).toMatchObject({ name: "a.png", size_bytes: 8 });
+    expect(readdirSync(objectsOf(root, "p1"))).toEqual([id]);
+  });
+
+  it("drops the partial file of a duplicate and keeps the first entry", () => {
+    const { files, addProject, root } = testStore();
+    const project = addProject("p1");
+    const bytes = Buffer.from("twice");
+    const first = files.importAsset(project, bytes, PNG, null);
+    const partial = files.beginUpload(project);
+    writeFileSync(partial, bytes);
+    const again = files.commitUpload(
+      project,
+      partial,
+      { id: idOf(bytes), size: 5 },
+      { mime: "image/png", name: "b.png" },
+      null,
+    );
+    expect(again).toBe(first);
+    expect(files.get(first).name).toBe("a.png");
+    expect(readdirSync(objectsOf(root, "p1"))).toEqual([first]);
+  });
+
+  it("restores the object of an indexed asset whose file is gone", () => {
+    const { files, addProject, root } = testStore();
+    const project = addProject("p1");
+    const bytes = Buffer.from("lost");
+    const id = files.importAsset(project, bytes, PNG, null);
+    rmSync(join(objectsOf(root, "p1"), id));
+    const partial = files.beginUpload(project);
+    writeFileSync(partial, bytes);
+    expect(files.commitUpload(project, partial, { id, size: 4 }, PNG, null)).toBe(id);
+    expect(files.read(id)).toEqual(bytes);
+    expect(readdirSync(objectsOf(root, "p1"))).toEqual([id]);
+  });
+
+  it("refuses a partial path that is not an upload file of the project", () => {
+    const { files, addProject, root } = testStore();
+    const one = addProject("p1");
+    const two = addProject("p2");
+    const id = files.importAsset(one, Buffer.from("x"), PNG, null);
+    const elsewhere = writeFile(root, ".00000000-0000-0000-0000-000000000000.partial", "y");
+    const content = { id: idOf("y"), size: 1 };
+    expect(() => files.commitUpload(one, elsewhere, content, PNG, null)).toThrow(Error);
+    expect(() => files.commitUpload(one, files.path(id), content, PNG, null)).toThrow(Error);
+    // A real partial of another project is refused too.
+    const foreign = files.beginUpload(two);
+    expect(() => files.commitUpload(one, foreign, content, PNG, null)).toThrow(Error);
+    expect(() => files.discardUpload(elsewhere)).toThrow(Error);
+    expect(() => files.discardUpload(files.path(id))).toThrow(Error);
+    expect(existsSync(elsewhere)).toBe(true);
+    expect(existsSync(files.path(id))).toBe(true);
+    files.discardUpload(foreign);
+    // A missing file is fine.
+    files.discardUpload(foreign);
+  });
+
+  it("refuses an unknown project", () => {
+    const { files } = testStore();
+    expect(() => files.beginUpload(brandString<ProjectId>("nope"))).toThrow(ProjectError);
+  });
+});
+
+describe("AssetFiles.importAsset of files the store already holds", () => {
+  it("answers the ID of the project's own object without creating a partial file", () => {
+    const { files, addProject, root } = testStore();
+    const project = addProject("p1");
+    const id = files.importAsset(project, Buffer.from("own"), PNG, null);
+    const objects = join(root, "p1", PROJECT_DIR, "assets", "objects");
+    expect(files.importAsset(project, { path: files.path(id) }, PNG, null)).toBe(id);
+    expect(readdirSync(objects)).toEqual([id]);
+    const index = join(root, "p1", PROJECT_DIR, "assets", "index.jsonl");
+    expect(readFileSync(index, "utf8").trim().split("\n")).toHaveLength(1);
+  });
+
+  it("copies the object of another project into this one", () => {
+    const { files, addProject, root } = testStore();
+    const one = addProject("p1");
+    const two = addProject("p2");
+    const id = files.importAsset(one, Buffer.from("shared"), PNG, null);
+    expect(files.importAsset(two, { path: files.path(id) }, PNG, null)).toBe(id);
+    expect(readdirSync(join(root, "p2", PROJECT_DIR, "assets", "objects"))).toEqual([id]);
+  });
+
+  it("writes the object again when its index entry is there but the file was removed", () => {
+    const store = testStore();
+    const project = store.addProject("p1");
+    const bytes = Buffer.from("again");
+    const id = store.files.importAsset(project, bytes, PNG, null);
+    const object = join(store.root, "p1", PROJECT_DIR, "assets", "objects", id);
+    rmSync(object);
+    expect(store.files.importAsset(project, bytes, PNG, null)).toBe(id);
+    expect(readFileSync(object)).toEqual(bytes);
+    const source = writeFile(store.root, "src.bin", bytes);
+    rmSync(object);
+    expect(store.files.importAsset(project, { path: source }, PNG, null)).toBe(id);
+    expect(readFileSync(object)).toEqual(bytes);
+  });
+});
+
+describe("a torn last line of the index", () => {
+  it("does not swallow the entry appended after it", () => {
+    const store = testStore();
+    const project = store.addProject("p1");
+    const first = store.files.importAsset(project, Buffer.from("first"), PNG, null);
+    const index = join(store.root, "p1", PROJECT_DIR, "assets", "index.jsonl");
+    appendFileSync(index, '{"id":"abc","mime":"image/p');
+    const second = store.restart().importAsset(project, Buffer.from("second"), PNG, null);
+    const again = store.restart();
+    expect(again.has(first)).toBe(true);
+    expect(again.has(second)).toBe(true);
+    expect(readFileSync(index, "utf8").endsWith("\n")).toBe(true);
   });
 });

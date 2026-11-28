@@ -171,10 +171,9 @@ function reduceOutputs(slice: AssetSlice, record: ProjectRecord): AssetSlice {
   let marks = slice.marks;
   for (const id of record.outputs) {
     const mark = marks[id];
-    if (items[id] !== undefined) {
-      if (mark !== undefined) marks = withoutKey(marks, id);
-      continue;
-    }
+    // Already in the library. A mark beside an item is only ever the record of an earlier deletion (below), and it
+    // stays: an import written before that deletion must not claim the asset when it is reduced.
+    if (items[id] !== undefined) continue;
     // What steps said before an import that is still to come (review, folder, tags) belongs to the new item.
     const item: AssetItem = {
       id,

@@ -109,6 +109,8 @@ export class FfmpegError extends Error {
 }
 
 const DEFAULT_TIMEOUT_MS = 600_000;
+/** How long a `false` answer of `available()` is kept before ffmpeg is checked again. */
+const UNAVAILABLE_RETRY_MS = 60_000;
 const PLACEHOLDER = /\{\{(in|out):([^}]+)\}\}/g;
 
 /** The captured outcome of one process. */
@@ -170,6 +172,8 @@ export default class CsFfmpeg extends Service {
   private running = 0;
   private readonly waiting: (() => void)[] = [];
   private availability: Promise<boolean> | undefined;
+  /** When the cached `false` answer settled, in `Date.now()` milliseconds; null while there is none. */
+  private unavailableAt: number | null = null;
 
   constructor(ctx: Context, config: Config) {
     super(ctx, "csFfmpeg");
@@ -177,16 +181,26 @@ export default class CsFfmpeg extends Service {
   }
 
   /**
-   * Whether the ffmpeg binary can be started. The first call runs `ffmpeg -version`; the answer is kept for the life
-   * of the service. Callers use it to skip work when ffmpeg is not installed.
+   * Whether the ffmpeg binary can be started. The first call runs `ffmpeg -version`; a `true` answer is kept for the
+   * life of the service, a `false` one for {@link UNAVAILABLE_RETRY_MS}, so a transient failure heals. Callers use it
+   * to skip work when ffmpeg is not installed.
    * @returns true when `ffmpeg -version` ran and exited with zero.
    */
   available(): Promise<boolean> {
+    if (this.unavailableAt !== null && Date.now() - this.unavailableAt >= UNAVAILABLE_RETRY_MS) {
+      this.availability = undefined;
+      this.unavailableAt = null;
+    }
     this.availability ??= this.execute(this.config.ffmpegPath, ["-version"], tmpdir(), 10_000).then(
       (outcome) => outcome.exitCode === 0,
       () => false,
     );
-    return this.availability;
+    const answer = this.availability;
+    void answer.then((available) => {
+      if (!available && this.availability === answer) this.unavailableAt ??= Date.now();
+      return available;
+    });
+    return answer;
   }
 
   /**
@@ -260,6 +274,8 @@ export default class CsFfmpeg extends Service {
         "json",
         "-show_format",
         "-show_streams",
+        "-protocol_whitelist",
+        "file",
         "{{in:0}}",
       ],
       inputs: [path],
@@ -308,6 +324,8 @@ export default class CsFfmpeg extends Service {
         "-y",
         "-loglevel",
         "error",
+        "-protocol_whitelist",
+        "file",
         "-sseof",
         "-1",
         "-i",

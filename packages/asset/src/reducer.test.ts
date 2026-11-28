@@ -523,6 +523,25 @@ const TIMELINES: Timeline[] = [
     },
   },
   {
+    // The second output must not forget the deletion: the import came before it.
+    name: "import, delete, then two outputs of the same bytes",
+    events: [
+      importEvent("i1", 1, [A]),
+      step("d1", "asset.delete", 2, [A]),
+      made("g3", 3, [A]),
+      made("g4", 4, [A]),
+    ],
+    items: {
+      [A]: item({
+        id: A,
+        origin: "output",
+        record: recordId("g3"),
+        added_at: at(3),
+        review: "pending",
+      }),
+    },
+  },
+  {
     name: "output, delete, import",
     events: [made("g1", 1, [A]), step("d1", "asset.delete", 2, [A]), importEvent("i3", 3, [A])],
     items: { [A]: item({ id: A, origin: "import", record: recordId("i3"), added_at: at(3) }) },

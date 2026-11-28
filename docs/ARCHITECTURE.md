@@ -175,7 +175,7 @@ export function apply(ctx: Context): void {
 <프로젝트 폴더>/.comfy-studio/assets/thumbs/<sha256>.webp    썸네일. 지워도 다시 만든다
 ```
 
-에셋 id는 바이트의 SHA-256이다. 같은 파일을 한 프로젝트에 두 번 넣으면 에셋 하나다. `.comfy-studio/` 가운데 `assets/`는 이 컴포넌트만 읽고 쓴다. 크기(가로·세로)와 길이는 ffmpeg 서비스(`@cs/ffmpeg`, `ctx.csFfmpeg`)가 있으면 읽어 색인에 덧붙이고 썸네일도 그것으로 만든다. ffmpeg이 없으면 그 칸들이 비고 썸네일이 없을 뿐 나머지는 그대로 돈다.
+에셋 id는 바이트의 SHA-256이다. 같은 파일을 한 프로젝트에 두 번 넣으면 에셋 하나다. `.comfy-studio/` 가운데 `assets/`는 이 컴포넌트만 읽고 쓴다. 크기(가로·세로)와 길이는 ffmpeg 서비스(`@cs/ffmpeg`, `ctx.csFfmpeg`)가 있으면 읽어 색인에 덧붙이고 썸네일도 그것으로 만든다. ffmpeg이 없으면 그 칸들이 비고 썸네일이 없을 뿐 나머지는 그대로 돈다. ffmpeg은 에셋을 읽을 때 로컬 파일만 연다(`-protocol_whitelist file`).
 
 **라이브러리.** 상태 조각 `asset`은 `{ items, folders, marks }`다(`@cs/asset/types`). 리듀서가 기록에서 계산한다.
 
@@ -208,7 +208,7 @@ export function apply(ctx: Context): void {
 
 - **화면에 바로 그려도 되는 종류만 제 종류로 준다**(PNG·JPEG·WebP·GIF·AVIF, MP4·WebM·QuickTime, 흔한 오디오). 그 밖은 HTML과 SVG를 포함해 `application/octet-stream` 첨부다. 올린 파일의 스크립트가 우리 출처에서 돌지 않게 한다. 모든 응답에 `X-Content-Type-Options: nosniff`와 `Content-Security-Policy: sandbox; default-src 'none'`이 붙는다.
 - id가 내용이라 `Cache-Control: private, max-age=31536000, immutable`이다.
-- 올리기의 한도는 설정 `maxUploadBytes`(번들의 `cs-asset` 행. 기본 2GiB)이고 넘으면 413이다. 화면은 올리기 전에 크기를 본다: 한도를 한참 넘는 본문은 서버가 다 읽지 않고 연결을 끊어 브라우저가 답을 받지 못한다.
+- 올리기는 본문을 프로젝트의 `objects/` 안 임시 파일로 바로 받으며 해시를 내고, 끝나면 이름만 바꾼다(파일을 다시 읽거나 복사하지 않는다). 한도는 설정 `maxUploadBytes`(번들의 `cs-asset` 행. 기본 2GiB)이고 넘으면 413이다. 화면은 올리기 전에 크기를 본다: 한도를 한참 넘는 본문은 서버가 다 읽지 않고 연결을 끊어 브라우저가 답을 받지 못한다.
 - 에이전트와 카드에 보이는 에셋 주소의 앞부분은 설정 `publicBaseUrl`이다(기본은 빈 값이라 상대 주소다).
 
 ## 두 계약

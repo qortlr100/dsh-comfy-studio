@@ -505,10 +505,14 @@ export default class CsProject extends Service {
   /**
    * Move the current position one step back. Writes no record. Rules in the history module.
    * @param project - the project.
+   * @param check - called under the project lock just before the move; a throw refuses the move.
    * @returns the last step and the current position afterwards. Throws `nothing_to_undo` at the first record.
    */
-  undo(project: ProjectId): Promise<ProjectLine> {
-    return this.store.lock(project, () => this.history.undo(project));
+  undo(project: ProjectId, check?: () => void): Promise<ProjectLine> {
+    return this.store.lock(project, () => {
+      check?.();
+      return this.history.undo(project);
+    });
   }
 
   /**
@@ -516,20 +520,28 @@ export default class CsProject extends Service {
    * module.
    * @param project - the project.
    * @param to - a step of the history list.
+   * @param check - called under the project lock just before the move; a throw refuses the move.
    * @returns the last step and the current position afterwards. Throws `unknown_record`, or `invalid_params` for a
    *   discarded record.
    */
-  moveTo(project: ProjectId, to: RecordId): Promise<ProjectLine> {
-    return this.store.lock(project, () => this.history.moveTo(project, to));
+  moveTo(project: ProjectId, to: RecordId, check?: () => void): Promise<ProjectLine> {
+    return this.store.lock(project, () => {
+      check?.();
+      return this.history.moveTo(project, to);
+    });
   }
 
   /**
    * Move the current position one step forward, toward the last step. Writes no record.
    * @param project - the project.
+   * @param check - called under the project lock just before the move; a throw refuses the move.
    * @returns the last step and the current position afterwards. Throws `nothing_to_redo`.
    */
-  redo(project: ProjectId): Promise<ProjectLine> {
-    return this.store.lock(project, () => this.history.redo(project));
+  redo(project: ProjectId, check?: () => void): Promise<ProjectLine> {
+    return this.store.lock(project, () => {
+      check?.();
+      return this.history.redo(project);
+    });
   }
 
   /**
