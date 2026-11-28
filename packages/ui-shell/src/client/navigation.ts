@@ -56,6 +56,25 @@ export function followMainSession(input: {
 }
 
 /**
+ * Decide whether the main session's first move into a project is dsh's startup restore of a
+ * browser the shell has never seen, which must leave the center on the home page. Any
+ * resolution to a project uses the arming up, whether or not it is swallowed.
+ * @param input.armed - the browser is on its first visit and the user has not navigated yet.
+ * @param input.sessionProject - the main session's project now.
+ * @param input.open - the project open in the center.
+ * @returns `swallow` to leave the center as it is, and the `armed` state for the next call.
+ */
+export function startupRestore(input: {
+  armed: boolean;
+  sessionProject: string | null;
+  open: string | null;
+}): { swallow: boolean; armed: boolean } {
+  const { armed, sessionProject, open } = input;
+  if (!armed || sessionProject === null) return { swallow: false, armed };
+  return { swallow: open === null, armed: false };
+}
+
+/**
  * Send the center home when the open project left the list.
  * @param projects - the project list; null while unread.
  * @param open - the open project.

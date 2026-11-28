@@ -7,7 +7,7 @@ import type { ProjectReader } from "./actions.ts";
 import type { ShellStore } from "./contract.ts";
 import { hostOf } from "./host.ts";
 import type { ShellHost } from "./host.ts";
-import { followMainSession, listedOrHome, projectOfSession } from "./navigation.ts";
+import { followMainSession, listedOrHome, projectOfSession, startupRestore } from "./navigation.ts";
 
 /** Milliseconds before a failed project list read is tried again. */
 export const PROJECT_READ_RETRY_MS = 2000;
@@ -49,22 +49,41 @@ function followProjectList(host: ShellHost, readProjects: ProjectReader): () => 
 /**
  * The open project follows the main session when the session moves into another project (dsh's
  * restore after a reload, a session opened from dsh's own controls), by `followMainSession`.
+ * On a browser's first visit, by the shell's own marker, dsh's startup restore of the most
+ * recent project is swallowed once (`startupRestore`): the center stays home and the panel
+ * folds. Any navigation the user starts through the shell (`ShellState.navigations`) ends that
+ * first: a click during startup is never swallowed.
  */
 function followOpenProject(host: ShellHost, store: ShellStore): () => void {
   let previous: string | null | undefined;
   let syncing = false;
+  let armed = host.claimFirstVisit();
+  let navigations = store.getSnapshot().navigations;
   const sync = (): void => {
     // Our own `set` below notifies this listener again.
     if (syncing) return;
     const workspaces = host.workspaces.getSnapshot();
-    const { projects, projectId, sessionId } = store.getSnapshot();
+    const snapshot = store.getSnapshot();
+    const { projects, projectId, sessionId } = snapshot;
+    if (snapshot.navigations !== navigations) {
+      navigations = snapshot.navigations;
+      armed = false;
+    }
     if (workspaces.phase !== "ready" || projects === null) return;
     const sessionProject = projectOfSession(projects, workspaces.items, sessionId);
-    const next = followMainSession({ previous, sessionProject, open: projectId });
+    const restore = startupRestore({ armed, sessionProject, open: projectId });
+    armed = restore.armed;
+    const before = previous;
     previous = sessionProject;
     syncing = true;
     try {
-      store.set({ projectId: listedOrHome(projects, next) });
+      if (restore.swallow) {
+        store.set({ projectId: null, restoredSession: sessionId });
+        host.collapseRightPanel();
+      } else {
+        const next = followMainSession({ previous: before, sessionProject, open: projectId });
+        store.set({ projectId: listedOrHome(projects, next) });
+      }
     } finally {
       syncing = false;
     }

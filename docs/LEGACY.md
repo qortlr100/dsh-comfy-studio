@@ -63,7 +63,7 @@
 | `characters` | 377   | 캐릭터 순수 로직                                  | 기능 컴포넌트(계획 2)                              |
 | `mcp`        | 312   | MCP 클라이언트                                    | dsh                                                |
 | `agents`     | 226   | 역할 에이전트                                     | 후보: dsh 에이전트 프리셋과 서브에이전트           |
-| `auth`       | 156   | 비밀번호 로그인, 세션                             | dsh의 방식으로 바뀐다(미정, 1-5)                   |
+| `auth`       | 156   | 비밀번호 로그인, 세션                             | dsh의 로그인 + 프록시 쪽 인증(1-5)                 |
 | `schedules`  | 137   | 예약 주기 계산                                    | dsh                                                |
 
 ## ComfyUI 연동
@@ -185,7 +185,7 @@ project_files project_file_versions tags asset_tags presets preset_versions agen
 | 기억, 대화 검색                             | 프리셋 + `messages_fts`                     | dsh 스킬, 세션 검색, 서드파티 MCP 기억                        | 후보                                              |
 | 첨부(이미지·오디오·영상)                    | `attachments`                               | dsh 첨부                                                      | 후보. 오디오·영상은 미확인                        |
 | 프로젝트 문서와 버전                        | `project_files`, `project_file_versions`    | 작업공간 폴더의 파일(dsh 파일 도구)                           | 후보. 에이전트에게 파일 도구를 줄지에 달렸다(1-4) |
-| 로그인                                      | 비밀번호 + iron-session                     | dsh의 토큰 주소 + 세션 쿠키                                   | 방식이 다르다. 미정(1-5)                          |
+| 로그인                                      | 비밀번호 + iron-session                     | dsh의 토큰 주소 + 세션 쿠키, 그 앞에 리버스 프록시 쪽 인증    | dsh. 비밀번호 로그인은 만들지 않는다(1-5에서 정했다. `docs/ARCHITECTURE.md` "접속과 배포") |
 | 비밀값 저장                                 | AES-256-GCM, `APP_SECRET`                   | dsh 자격 증명 저장소                                          | dsh. 플러그인에서 쓰는 법은 미확인(4-1)           |
 | ComfyUI 서버 등록과 연동                    | `lib/comfy`, `comfy_servers`                | 계획 4                                                        | 옮긴다                                            |
 | 워크플로: 템플릿, 가져오기, 그래프 패치     | `workflows`, `graph-patch.ts`               | 계획 2의 기능 컴포넌트 + 계획 4의 라이브러리                  | 옮긴다                                            |

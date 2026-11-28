@@ -166,12 +166,22 @@ export function createShellActions(
   };
 
   /**
+   * The session dsh's startup restore opened, for the navigation that began last and no later
+   * one: a blank chat the user opens afterwards is theirs and is kept like any other.
+   */
+  let restored: string | undefined;
+
+  /**
    * Start a navigation; the returned check is false once a later one started. `leavePage`
    * also cancels what dsh still had pending for the navigation before (see `ShellHost`).
    */
   const begin = (): (() => boolean) => {
     host.leavePage();
     navigation += 1;
+    const { navigations, restoredSession } = store.getSnapshot();
+    // Only the first navigation after the startup restore sees the session it opened.
+    restored = restoredSession;
+    store.set({ navigations: navigations + 1, restoredSession: undefined });
     const mine = navigation;
     return () => !disposed && navigation === mine;
   };
@@ -237,7 +247,9 @@ export function createShellActions(
       host.workspaces.getSnapshot().archivedSessionIds,
     );
     const main = store.getSnapshot().sessionId;
-    const pick = pickSession(rows, main, sessionId);
+    // The blank chat dsh's startup restore opened was never the user's: it does not outrank the
+    // project's latest written chat.
+    const pick = pickSession(rows, main === restored ? undefined : main, sessionId);
     if (pick === undefined) {
       // dsh reuses the workspace's blank session or creates one, and makes it the main session.
       await host.openWorkspace(projectId);

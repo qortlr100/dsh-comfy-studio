@@ -28,13 +28,23 @@ export interface OpenPageOptions {
   modelConfigured?: boolean;
   /** Default "light". */
   colorScheme?: "light" | "dark";
+  /**
+   * Host names the browser resolves to 127.0.0.1, e.g. `["studio.example.test"]`, so a page can
+   * be opened through a test proxy under a host name of its own (Chromium `--host-resolver-rules`).
+   */
+  mapHostsToLoopback?: readonly string[];
 }
 
 const DIALOG_TIMEOUT_MS = 15_000;
 
-async function launchBrowser(): Promise<Browser> {
+async function launchBrowser(mapHosts: readonly string[]): Promise<Browser> {
+  // One flag only: Chromium keeps the last of a repeated switch.
+  const args =
+    mapHosts.length === 0
+      ? []
+      : [`--host-resolver-rules=${mapHosts.map((host) => `MAP ${host} 127.0.0.1`).join(",")}`];
   try {
-    return await chromium.launch({ executablePath: process.env.CHROME || undefined });
+    return await chromium.launch({ executablePath: process.env.CHROME || undefined, args });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (/Executable doesn't exist|ENOENT/.test(message)) {
@@ -61,7 +71,7 @@ async function closeDialog(page: Page, title: string, button: string): Promise<v
 }
 
 export async function openPage(url: string, options: OpenPageOptions = {}): Promise<PageSession> {
-  const browser = await launchBrowser();
+  const browser = await launchBrowser(options.mapHostsToLoopback ?? []);
   let closing: Promise<void> | undefined;
   const close = (): Promise<void> => {
     closing ??= browser.close();
