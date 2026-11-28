@@ -196,6 +196,37 @@ describe("gen.run", () => {
     expect(entry.uploads[0]?.asset).toBe(first.outputs[0]);
   });
 
+  it("queues behind a generation that has not finished when a media input names its output", async () => {
+    const held = Promise.withResolvers<void>();
+    const { f, entry, workflow } = await mountWithEntry({ hold: held.promise });
+    const first = defined((await f.run({ workflow })).record);
+    await vi.waitFor(() => {
+      expect(entry.runs).toHaveLength(1);
+    });
+
+    // The first generation has no output yet: the call is taken and waits for it.
+    const second = defined(
+      (
+        await f.run(
+          { workflow, media_fields: ["10.image"] },
+          { media: [{ record: first.id, output: 0 }] },
+        )
+      ).record,
+    );
+    expect(second.status).toBe("pending");
+    held.resolve();
+    await f.csProject.wait(f.project, [first.id, second.id]);
+
+    const made = f.csProject.getRecord(f.project, first.id);
+    expect(f.csProject.getRecord(f.project, second.id).status).toBe("done");
+    expect(entry.uploads).toHaveLength(1);
+    expect(entry.uploads[0]?.asset).toBe(made.outputs[0]);
+    // An output a finished step does not have is still refused before anything is queued.
+    await expect(
+      f.run({ workflow, media_fields: ["10.image"] }, { media: [{ record: first.id, output: 5 }] }),
+    ).rejects.toMatchObject({ code: "invalid_inputs" });
+  });
+
   it("applies the patch to this run only", async () => {
     const { f, entry, workflow } = await mountWithEntry();
 

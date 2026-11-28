@@ -114,13 +114,15 @@ function counted(count: number, noun: string): string {
  * Resolve the assets of the call's `media` inputs against the current history.
  * @param request - a call.
  * @param state - the project's current state, to find the output a `{record, output}` input names.
- * @returns the assets in input order (an asset may repeat).
+ * @returns the assets in input order (an asset may repeat); `null` for the output of a step that has not finished
+ *   yet (an earlier generation still queued or running): the call waits for that step, and `execute` checks the asset
+ *   once it exists.
  * @throws ProjectError `invalid_inputs` for a reference this function cannot resolve against the current history (a
- *   step outside it, an output the step does not have, or a version reference). The runner resolves such references
- *   through the record store, so letting them pass unchecked would bypass the preconditions.
+ *   step outside it, an output a finished step does not have, or a version reference). The runner resolves such
+ *   references through the record store, so letting them pass unchecked would bypass the preconditions.
  */
-function mediaAssets(request: RunRequest, state: ProjectState): AssetId[] {
-  const found: AssetId[] = [];
+function mediaAssets(request: RunRequest, state: ProjectState): Array<AssetId | null> {
+  const found: Array<AssetId | null> = [];
   for (const input of request.inputs) {
     if (input.role !== "media") continue;
     const ref = input.ref;
@@ -128,7 +130,12 @@ function mediaAssets(request: RunRequest, state: ProjectState): AssetId[] {
       found.push(ref.asset);
     } else if ("record" in ref) {
       const producer = state.components.proj.records.find((record) => record.id === ref.record);
-      const output = producer?.outputs[ref.output];
+      if (producer === undefined) throw unresolvable();
+      if (producer.status === "pending" || producer.status === "running") {
+        found.push(null);
+        continue;
+      }
+      const output = producer.outputs[ref.output];
       if (output === undefined) throw unresolvable();
       found.push(output);
     } else {
@@ -136,6 +143,29 @@ function mediaAssets(request: RunRequest, state: ProjectState): AssetId[] {
     }
   }
   return found;
+}
+
+/**
+ * @param deps - the operation's dependencies.
+ * @param plan - the plan of the call.
+ * @param assets - the media assets in input order; `null` for one that does not exist yet.
+ * @returns the sentence for the first asset whose kind is not the kind its field takes; null when all fit.
+ */
+function kindProblem(
+  deps: Pick<OperationDeps, "mimeOf">,
+  plan: GenPlan,
+  assets: ReadonlyArray<AssetId | null>,
+): string | null {
+  for (const [index, asset] of assets.entries()) {
+    const place = plan.media[index];
+    const kind = place?.kind ?? null;
+    if (asset === null || place === undefined || kind === null) continue;
+    const mime = deps.mimeOf(asset);
+    if (mime.split("/")[0] !== kind) {
+      return `Media input ${String(index + 1)} is ${mime}, but field '${place.field}' takes ${kind === "video" ? "a" : "an"} ${kind}.`;
+    }
+  }
+  return null;
 }
 
 /** @returns the refusal for an input reference that names no asset of the current history. */
@@ -280,19 +310,10 @@ export function runOperation(deps: OperationDeps): OperationSpec {
     },
     async precondition(request, state) {
       const { params, workflow, assets, plan } = planOf(request, state);
-      // The kind of each asset must be the kind its field takes.
-      assets.forEach((asset, index) => {
-        const place = plan.media[index];
-        const kind = place?.kind ?? null;
-        if (place === undefined || kind === null) return;
-        const mime = deps.mimeOf(asset);
-        if (mime.split("/")[0] !== kind) {
-          throw new ProjectError(
-            "invalid_inputs",
-            `Media input ${String(index + 1)} is ${mime}, but field '${place.field}' takes ${kind === "video" ? "a" : "an"} ${kind}.`,
-          );
-        }
-      });
+      // The kind of each asset must be the kind its field takes; an asset that does not exist yet is checked by
+      // `execute`.
+      const problem = kindProblem(deps, plan, assets);
+      if (problem !== null) throw new ProjectError("invalid_inputs", problem);
       const entry = deps.entry(params.target, workflow.item.target);
       const problems = await entry.validate({
         graph: plan.graph,
@@ -310,6 +331,9 @@ export function runOperation(deps: OperationDeps): OperationSpec {
           return input.resolved_asset;
         });
       const plan = planRun(context.params, workflow, assets.length);
+      // The precondition could not check an input that named the output of a step still running then.
+      const problem = kindProblem(deps, plan, assets);
+      if (problem !== null) throw new OperationFailure("invalid_inputs", problem);
       const entry = deps.entry(params.target, workflow.item.target);
       return await runBatch(deps, context, plan, entry, workflow, assets);
     },
