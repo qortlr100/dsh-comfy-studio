@@ -554,8 +554,7 @@ dsh 웹(`dsh-web-app` 번들)에서 에이전트가 가질 도구·스킬·페�
         displayName: My model
         api: openai-completions        # OpenAI Chat Completions
         baseURL: http://<host>:<port>/v1
-        headers:
-          Authorization: Bearer <값>   # 키를 받지 않는 서버에도 필요하다(아래)
+        apiKeyEnv: MY_LLM_API_KEY      # 키의 참조다(이름만). 키 값은 이 파일에 적지 않는다(아래)
         reasoning: medium              # 입력창의 "Default"가 보내는 추론 강도
         compat:
           thinkingFormat: openai       # 추론 강도를 reasoning_effort로 보낸다
@@ -571,7 +570,8 @@ dsh 웹(`dsh-web-app` 번들)에서 에이전트가 가질 도구·스킬·페�
     model: <model id>
 ```
 
-- **키를 받지 않는 서버에도 `Authorization` 헤더나 키가 있어야 한다.** dsh가 쓰는 OpenAI 호환 구현은 둘 다 없으면 요청을 보내지 않는다(**소스 확인**: `@deepseek-ai/dsh-llm-pi-ai` README "Known Limitations"). `headers`에 아무 값이나 적거나, `apiKeyEnv: <환경 변수 이름>`을 적고 그 변수에 아무 값이나 준다. 둘 다 해 봤다(**띄워 확인**).
+- **키는 참조로만 적는다.** `apiKeyEnv`는 키 값이 아니라 자격 증명의 이름이고, dsh가 요청마다 자격 증명 서비스로 푼다. 그 이름의 환경 변수를 준 채 띄우면 그 값을 쓴다(**띄워 확인**). 설정 화면에서 넣은 키는 `$DSH_HOME/.credentials.yaml`에 저장된다고 업스트림 문서에 있다(**소스 확인**. 해 보지 않았다). 키나 토큰을 `headers`나 `baseURL`에 직접 적지 않는다. 프로필의 패치 파일은 평문이고, gitignore된 home 안에 있어도 "비밀값을 평문으로 설정 파일에 남기지 않는다"(`AGENTS.md`)에 걸린다.
+- **키를 받지 않는 서버에도 `Authorization` 헤더나 키가 있어야 한다.** dsh가 쓰는 OpenAI 호환 구현은 둘 다 없으면 요청을 보내지 않는다(**소스 확인**: `@deepseek-ai/dsh-llm-pi-ai` README "Known Limitations"). 이때는 `apiKeyEnv`의 변수에 아무 값이나 주거나, `apiKeyEnv` 대신 `headers: { Authorization: Bearer none }`처럼 비밀이 아닌 자리 채우기 값을 적는다. 둘 다 해 봤다(**띄워 확인**). 헤더에 값을 직접 적는 것은 인증이 없는 서버의 자리 채우기에만 쓴다.
 - 프로필의 `cordis.patch.yml`에 적어도 되고 `--patch` 파일로 줘도 된다. 프로필 파일에 적은 것은 dsh가 설정 화면의 값을 같은 파일에 덧붙여도 주석까지 그대로 남았다(**띄워 확인**). 패치로 넣은 프로바이더는 설정 → Models에 "Custom"으로 보인다.
 - 이렇게 모델이 잡힌 home에서는 "Get started" 창이 뜨지 않는다. 새로고침해도 뜨지 않는다(**띄워 확인**).
 - **추론.** 응답의 `reasoning_content`는 `compat` 설정 없이도 추론으로 읽히고, 다음 요청에 그 메시지의 `reasoning_content`로 되돌아간다. `reasoningEfforts`를 적지 않으면 추론 관련 값을 아무것도 보내지 않아 서버의 기본값대로 돈다. 적으면 입력창의 모델 선택에 "Effort"가 생기고 고른 단계의 값이 `reasoning_effort`로 간다(`thinkingFormat: openai`일 때). 프로바이더의 `reasoning`을 적지 않았을 때 "Default"는 `off`의 값을 보냈고, `reasoning: medium`을 적자 `medium`의 값을 보냈다. 세션 제목을 만드는 요청은 그때도 `off`의 값으로 갔다(**띄워 확인**: 요청을 기록하는 프록시로 봤다).
@@ -762,7 +762,7 @@ const session = await openPage(dsh.url, { modelConfigured: true });
 
 - **대본 함수**가 요청마다 답(`reasoning`, `text`, `toolCalls`, `delayMs`, `chunkDelayMs`)을 정한다. 서버는 그것을 실제 서버와 같은 순서의 SSE 조각으로 흘린다(추론은 `reasoning_content`).
 - `llm.requests`는 온 요청의 목록이다: 도구 이름들(`tools`), 펴 놓은 메시지(`messages`의 `role`·`text`·`toolCalls`·`toolCallId`), 원래 본문(`body`), 상태(`state`: `open`·`done`·`aborted`·`failed`). dsh가 요청을 끊으면 `aborted`가 된다(중지 시험이 이것을 본다).
-- `llm.patch`는 `llm-pi-ai` 행에 프로바이더 `cs-test-llm`을, `agent-default-model` 행에 그 모델을 적은 패치다. 키 대신 `Authorization` 헤더를 준다.
+- `llm.patch`는 `llm-pi-ai` 행에 프로바이더 `cs-test-llm`을, `agent-default-model` 행에 그 모델을 적은 패치다. 가짜 서버는 인증을 보지 않으므로 키 대신 자리 채우기용 `Authorization` 헤더(`Bearer cs-test`. 비밀이 아니다)를 준다.
 - dsh는 사용자의 글 뒤에 메시지를 끼워 넣고, 첫 메시지 뒤에 제목 요청을 따로 보낸다. 대본은 도구가 없는 요청(제목)과 마지막 메시지가 `tool`인 요청(도구 결과)을 먼저 가르고, 나머지는 사용자의 글에 넣어 둔 표시로 가른다.
 - dsh의 채팅 DOM에서 시험이 잡는 것(전송·중지 버튼, 접힌 턴, 추론, 도구 호출)은 공개 계약이 아니다. `chat.test.ts` 머리의 `DSH_CHAT` 한 곳에 모았다. 버전을 올리거나 언어 팩을 바꾸면(버튼은 영어 `aria-label`로 가른다) 다시 본다.
 - 가짜 서버는 모델의 판단을 흉내 내지 않는다. 도구 설명을 읽고 모델이 맞는 도구를 고르는지 같은 것은 실제 모델로 본다("LLM 프로바이더 붙이기"의 구성으로 띄운다).

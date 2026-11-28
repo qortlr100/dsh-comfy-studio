@@ -297,6 +297,8 @@ export async function startFakeLlm(script: FakeScript): Promise<FakeLlm> {
                 displayName: "Test model",
                 api: "openai-completions",
                 baseURL,
+                // The fake server checks no credentials, but dsh's OpenAI-compatible client
+                // sends nothing without a key or this header. A placeholder, not a secret.
                 headers: { Authorization: "Bearer cs-test" },
                 models: [
                   { id: FAKE_MODEL, name: "Test model", contextWindow: 262144, maxTokens: 16384 },
