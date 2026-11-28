@@ -233,6 +233,24 @@ describe("RecordStore", () => {
     ).toBe("unknown_record");
   });
 
+  it("gives the records of a project strictly increasing times in write order, also across a reload", () => {
+    const opened = openStore();
+    const { store } = opened;
+    const { project, first } = createProject(opened);
+    // Written within the same millisecond more often than not.
+    let parent = first.id;
+    for (let index = 0; index < 50; index += 1) parent = store.append(project, line(parent)).id;
+    const reloaded = openStore(opened.folders).store;
+    const tail = reloaded.append(project, line(parent));
+    reloaded.appendOutsideHistory(project, line(tail.id));
+
+    const times = reloaded.listRecords(project).map((record) => record.created_at);
+    expect(times).toHaveLength(53);
+    for (let index = 1; index < times.length; index += 1) {
+      expect(times[index]! > times[index - 1]!, `record ${String(index)}`).toBe(true);
+    }
+  });
+
   it("reloads records, updates and the line from disk", () => {
     const opened = openStore();
     const { store } = opened;

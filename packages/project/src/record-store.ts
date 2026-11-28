@@ -88,6 +88,19 @@ function writeAtomic(file: string, text: string): void {
 }
 
 /** Append-only storage of every project's records and metadata. */
+/**
+ * The time of a new record: now, or one millisecond after the record written before it when the clock has not moved
+ * past that one. So the `created_at` of a project's records strictly increases in write order, and a reducer that
+ * receives records out of write order (a record outside the history comes after the steps) can tell which came first.
+ * @param previous - the `created_at` of the record written last; undefined for the first record.
+ * @returns the time, ISO-8601 UTC.
+ */
+function laterThan(previous: string | undefined): string {
+  const now = Date.now();
+  const last = previous === undefined ? Number.NaN : Date.parse(previous);
+  return new Date(Number.isNaN(last) || now > last ? now : last + 1).toISOString();
+}
+
 export class RecordStore {
   private readonly projects = new Map<ProjectId, LoadedProject>();
   /** Project → the settled tail of its lock chain; the next `lock` call starts after it. */
@@ -259,6 +272,8 @@ export class RecordStore {
         `Cannot append to project ${project}: the record's parent is not the current position ${at ?? "(none)"}.`,
       );
     }
+    const lastId = loaded.order.at(-1);
+    const lastWritten = lastId === undefined ? undefined : loaded.records.get(lastId);
     // Exactly the record-line fields, in record-format order.
     const record: ProjectRecord = {
       id: brandString<RecordId>(randomUUID()),
@@ -281,7 +296,7 @@ export class RecordStore {
       ...(line.started_by === undefined ? {} : { started_by: line.started_by }),
       deterministic: line.deterministic,
       status: line.status,
-      created_at: new Date().toISOString(),
+      created_at: laterThan(lastWritten?.created_at),
     };
     const stored = structuredClone(record);
     appendFileSync(this.file(project, "records.jsonl"), `${JSON.stringify(stored)}\n`);
