@@ -484,6 +484,11 @@ export function applyPatch(
     const reason = error.message.replace(/^연산 \d+: /, "");
     throw new ProjectError("invalid_params", `op ${error.opIndex + 1}: ${reason}`);
   }
+  // Checked here and not left to `newProblems`: that only lists what the template did not have already, and a graph
+  // without nodes cannot be stored or read back at all.
+  if (Object.keys(result.graph).length === 0) {
+    throw new ProjectError("invalid_params", "The patch leaves no node in the graph.");
+  }
   const problems = newProblems(template, result.graph, objectInfo, { strictNodes: result.added });
   return { result, problems };
 }

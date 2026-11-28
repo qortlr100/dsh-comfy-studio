@@ -318,6 +318,14 @@ describe("parsePatch and applyPatch", () => {
     expect(error.message).not.toContain("연산");
   });
 
+  it("refuses a patch that leaves no node, also when the template had no output node to lose", () => {
+    // A template whose only node is no output node the check knows: removing it adds no new problem.
+    const template = { "1": { class_type: "CustomSink", inputs: { text: "x" } } };
+    const error = thrown(() => applyPatch(template, parsePatch([{ op: "remove", node: "1" }])));
+    expect(error.code).toBe("invalid_params");
+    expect(error.message).toBe("The patch leaves no node in the graph.");
+  });
+
   it("reports a problem when the patch removes the output node", () => {
     const { problems } = applyPatch(sampleGraph(), parsePatch([{ op: "remove", node: "9" }]));
     expect(problems.some((p) => p.severity === "error")).toBe(true);
