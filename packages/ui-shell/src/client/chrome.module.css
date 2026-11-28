@@ -1,0 +1,18 @@
+/*
+ * Rules on dsh's own elements. Not a public dsh contract: see the header of chrome.ts for what
+ * each rule leans on and how to re-check it on a dsh upgrade. These selectors carry no class of
+ * ours, so the build passes them through unchanged; our classes are `cs-<hash>-<local>` and a
+ * `_brand` substring cannot hit them.
+ */
+
+/*
+ * Device 2: the sidebar brand does not start a session. The wide sidebar's brand is a
+ * `<button class="<hash>_brand <hash>_wide">` whose click calls `uiWorkspace.startSession()`.
+ * The collapsed rail draws no brand button (its mark sits inside the expand toggle), so the rule
+ * has nothing to match there and the toggle keeps working.
+ */
+[data-slot="sidebar"] button[class*="_brand "],
+[data-slot="sidebar"] button[class$="_brand"] {
+  pointer-events: none;
+  cursor: default;
+}

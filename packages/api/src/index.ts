@@ -32,16 +32,15 @@ export type { WireProjectCover, WireProjectSummary } from "./summaries.ts";
 export {
   mentionedAssets,
   projectIdOf,
-  toWireOperation,
   toWireState,
   type ProjectAsset,
   type WireAsset,
   type WireCatalogEntry,
   type WireHistory,
-  type WireOperation,
   type WireProject,
   type WireState,
 } from "./wire.ts";
+export { toWireOperation, type WireOperation } from "./wire-operation.ts";
 
 declare module "@deepseek-ai/cordis" {
   interface Context {

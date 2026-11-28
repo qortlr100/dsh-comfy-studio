@@ -1,0 +1,27 @@
+.name {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 24px;
+  letter-spacing: -0.01em;
+  color: var(--dsw-alias-label-primary);
+  white-space: nowrap;
+}
+
+.mark {
+  display: block;
+  flex: none;
+}
+
+.markBody {
+  fill: var(--dsw-alias-brand-primary);
+}
+
+.markLetter {
+  fill: none;
+  stroke: var(--dsw-alias-bg-base);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+}

@@ -11,7 +11,7 @@
 | 라이선스    | MIT                                                                                          |
 | 가져온 것   | `packages/dv/project/`의 `src/`, `tests/`, `CONTRACTS.md`. `packages/dv/api/`의 `src/` 가운데 `index.ts`, `api.ts`, `wire.ts`, `events.ts`, `summaries.ts`, `projects-admin.ts`. `packages/dv/models/`의 `src/index.ts`와 `src/types.ts`의 틀 |
 | 이 저장소의 자리 | `packages/project/`(`@cs/project`). 시험은 `src/*.test.ts`와 `src/testing/`으로 옮겼다. `packages/api/`(`@cs/api`). `packages/catalog/`(`@cs/catalog`) |
-| 가져온 때   | 2026-11-27(단계 2-0), 2026-11-28(단계 2-2, 2-1)                                              |
+| 가져온 때   | 2026-11-27(단계 2-0), 2026-11-28(단계 2-2, 2-1, 3-0)                                         |
 
 `packages/project/`에서 바꾼 것(상세는 `docs/archive/PLAN_2-0.md`):
 
@@ -40,6 +40,11 @@
 - 가져오지 않은 것: 작업 구분(`TaskMap`)과 작업 이름의 표시 글, 에이전트 도구(`dv_models_list`, `dv_models_get`)와 모델 고르기 스킬, 항목의 프롬프트 스킬, 대화별 모델 선택(`selection.ts`), 모델 적재 제어, 렌더 타이밍 읽기.
 - 동작을 고친 곳: 열쇠의 부분에 `/`가 들어가도 서로 섞이지 않는다(원본은 `/`로 이어 붙인 글을 열쇠로 쓴다). 듣는 쪽이 던져도 등록과 다른 듣는 쪽이 그대로 간다(원본은 등록이 던진다). 요약은 닿지 못한 항목에 이유를 싣는다.
 - 시험은 옮기지 않고 새로 썼다.
+
+`packages/ui-shell/`이 본으로 삼은 것(상세는 `docs/archive/PLAN_3-0.md`):
+
+- 파일을 옮기지 않고 다시 썼다. 본으로 삼은 것은 `packages/dv/ui-shell/src/client/`의 `actions.ts`(프로젝트를 열 때 세션을 고르는 규칙, dsh의 목록이 준비되기를 기다리는 방식), `Center.tsx`(주 세션의 프로젝트를 따라 열린 프로젝트를 정하는 규칙, 채팅 탭을 여는 다시 시도), `tabs.tsx`(채팅 탭이 Factory 슬롯을 그리는 방식과 대화 단계의 계산), `Navigator.tsx`(프로젝트와 세션의 나무), `notice.tsx`(실패 알림), `slot-tabs.ts`(자식 슬롯의 항목을 탭으로 읽는 방식)다.
+- 가져오지 않은 것: 포크 전용 이벤트에 기대는 입구 채팅, URL 해시 미러, 테마, 문구 바꾸기, 숨김 목록.
 
 DreamVerse Harness는 DeepSeek Harness의 포크이고, 가져온 코드의 저작권 표기는 아래 두 줄이다.
 

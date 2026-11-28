@@ -1,24 +1,28 @@
 /**
  * The JSON the browser receives: the project's current state (`ProjectState` with its component slices sent verbatim)
- * with the assets the state mentions, the history list, and the operation declarations a view turns into parameter
- * forms. Records travel as `ProjectRecord`, unchanged.
+ * with the assets the state mentions, and the history list. Records travel as `ProjectRecord`, unchanged. The
+ * operation declarations are in `wire-operation.ts`.
  *
- * This module holds types and pure functions only, so a browser half can import its types.
+ * This module holds types and pure functions only and imports no host type, so a browser half can import its types
+ * (checked by `@cs/ui-shell`'s browser program).
  *
  * @module @cs/api/wire
  */
 import { brandString } from "@deepseek-ai/dsh-brand";
+// The type-only face of the project layer, not its index: the index imports host modules
+// (node:fs and the like), and the operation types pull in dsh's host types, whose
+// `Context.sessions` would replace the client's in a browser program that reads this module.
+// Whatever needs `OperationSpec` lives in wire-operation.ts.
 import type {
   AssetId,
   ComponentStates,
   HistoryEntry,
-  OperationSpec,
   ProjectId,
   ProjectInfo,
   ProjectLine,
   ProjectState,
   RecordId,
-} from "@cs/project";
+} from "@cs/project/types";
 
 /**
  * One entry of the generation catalog, as `GET /api/cs/catalog` lists it: its key, description, optional abilities and
@@ -62,21 +66,6 @@ export interface WireHistory {
   entries: HistoryEntry[];
   /** The store entry of every asset the entries name as an output or a resolved input. */
   assets: WireAsset[];
-}
-
-/** An operation declaration without its executable parts. */
-export interface WireOperation {
-  name: string;
-  version: string;
-  description: string;
-  /** The name that views show for the operation; absent when the operation declares none. */
-  label?: OperationSpec["label"];
-  inputs: OperationSpec["inputs"];
-  params: OperationSpec["params"];
-  outputs: OperationSpec["outputs"];
-  deterministic: boolean;
-  /** The scheduler class: `none` for operations that wait in neither the CPU nor the GPU queue. */
-  resource: OperationSpec["resource"];
 }
 
 /** One project as the project list returns it. */
@@ -134,25 +123,6 @@ export function toWireState(
     tip: line.tip,
     components: state.components,
     assets,
-  };
-}
-
-/**
- * Strip an operation spec to its declaration.
- * @param spec - a registered operation.
- * @returns the wire declaration.
- */
-export function toWireOperation(spec: OperationSpec): WireOperation {
-  return {
-    name: spec.name,
-    version: spec.version,
-    description: spec.description,
-    ...(spec.label === undefined ? {} : { label: spec.label }),
-    inputs: spec.inputs,
-    params: spec.params,
-    outputs: spec.outputs,
-    deterministic: spec.deterministic,
-    resource: spec.resource,
   };
 }
 
