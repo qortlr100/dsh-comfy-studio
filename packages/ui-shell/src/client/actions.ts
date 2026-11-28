@@ -165,7 +165,10 @@ export function createShellActions(
     });
   };
 
-  /** Start a navigation; the returned check is false once a later one started. */
+  /**
+   * Start a navigation; the returned check is false once a later one started. `leavePage`
+   * also cancels what dsh still had pending for the navigation before (see `ShellHost`).
+   */
   const begin = (): (() => boolean) => {
     host.leavePage();
     navigation += 1;

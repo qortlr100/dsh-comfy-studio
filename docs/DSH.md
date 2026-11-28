@@ -455,6 +455,8 @@ dsh가 싣고 오는 언어는 영어, 중국어, 일본어, 스페인어, 프�
 | `ctx.theme`            | `setTheme(id)`, `getTheme()`                                                                                       |
 | `ctx.layout`           | `selectPanel(null)`(dsh의 페이지에서 대화로), `beginNavigation()`(진행 중인 내비게이션을 끊는다)                   |
 
+`selectPanel`도 진행 중인 내비게이션을 끊는다(**소스 확인**, 2026-11-28: 업스트림 `packages/client/ui-layout/src/client/service.ts`의 `selectPanel`이 `this.navigation.abort()`를 부른다). 아직 끝나지 않은 `uiWorkspace.openWorkspace`는 세션을 만든 뒤 신호가 끊겼으면 주 세션을 바꾸지 않고 돌아온다(업스트림 `ui-workspace/src/client/navigation.ts`의 `openWorkspaceSession`). 우리 셸의 모든 이동은 `selectPanel(null)`로 시작하므로, 프로젝트가 열리는 도중에 홈을 누르면 늦게 끝난 열기가 가운데를 되돌리지 않는다. 이 동작에 기대는 곳은 `packages/ui-shell/src/client/host.ts`의 `leavePage`다. 버전을 올릴 때 다시 본다. 열리는 도중을 잡아 띄워 보지는 않았다.
+
 3-0의 셸이 더 쓴 것(**띄워 확인**, 2026-11-28): `ctx.uiWorkspace.openWorkspace(workspaceId)`, `ctx.sidebarRight.toggleExpanded()`, `ctx.workspaces.list` 스냅샷의 `phase`(`pending`·`ready`)와 `archivedSessionIds`, `ctx.sessions.list` 스냅샷의 `phase`·`ids`·`byId[id]`(`blank`, `updatedAt`, `displayTitle`), `ctx.slots.entriesOfSlot(이름)`·`subscribe(이름, 듣는 함수)`. 두 목록은 `phase`가 `ready`가 된 뒤에 읽는다.
 
 ## 호스트 쪽

@@ -51,7 +51,13 @@ export interface ShellHost {
   openWorkspace(workspaceId: string): Promise<void>;
   /** Cancel dsh's pending navigation, such as the startup restore of the saved session. */
   beginNavigation(): void;
-  /** Leave a dsh page (Plugins and the like) for the conversation column. */
+  /**
+   * Leave a dsh page (Plugins and the like) for the conversation column. This also cancels
+   * dsh's pending navigation: `layout.selectPanel` aborts it, and an `openWorkspace` still in
+   * flight then ends without moving the main session (upstream ui-layout `service.ts`,
+   * ui-workspace `navigation.ts`). Every shell navigation starts with this call, which is how
+   * going home stops a project that was still opening from taking the center back.
+   */
   leavePage(): void;
   /** Open the chat tab in the mounted seat, expanding the panel. Throws while no seat is bound. */
   openChatTab(): void;
