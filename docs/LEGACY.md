@@ -196,7 +196,7 @@ project_files project_file_versions tags asset_tags presets preset_versions agen
 | 워크플로: 템플릿, 가져오기, 그래프 패치     | `workflows`, `graph-patch.ts`               | 계획 2의 기능 컴포넌트 + 계획 4의 라이브러리                  | 옮긴다                                            |
 | 모델 계열, 준비 점검, 노드 카탈로그         | `model-families.ts`, `readiness.ts`         | 계획 4                                                        | 옮긴다                                            |
 | 생성, 배치, 검토                            | `generations`, `generation_batches`, `runner.ts` | 계획 2의 기능 컴포넌트(기록) + 계획 4(실행)              | 다시 설계한다                                     |
-| 에셋, 갤러리, 폴더, 태그, 비교              | `assets`, `asset_folders`, `tags`           | 계획 2의 기능 컴포넌트 + 계획 3의 화면                        | 다시 설계한다                                     |
+| 에셋, 갤러리, 폴더, 태그, 비교              | `assets`, `asset_folders`, `tags`           | 에셋 기능 컴포넌트 `@cs/asset`(2-3b) + 계획 3의 화면          | 서버 쪽은 새로 썼다(2-3b). 폴더·태그·검토 상태는 기록과 리듀서다. 도구는 `cs_asset_list`(폴더 목록은 프로젝트 요약의 `asset_folders`), `cs_asset_folder_create`·`_update`·`_delete`, `cs_asset_move`, `cs_asset_tag`, `cs_asset_delete`다. 갤러리와 비교는 3-2 |
 | 프로젝트, 작업 공간                         | `projects`, `(workspace)` 라우트            | dsh 작업공간(폴더) 하나가 프로젝트 하나 + 프로젝트 계층       | 다시 설계한다                                     |
 | 캐릭터                                      | `characters` 외 3개 테이블                  | 계획 2의 기능 컴포넌트                                        | 다시 설계한다. 전역 라이브러리의 자리는 미정      |
 | 미디어 검수(ffmpeg, 받아쓰기)               | `lib/media`                                 | 기능 컴포넌트                                                 | 옮긴다(2-6)                                       |

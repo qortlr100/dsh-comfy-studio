@@ -9,7 +9,7 @@ interface MemoSlice {
   texts: string[];
 }
 
-declare module "@cs/project" {
+declare module "@cs/project/types" {
   interface ComponentStates {
     /** The slice of this fixture's component. */
     probe_memo?: MemoSlice;

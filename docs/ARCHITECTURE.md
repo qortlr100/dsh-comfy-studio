@@ -111,7 +111,7 @@ export function apply(ctx: Context): void {
 | 히스토리 | `undo(id)`, `redo(id)`, `moveTo(id, record)`, `line(id)`(`{ tip, at }`), `listHistory(query)` |
 | 읽기 | `getState(id)`(리듀서마다의 조각), `getRecord`, `listRecords`, `subscribe(id, listener)` |
 | 채팅 세션의 프로젝트 | `sessionProject(sessionId)`: 세션의 작업 폴더가 프로젝트 폴더인 프로젝트 |
-| 에셋 | `registerAssetStore(store)`: 에셋 기능 컴포넌트(2-3)가 등록한다. 그때까지는 아무 에셋도 없는 빈 저장소가 대신한다. 프로젝트 계층 밖에서 읽을 때는 `assets()`(`has`·`get`·`url`만 있다. 화면용 API가 쓴다) |
+| 에셋 | `registerAssetStore(store)`: 에셋 기능 컴포넌트 `@cs/asset`(2-3b)이 등록한다. 그것이 없으면 아무 에셋도 없는 빈 저장소가 대신한다. 프로젝트 계층 밖에서 읽을 때는 `assets()`(`has`·`get`·`url`만 있다. 화면용 API가 쓴다) |
 
 - `origin`은 누가(`actor`: `user`·`agent`·`system`), 어디서(`surface`: `chat`·`view`·`api`·`history`), 어느 세션·턴·도구 호출에서, 왜(`intent`) 했는지다. 기록마다 남는다. `view`는 우리 화면에서 한 사용자 동작이다.
 - 프로젝트 폴더의 `.comfy-studio/`에 `records.jsonl`(기록 줄과 갱신 줄, 추가만 한다)과 `line.json`(히스토리의 끝 `tip`과 현재 위치 `at`)이 있다. 이 디렉터리는 프로젝트 계층만 읽고 쓴다.
@@ -157,11 +157,59 @@ export function apply(ctx: Context): void {
 - **한 곳에서 막는다.** `ctx.csProject.run`은 `actor: "agent"`인 요청이 `propose`·`none` 연산을 부르면 기록 없이 거절한다(`agent_not_allowed`).
 - **제안은 히스토리 밖의 기록이다.** `proj.propose`(연산 이름, 파라미터, 입력)와 `proj.proposal_decide`(제안, 결정, 승인으로 실행된 기록) 둘이고, 단계가 아니라서 실행 취소로 사라지지 않고 뒤 단계를 버리지 않는다. `proj` 조각의 `proposals`가 이 둘에서 계산한 목록이다(`pending`·`accepted`·`rejected`).
 - **제안할 때와 승인할 때 둘 다 검사한다.** `ctx.csProject.propose(request)`는 `run`이 기록 전에 하는 검사(파라미터, 입력, `precondition`)를 그때의 상태로 하고, 걸리면 기록 없이 거절한다(에이전트에게는 도구 오류다). `ctx.csProject.decideProposal(project, proposal, "accept" | "reject", origin)`의 승인은 연산을 사용자 origin으로 `run`하므로 그때의 상태로 다시 검사된다. 기록 전에 거절되면 제안은 대기로 남고 오류가 사용자에게 간다.
-- **두 번 실행되지 않는다.** 이미 결정된 제안의 결정은 아무것도 쓰지 않고 지금 상태를 돌려준다. 같은 제안의 결정이 진행 중이면 `proposal_busy`다. 결정은 사용자만 한다(`actor: "agent"`인 결정은 `agent_not_allowed`). 같은 세션이 같은 연산·파라미터·입력으로 낸 대기 중 제안은 하나로 접힌다.
+- **두 번 실행되지 않는다.** 이미 결정된 제안의 결정은 아무것도 쓰지 않고 지금 상태를 돌려준다. 같은 제안의 결정이 진행 중이면 `proposal_busy`다. 결정은 사용자만 한다(`actor: "agent"`인 결정은 `agent_not_allowed`). 에이전트의 히스토리 이동(`cs_proj_undo`, `cs_proj_redo`)도 `propose`·`none` 연산의 단계를 넘지 못한다: 사용자가 실행 취소한 삭제를 되살리지도, 사용자의 검토를 되돌리지도 못하고 `agent_not_allowed`로 거절된다(2026-11-29). 같은 세션이 같은 연산·파라미터·입력으로 낸 대기 중 제안은 하나로 접힌다.
 - **에이전트가 아는 것.** 도구 결과가 "제안했고 아직 바뀐 것은 없다"를 말한다(오류가 아니다). 대기 중인 제안은 프로젝트 요약의 `proposals`에, 사용자의 결정은 프로젝트 갱신 메시지의 줄로 간다. 프로젝트 규칙 절이 제안 도구를 되풀이해 부르지 말라고 적는다.
 - **화면이 하는 것.** 제안 목록은 상태(`GET /api/cs/state`)의 `components.proj.proposals`에 있고, 결정은 `POST /api/cs/proposal/decide`다. 채팅 안의 카드는 3-4에서 그린다. 그때까지 화면에는 승인하는 곳이 없다.
 - 만료는 없다. 결정된 제안도 상태에 남는다.
 - 프리셋은 프로젝트 밖의 데이터라(아래 "데이터가 사는 곳") 프리셋 변경의 제안이 이 장치를 쓸지는 2-3f에서 정한다.
+
+### 에셋 — `@cs/asset`
+
+첫 기능 컴포넌트다(2-3b). 프로젝트의 에셋(이미지, 영상, 오디오, 그 밖의 파일)과 그 라이브러리(폴더, 태그, 검토 상태)를 맡는다. 아래는 단위 시험과 조합 시험 `tests/integration/asset.test.ts`로 확인했다(**띄워 확인**, 2026-11-29). 상세는 `docs/archive/PLAN_2-3b.md`.
+
+**파일.** 프로젝트 계층의 에셋 저장소(`AssetStore`)로 등록된다. 파일은 프로젝트 폴더 안에 산다.
+
+```
+<프로젝트 폴더>/.comfy-studio/assets/objects/<sha256>        바이트. 한 번 쓰고 고치지 않는다
+<프로젝트 폴더>/.comfy-studio/assets/index.jsonl             에셋마다 한 줄(뒤의 줄이 이긴다). 추가만 한다
+<프로젝트 폴더>/.comfy-studio/assets/thumbs/<sha256>.webp    썸네일. 지워도 다시 만든다
+```
+
+에셋 id는 바이트의 SHA-256이다. 같은 파일을 한 프로젝트에 두 번 넣으면 에셋 하나다. `.comfy-studio/` 가운데 `assets/`는 이 컴포넌트만 읽고 쓴다. 크기(가로·세로)와 길이는 ffmpeg 서비스(`@cs/ffmpeg`, `ctx.csFfmpeg`)가 있으면 읽어 색인에 덧붙이고 썸네일도 그것으로 만든다. ffmpeg이 없으면 그 칸들이 비고 썸네일이 없을 뿐 나머지는 그대로 돈다.
+
+**라이브러리.** 상태 조각 `asset`은 `{ items, folders, marks }`다(`@cs/asset/types`). 리듀서가 기록에서 계산한다.
+
+- 어느 컴포넌트의 것이든 끝난 기록의 출력은 라이브러리에 **검토 대기**(`pending`)로 들어온다. 사람이 가져온 것은 **채택**(`adopted`)으로 들어온다. 리듀서는 다른 컴포넌트의 연산 이름을 보지 않는다. 기존 규칙 "생성의 출력은 검토 대기로 들어오고 사용자가 채택한다"가 이것이다.
+- 가져오기(`asset.import`)만 히스토리 밖이고 나머지는 단계다. 가져온 파일은 실행 취소로 사라지지 않고, 폴더·태그·검토·삭제는 되돌릴 수 있다.
+- 리듀서는 히스토리의 기록을 다 받은 뒤에 히스토리 밖의 가져오기를 받는다. 그래서 가져오기보다 나중에 일어난 단계를 먼저 본다. `marks`(라이브러리에 없는 에셋에 대해 단계가 말한 것)와 기록의 시각(`created_at`)으로 실제 시각 순서와 같은 결과를 낸다. 화면은 `marks`를 보지 않는다.
+- 삭제는 상태에서만 일어난다. 파일은 남는다(실행 취소가 되돌린다). 쓰이지 않는 파일의 정리는 2-8에서 본다.
+
+**연산.** 전부 `asset.` 아래다.
+
+| 연산 | 에이전트가 부르면 | 하는 일 |
+| --- | --- | --- |
+| `asset.import` | 도구 없음 | 저장소에 있는 바이트를 라이브러리에 들인다(히스토리 밖). 올리기 라우트가 사용자로 실행한다 |
+| `asset.review` | 도구 없음 | 채택하거나 보류한다. 사용자만 한다 |
+| `asset.move`, `asset.tag` | 바로 실행 | 폴더로 옮긴다, 태그를 붙이고 뗀다 |
+| `asset.folder_create`, `asset.folder_update` | 바로 실행 | 폴더를 만든다, 이름을 바꾸거나 옮긴다. 폴더의 id는 만든 기록의 id다 |
+| `asset.delete`, `asset.folder_delete` | 제안 | 라이브러리에서 뺀다. 폴더와 하위 폴더를 지운다(안의 에셋은 루트로 간다) |
+| `asset.list` | 읽기 | 라이브러리를 읽는다. 기본은 채택된 것만이고 최신순이다. 폴더·검토 상태·종류·낱말·태그로 거르고 커서로 넘긴다 |
+
+한도(기록 전에 거절한다): 폴더 깊이 4, 형제 폴더의 이름은 대소문자 없이 겹치지 않는다, 태그는 소문자로 40자까지, 한 에셋에 50개까지. 에이전트 요약에는 검토 상태별 개수(`assets`)와 폴더 목록(`asset_folders`)이 실린다.
+
+**라우트.** dsh `connection`의 fetch 라우트로 직접 등록한다(인증은 dsh가 한다. 소유자만 닿는다). 화면용 API는 기능 컴포넌트를 모른다.
+
+| 경로 | 메서드 | 요청 | 응답 |
+| --- | --- | --- | --- |
+| `/api/cs/asset` | GET, HEAD | `id`, `download?` | 바이트. `Range: bytes=a-b` 하나를 받는다(206, 틀리면 416) |
+| `/api/cs/asset/thumb` | GET, HEAD | `id` | 512px 안에 드는 WebP. 만들 수 없으면 404 |
+| `/api/cs/asset/upload` | POST | 쿼리 `project`, `name`, `mime`, `folder?`, `session?`, `surface?`. 본문은 파일의 바이트 | `{asset, record}`: 저장소에 넣고 `asset.import`를 사용자로 실행한다 |
+| `/api/cs/asset/stage` | POST | 쿼리 `project`, `name`, `mime`. 본문은 파일의 바이트 | `{asset}`: 저장소에 넣기만 한다. 다른 기능 컴포넌트의 연산이 그 id를 입력으로 받는다 |
+
+- **화면에 바로 그려도 되는 종류만 제 종류로 준다**(PNG·JPEG·WebP·GIF·AVIF, MP4·WebM·QuickTime, 흔한 오디오). 그 밖은 HTML과 SVG를 포함해 `application/octet-stream` 첨부다. 올린 파일의 스크립트가 우리 출처에서 돌지 않게 한다. 모든 응답에 `X-Content-Type-Options: nosniff`와 `Content-Security-Policy: sandbox; default-src 'none'`이 붙는다.
+- id가 내용이라 `Cache-Control: private, max-age=31536000, immutable`이다.
+- 올리기의 한도는 설정 `maxUploadBytes`(번들의 `cs-asset` 행. 기본 2GiB)이고 넘으면 413이다. 화면은 올리기 전에 크기를 본다: 한도를 한참 넘는 본문은 서버가 다 읽지 않고 연결을 끊어 브라우저가 답을 받지 못한다.
+- 에이전트와 카드에 보이는 에셋 주소의 앞부분은 설정 `publicBaseUrl`이다(기본은 빈 값이라 상대 주소다).
 
 ## 두 계약
 
@@ -254,7 +302,7 @@ export function apply(ctx: Context): void {
 - **인증은 dsh의 것을 그대로 탄다.** fetch 라우트는 dsh `connection` 서비스의 정확 일치 라우트라, dsh가 Host·Origin과 브라우저 세션 쿠키를 검사한 뒤에 부르고 소유자만 닿는다. 이벤트 스트림은 `webServer`의 날 라우트라 요청마다 `connection.admit`으로 같은 검사를 하고 소유자일 때만 연다. `connection`이 없으면 스트림 라우트를 등록하지 않는다. 쿠키 없는 요청은 둘 다 401이다(**띄워 확인**). 플러그인이 내려가면 열린 스트림을 모두 끝내고(브라우저의 `EventSource`가 다시 잇는다), 읽지 않는 클라이언트의 버퍼가 4MiB를 넘어도 끝낸다.
 - **화면은 상태를 들고 있지 않는다.** 스트림에 이벤트가 오면 `/api/cs/state`를 다시 읽는다. 상태는 통째로 온다(부분 갱신 라우트는 없다).
 - **카탈로그**(2-1)는 있으면 읽는다. `@cs/api`는 카탈로그 서비스(`csCatalog`) 없이도 뜨고, 그때 `/api/cs/catalog`는 `[]`다. 카탈로그가 올라오거나 내려가거나 항목이 등록·해제되면 열린 스트림 모두에 `catalog` 이벤트가 간다(프로젝트와 무관하다). 화면은 그 이벤트에 목록을 다시 읽는다. 항목의 `problem`에는 프로바이더가 낸 오류 문장이 그대로 실리므로, 프로바이더는 그 문장에 키나 토큰이 든 주소를 넣지 않는다.
-- **에셋**은 프로젝트 계층에 등록된 에셋 저장소에서 읽는다(`ctx.csProject.assets()`). 항목은 `{id, mime, name, url}`이고 상태의 `assets`에는 `made_by`(만든 연산)가 붙는다. 에셋 기능 컴포넌트(2-3)가 생기기 전에는 빈 저장소라 늘 `[]`이다.
+- **에셋**은 프로젝트 계층에 등록된 에셋 저장소에서 읽는다(`ctx.csProject.assets()`). 항목은 `{id, mime, name, url}`에 저장소가 아는 사실(`size_bytes`, `created_at`, `width`, `height`, `duration_sec`, `thumb_url`. 모르면 없다)이 붙은 것이고, 상태의 `assets`에는 `made_by`(만든 연산)가 붙는다. 상태의 `assets`는 현재 상태의 기록이 가리키는 것, 대기 중인 제안의 입력, 그리고 조각이 가리키는 것(`Reducer.mentions`. 가져온 에셋은 히스토리 밖이라 기록에 없다)이다. 에셋 기능 컴포넌트가 없으면 빈 저장소라 늘 `[]`이다.
 - 브라우저가 받는 JSON의 타입은 `@cs/api/wire`에 있다(`WireState`, `WireHistory`, `WireProject`, `ProjectAsset`, `WireCatalogEntry`). 브라우저 절반은 `import type`으로 가져다 쓴다(**띄워 확인**, 2026-11-28: `@cs/ui-shell`의 브라우저 프로그램이 `WireProject`를 가져와 타입 검사된다). 이 모듈은 프로젝트 계층의 타입 전용 진입점(`@cs/project/types`)만 가져온다. 연산 선언의 타입 `WireOperation`은 `packages/api/src/wire-operation.ts`에 따로 있다. dsh의 도구 타입을 쓰는데, 그것을 브라우저 프로그램에 들이면 dsh의 호스트 선언이 따라와 `ctx.sessions`의 타입을 덮는다(`docs/DSH.md` "타입을 얻는 패키지"). 브라우저에서 연산 선언을 타입으로 쓰는 법은 실행 폼을 만드는 3-3에서 정한다.
 - 설정(번들의 `cs-api` 행): `keepaliveMs`(15000, 1000 이상. 스트림이 조용할 때 주석 줄을 보내는 간격).
 
@@ -262,7 +310,7 @@ DreamVerse의 라우트 가운데 아직 없는 것과 생길 곳:
 
 | DreamVerse 경로 | 하는 일 | 우리 쪽 |
 | --- | --- | --- |
-| `/api/dv/assets/import`, `/dv/assets` | 에셋 가져오기, 파일 내려주기 | 에셋 기능 컴포넌트와 함께(2-3) |
+| `/api/dv/assets/import`, `/dv/assets` | 에셋 가져오기, 파일 내려주기 | 2-3b에서 `@cs/asset`의 `/api/cs/asset/upload`와 `/api/cs/asset`으로 만들었다(화면용 API가 아니라 에셋 기능 컴포넌트의 라우트다) |
 | `/api/dv/models`, 스트림의 `models` 이벤트 | 카탈로그 | 2-1에서 `/api/cs/catalog`와 `catalog` 이벤트로 만들었다 |
 | `/api/dv/tasks` | 작업 이름의 표시 글 | 가져오지 않는다. 우리 카탈로그에는 작업 구분이 없다 |
 | `/api/dv/skills`, `/api/dv/skills/upload` | 스킬 묶음 업로드 | 가져오지 않는다. 스킬은 dsh의 스킬 폴더에 맡긴다(1-4) |
@@ -324,7 +372,7 @@ DreamVerse처럼 기본 dsh 화면을 교체한다. 3-0에서 셸을 만들었�
 
 | 데이터                                                    | 자리                                                                                                              | 상태                                   |
 | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| 프로젝트 내용(에셋, 생성, 배치, 검토 결과 …)              | 프로젝트 폴더 안의 기록 파일 `<프로젝트 폴더>/.comfy-studio/records.jsonl`·`line.json`과 에셋 파일                 | 기록은 2-0에서 만들었다. 에셋 파일은 2-3 |
+| 프로젝트 내용(에셋, 생성, 배치, 검토 결과 …)              | 프로젝트 폴더 안의 기록 파일 `<프로젝트 폴더>/.comfy-studio/records.jsonl`·`line.json`과 에셋 파일                 | 기록은 2-0에서, 에셋 파일(`.comfy-studio/assets/`)은 2-3b에서 만들었다 |
 | 프로젝트 자체                                             | dsh 작업공간(등록된 폴더) 하나가 프로젝트 하나다. 기록 디렉터리가 있는 작업공간이 프로젝트다. 새 프로젝트의 폴더는 `<사용자 홈>/comfy-studio-projects/<이름>`(`CS_PROJECTS_FOLDER`로 바꾼다) | 2-0에서 만들었다. 목록은 dsh 작업공간 등록부(home 안)에 있고 파일은 home 밖에 있다 |
 | 대화(세션 로그)                                           | dsh(`$DSH_HOME`)                                                                                                  | dsh. 프로젝트 하나에 세션을 여럿 둔다(3-0) |
 | LLM 프로바이더·모델 설정                                  | dsh(프로필의 `cordis.patch.yml`)                                                                                  | dsh                                    |
@@ -422,6 +470,8 @@ packages/
   catalog/           @cs/catalog       카탈로그 계약(2-1): 계약 타입, 서비스 ctx.csCatalog, 시험용 가짜 생성 프로바이더
   comfy/             @cs/comfy         ComfyUI 연동 라이브러리(4-0): 서버 종류별 클라이언트, 그래프와 패치, 프로토콜, 모델 계열. dsh에 의존하지 않는다. 플러그인이 아니라 번들의 행이 없다
   comfy-provider/    카탈로그에 등록하는 생성 프로바이더, 실행기
+  asset/             @cs/asset         에셋 기능 컴포넌트(2-3b): 저장소, 라이브러리의 리듀서와 연산, 파일 라우트
+  ffmpeg/            @cs/ffmpeg        ffmpeg·ffprobe를 실행하는 서비스 ctx.csFfmpeg(2-3b). 연산이 없다
   <이름>/            기능 컴포넌트 하나에 패키지 하나
   ui-kit/            자체 부품과 화면 공용 브라우저 코드
   ui-shell/          셸(브랜드, 내비게이터, 가운데 틀, 우측 탭)
@@ -435,7 +485,7 @@ scripts/             프로필 만들기, 실행, 합성 구성 찍기(`dsh.ts`,
 | ------------------------------------------------------------------------------------- | ----------- |
 | 재시작 후 실행 이어받기(프로젝트 계층은 재시작 때 끝나지 않은 기록을 끝낸다)          | 4-2         |
 | 카탈로그를 읽는 에이전트 도구                                                         | 2-3         |
-| 기존 관계형 데이터(폴더, 태그, 검토 상태, 배치)를 기록과 리듀서로 옮기는 모양         | 2-3         |
+| 배치를 기록과 리듀서로 옮기는 모양(폴더, 태그, 검토 상태는 2-3b에서 옮겼다)           | 2-3d        |
 | ComfyUI 서버 목록과 서버별 모델 목록의 자리                                           | 4-1         |
 | 프리셋 저장소의 모양(dsh 저장소 도메인), 프리셋 변경의 제안이 프로젝트 계층의 장치를 쓸지 | 2-3f        |
 | 자체 부품의 범위와 디자인 문서                                                        | 3-1         |

@@ -33,6 +33,11 @@ export const ASSET_ROUTES = {
   thumb: "/api/cs/asset/thumb",
   /** `POST ?project=&name=&mime=[&folder=][&session=][&surface=]` with the bytes as the body. */
   upload: "/api/cs/asset/upload",
+  /**
+   * `POST ?project=&name=&mime=` with the bytes as the body: store the bytes without importing them into the library,
+   * so that an operation of another component can take them as an input (a workflow file, for example).
+   */
+  stage: "/api/cs/asset/stage",
 } as const;
 
 /**

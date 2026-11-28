@@ -32,6 +32,23 @@ export const PROJECT_TOOLS = [
   "cs_proj_wait",
 ];
 
+/**
+ * The tools of the asset component's operations (@cs/asset), which our bundle loads. The
+ * operations only the user runs (asset.import, asset.review) have no tool.
+ */
+export const ASSET_TOOLS = [
+  "cs_asset_delete",
+  "cs_asset_folder_create",
+  "cs_asset_folder_delete",
+  "cs_asset_folder_update",
+  "cs_asset_list",
+  "cs_asset_move",
+  "cs_asset_tag",
+];
+
+/** Every tool of ours that reaches an agent with the bundle alone. */
+export const BUNDLE_TOOLS = [...PROJECT_TOOLS, ...ASSET_TOOLS];
+
 export const STEP_TIMEOUT_MS = 10_000;
 /** A turn here is a few model round trips of the fake plus dsh's own work between them. */
 export const TURN_TIMEOUT_MS = 20_000;

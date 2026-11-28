@@ -29,7 +29,7 @@ import type {
   TurnId,
 } from "../types.ts";
 
-declare module "@cs/project" {
+declare module "@cs/project/types" {
   interface ComponentStates {
     /**
      * The slice of the test reducers that stand in for the reference noun plugins: the assets and the creating record

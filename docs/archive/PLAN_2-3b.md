@@ -107,7 +107,7 @@ export interface AssetMark {
 
 | 연산 | `agent` | 입력 | 파라미터 | 하는 일 |
 | --- | --- | --- | --- | --- |
-| `asset.import` | `none` | `file`(여럿, 필수) | `name?` | 저장소에 있는 바이트를 이 프로젝트의 에셋으로 들인다. 히스토리 밖이다. 다른 프로젝트 폴더에만 있는 바이트면 이 프로젝트로 복사한다. 출력은 입력과 같은 id들이다 |
+| `asset.import` | `none` | `file`(여럿, 필수) | — | 저장소에 있는 바이트를 이 프로젝트의 에셋으로 들인다. 히스토리 밖이다. 다른 프로젝트 폴더에만 있는 바이트면 이 프로젝트로 복사한다. 출력은 입력과 같은 id들이다 |
 | `asset.review` | `none` | `asset`(여럿, 필수) | `review`: `adopted` \| `held` | 채택하거나 보류한다. 사용자만 한다 |
 | `asset.move` | `run` | `asset`(여럿, 필수) | `folder?`(폴더 id. 없으면 루트) | 폴더로 옮긴다 |
 | `asset.tag` | `run` | `asset`(여럿, 필수) | `add?`, `remove?`(문자열 목록) | 태그를 붙이고 뗀다 |
@@ -150,6 +150,7 @@ export interface AssetMark {
 | `/api/cs/asset` | GET, HEAD | `id`, `download?` | 바이트. `Range: bytes=a-b` 하나를 받는다(206, `Content-Range`). `Accept-Ranges: bytes` |
 | `/api/cs/asset/thumb` | GET, HEAD | `id` | 512px 안에 드는 WebP. 이미지와 영상만. 만들 수 없으면 404 |
 | `/api/cs/asset/upload` | POST | 쿼리 `project`, `name`, `mime`, `folder?`, `session?`, `surface?`. 본문은 파일의 바이트(스트림) | `{asset, record}`: 바이트를 저장소에 넣고 `asset.import`를 사용자로 실행한다. `folder`를 주면 이어서 `asset.move`도 실행한다 |
+| `/api/cs/asset/stage` | POST | 쿼리 `project`, `name`, `mime`. 본문은 파일의 바이트(스트림) | `{asset}`: 바이트를 저장소에 넣기만 한다. 라이브러리에는 들어가지 않는다. 다른 기능 컴포넌트의 연산이 그 id를 입력으로 받는다(워크플로 파일, 2-3c) |
 
 - 헤더: `Cache-Control: private, max-age=31536000, immutable`(id가 내용이다), `X-Content-Type-Options: nosniff`, `Content-Security-Policy: sandbox; default-src 'none'`.
 - **화면에 바로 그려도 되는 종류만 제 종류로 준다**: `image/png`·`jpeg`·`webp`·`gif`·`avif`, `video/mp4`·`webm`·`quicktime`, `audio/mpeg`·`wav`·`flac`·`ogg`·`opus`·`mp4`·`aac`. 그 밖(HTML, SVG 포함)은 `application/octet-stream`에 `Content-Disposition: attachment`다. 같은 출처에서 스크립트가 도는 것을 막는다.
@@ -203,3 +204,39 @@ Claude가 고른 기본값이다.
 - `pnpm check`와 `pnpm test:integration`이 통과한다.
 - 단위 시험: 저장소(같은 바이트는 한 번, 재시작 뒤 다시 읽기, 큰 파일을 조각으로), 리듀서의 규칙 일곱(특히 가져오기와 단계의 순서가 바뀌어도 같은 결과), 연산의 `precondition`마다, 목록의 거르기와 쪽 넘김, 라우트(Range, 종류 가리기, 한도).
 - 조합 시험: 로그인한 페이지에서 파일을 올린다 → 상태의 `asset` 조각에 채택된 항목이 뜬다 → 파일을 Range로 받는다 → 태그를 붙이고 실행 취소한다(태그는 사라지고 가져온 에셋은 남는다) → 쿠키 없는 요청은 401이다.
+
+## 결과
+
+2026-11-29에 끝났다.
+
+확인한 것:
+
+- `pnpm check` 통과(단위 시험 882개. 이 갈래의 것은 `packages/asset` 165개, `packages/ffmpeg` 13개).
+- `pnpm test:integration` 통과(27개). 새 시험 `tests/integration/asset.test.ts`가 실제 dsh에서 본다: 로그인한 페이지가 PNG를 올린다 → `asset` 조각에 채택된 항목이 뜨고 히스토리의 위치는 그대로다 → 파일을 통째로, Range로(206, 416) 받는다 → 썸네일(ffmpeg이 있으면 WebP, 없으면 404) → HTML은 `application/octet-stream` 첨부로 온다 → 올리기만 한 바이트(stage)는 라이브러리에 없다 → 가짜 LLM이 `cs_asset_tag`를 부르고 사용자가 실행 취소한다(태그는 사라지고 가져온 에셋은 남는다) → `cs_asset_delete`는 제안으로 남고 승인하면 항목이 빠진다(파일은 남는다) → 쿠키 없는 요청은 401이다. 모델이 받는 도구에 `cs_asset_import`·`cs_asset_review`가 없다.
+- ffmpeg이 없는 장비에서는 돌려 보지 않았다(**미확인**. 단위 시험은 가짜 ffmpeg으로 그 길을 본다). 실제 모델로도 돌려 보지 않았다(**미확인**).
+
+계획과 달라진 것:
+
+| 달라진 것 | 이유 |
+| --- | --- |
+| 리듀서 규칙 1: 출력이 `marks`를 지우지 않는다. 지운 표시(`deleted_at`)는 남기고, 그 밖의 표시(검토, 폴더, 태그)는 새 항목으로 옮긴다 | 가져오기(T1) → 삭제(T3) → 같은 바이트의 출력(T4)에서, 나중에 받는 T1의 가져오기가 에셋을 가져온 것으로 되살리면 안 된다 |
+| 리듀서 규칙 6: 이미 있는 항목이 가져오기보다 나중의 출력이면 `origin`·`record`·`added_at`을 가져오기의 것으로 바꾼다 | 실제 시각 순서에서는 가져오기가 먼저다 |
+| `asset.import`에 파라미터가 없다(`name?`을 뺐다) | 이름은 저장소의 항목에 있다 |
+| 라우트 `/api/cs/asset/stage`를 더했다 | 다른 기능 컴포넌트의 연산이 입력으로 받을 파일(워크플로 파일, 2-3c)을 올릴 길 |
+| 올리기의 거절은 본문을 끝까지 읽은 뒤에 답한다(한도만큼 더 읽고 그만둔다) | dsh가 본문을 다 읽지 않고 답한 스트리밍 라우트의 연결을 끊어, 브라우저가 답 대신 네트워크 오류를 본다(조합 시험에서 봤다) |
+| 연산의 출력(`context.importAsset`)도 배경에서 크기·길이를 읽는다 | 가져오기는 동기라 기다릴 수 없다. 생성의 출력에도 크기가 붙어야 한다 |
+| `ComponentStates`를 보강하는 `declare module`은 `@cs/project/types` 하나로 쓴다 | `@cs/project`와 섞으면 한쪽의 보강이 보이지 않는다(`docs/CONVENTIONS.md`) |
+
+구현하며 더 정한 것(Claude가 고른 기본값):
+
+- 태그는 떼기를 먼저, 붙이기를 나중에 한다(둘 다에 든 태그는 붙는다). 폴더 깊이는 `옮길 자리의 깊이 + 폴더의 높이 ≤ 4`다. `asset.folder_update`는 `name`과 `parent`가 둘 다 없으면 거절한다.
+- 올리기의 오류 코드: 한도 초과는 413 `payload_too_large`, 만들 수 없는 썸네일은 404 `no_thumbnail`.
+- `folder`를 준 올리기에서 이동이 거절되면 오류를 답하지만 가져오기는 이미 끝나 있다.
+- 썸네일: ffmpeg이 없는 것은 실패로 기억하지 않는다(생기면 만든다). ffmpeg이 실패한 에셋만 프로세스가 사는 동안 다시 시도하지 않는다.
+- 목록의 커서는 `base64url(JSON [added_at, id])`다.
+
+2-3a의 후속을 이 갈래에 넣었다(2-3a를 병합한 뒤의 독립 리뷰가 찾았다):
+
+- **에이전트의 히스토리 이동이 사용자만 정하는 단계를 넘지 못한다.** `cs_proj_undo`·`cs_proj_redo`가 `propose`·`none` 연산의 단계를 되돌리거나 되살리려 하면 `agent_not_allowed`로 거절한다(`packages/project/src/proj-tools.ts`의 `refuseGuardedMove`). 그 전에는 사용자가 실행 취소한 삭제를 에이전트가 다시 실행하거나, 사용자의 검토를 에이전트가 되돌릴 수 있었다. Claude가 고른 기본값이다: 삭제를 되살리는 쪽(실행 취소)도 막는다. 풀려면 그 함수에서 되돌리는 방향을 허용한다.
+- 제안의 중복 접기가 `based_on`·`supersedes`까지 같을 때만 접는다(전에는 다른 기록을 가리키는 제안이 먼저 것에 묻혔다).
+- 고치지 않은 것: 승인의 실행이 끝난 뒤 결정 기록을 쓰기 전에 프로세스가 죽으면 제안이 대기로 남고, 다시 승인하면 한 번 더 실행된다(2-3a 계획에 적은 것 그대로다). `precondition`이 `ProjectError`가 아닌 오류를 던지면 승인 라우트가 500으로 답한다(연산 실행 라우트와 같다. 연산은 `ProjectError`를 던진다).

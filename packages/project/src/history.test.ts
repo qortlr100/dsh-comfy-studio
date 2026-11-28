@@ -23,7 +23,7 @@ import { discardedSteps } from "./history.ts";
 import { ProjectError } from "./shared.ts";
 import type { ProjectId, ProjectRecord, RecordId, RecordOrigin, RunRequest } from "./types.ts";
 
-declare module "@cs/project" {
+declare module "@cs/project/types" {
   interface ComponentStates {
     /** The slice of the test reducer: the `params.value` of every `batch` record, in chain order. */
     history_test?: { values: number[] };
