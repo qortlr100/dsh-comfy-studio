@@ -23,8 +23,9 @@
  * Agent tools. While the DSH `tools` registry is mounted, every registered operation also has its agent tool
  * `cs_<operation name with _>`, built by the `agent-tools` module, except an operation whose `agent` is `none`. A tool
  * call runs the operation as the agent on the project of its chat session, in the session's DSH turn; for an operation
- * whose `agent` is `propose` it writes a proposal instead (the `proposals` module), which runs as the user once the user
- * accepts it ({@link CsProject.decideProposal}). Project also registers its own `cs_proj_*` tools (the
+ * whose `agent` is `propose` (or a function that answers `propose` for the project's current state) it writes a
+ * proposal instead (the `proposals` module), which runs as the user once the user accepts it
+ * ({@link CsProject.decideProposal}). Project also registers its own `cs_proj_*` tools (the
  * `proj-tools` module); `cs_proj_create` makes the session's folder a project, and the tools return the project
  * summary,
  * to which each component's reducer adds its fields through `Reducer.agentSummary`. While the DSH `systemPrompt`
@@ -94,7 +95,7 @@ import type {
 
 export * from "./types.ts";
 export * from "./operation-types.ts";
-export { OperationFailure, ProjectError } from "./shared.ts";
+export { agentCallOf, OperationFailure, ProjectError } from "./shared.ts";
 export {
   DECIDE_OPERATION,
   PROPOSE_OPERATION,
@@ -439,6 +440,10 @@ export default class CsProject extends Service {
    */
   async removeProject(project: ProjectId): Promise<void> {
     await this.folders.remove(project);
+    // The project's records cannot be read or ended from here on: its queued records leave the scheduler and its
+    // executing records are aborted.
+    this.scheduler.forget(project);
+    this.runner.forgetProject(project);
     await this.store.lock(project, () => {
       this.store.forget(project);
     });
@@ -446,15 +451,30 @@ export default class CsProject extends Service {
 
   /**
    * Run one operation call: the single change path for every component's operations. The record goes after the
-   * project's current position (see the module comment). With `after`,
-   * the call is scheduled and the result holds the `pending` record. A read-only operation writes no record and
-   * returns its answer in `report`.
+   * project's current position (see the module comment). With `after`, and always for a `background` operation, the
+   * call is scheduled and the result holds the `pending` record; {@link wait} waits for it and {@link cancel} stops it.
+   * A read-only operation writes no record and returns its answer in `report`.
    * @param request - the call.
    * @returns the record in its final status (or `pending` when scheduled), its outputs and report. Rejects with
    *   `ProjectError` only when the call is refused before a record is written.
    */
   run(request: RunRequest): Promise<RunResult> {
     return this.runner.run(request);
+  }
+
+  /**
+   * Stop a record that has not finished. A queued record leaves the queue and ends `cancelled`; an executing one is
+   * aborted and ends `cancelled`; both with `error {code: "stopped", message: "Stopped by the user."}`. A finished
+   * record is returned as it is, and so is a record whose operation finishes `done` before it notices the stop. Writes
+   * no record of its own, moves no history position, and emits the record's final `update` event.
+   * @param project - the project.
+   * @param record - the record.
+   * @param origin - who stops it; only the user does.
+   * @returns the record in its final status, once it has one. Throws `agent_not_allowed` for an agent's origin,
+   *   `unknown_project`, or `unknown_record`.
+   */
+  cancel(project: ProjectId, record: RecordId, origin: RecordOrigin): Promise<ProjectRecord> {
+    return this.runner.cancel(project, record, origin);
   }
 
   /**
@@ -840,7 +860,10 @@ export default class CsProject extends Service {
     return (cwd === undefined ? undefined : canonicalPath(cwd)) ?? null;
   }
 
-  /** Register the agent tool of an operation while the DSH tool registry is mounted; an `agent: 'none'` operation has none. */
+  /**
+   * Register the agent tool of an operation while the DSH tool registry is mounted; an `agent: 'none'` operation has
+   * none, and an operation whose `agent` is a function always has one.
+   */
   private addTool(spec: OperationSpec): void {
     if (this.registerOperationTool === null || spec.agent === "none") return;
     this.toolDisposers.set(spec.name, this.registerOperationTool(spec));

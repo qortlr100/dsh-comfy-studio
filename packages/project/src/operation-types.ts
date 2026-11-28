@@ -68,12 +68,20 @@ export interface OperationSpec {
   /** A read: the runner writes no record and takes no lock. */
   readOnly?: boolean;
   /**
-   * What an agent's call does. `run` (the default) runs the operation at once. `propose` writes a proposal that the
-   * user accepts or rejects; the operation runs only when the user accepts, as the user. `none` gives agents no tool.
-   * `run` refuses a request with actor `agent` for a `propose` or `none` operation (`agent_not_allowed`), and
-   * registration refuses `propose` on a `readOnly` operation (`invalid_params`).
+   * What an agent's call of the operation's tool does; a function is asked with the project's current state at each
+   * call (`agentCallOf`). `run` (the default) runs the operation at once. `propose` writes a proposal that the user
+   * accepts or rejects; the operation runs only when the user accepts, as the user. `none` gives agents no tool; an
+   * operation whose `agent` is a function always has one, and a call that the state makes `none` is refused. `run`
+   * and `check` refuse a request with actor `agent` when the call is `propose` or `none` (`agent_not_allowed`), and
+   * registration refuses `propose` or a function on a `readOnly` operation (`invalid_params`).
    */
-  agent?: AgentCall;
+  agent?: AgentCall | ((state: ProjectState) => AgentCall);
+  /**
+   * Always scheduled: `run` writes the record as `pending` and returns at once, as for a request with `after: []`; the
+   * scheduler executes it within the resource limits, without the request's stop signal (`csProject.cancel` stops it).
+   * Registration refuses it on a `readOnly` or an `outsideHistory` operation (`invalid_params`).
+   */
+  background?: boolean;
   /** Whether this call may overlap other agent tool calls; the provider must own resource reservation. */
   isConcurrencySafe?(params: Record<string, unknown>): boolean;
   /**

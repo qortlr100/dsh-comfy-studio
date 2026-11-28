@@ -14,13 +14,14 @@ import CsProject, {
   formatInputRef,
   toolNameOf,
   versionRefOf,
+  type AgentCall,
   type OperationSpec,
   type OperationToolValue,
   type ProjectId,
   type RecordId,
   type SessionId,
 } from "./index.ts";
-import { formatToolResult } from "./agent-tools.ts";
+import { BY_STATE_HINT, formatToolResult } from "./agent-tools.ts";
 import {
   defined,
   MemoryAssets,
@@ -36,6 +37,13 @@ import {
   callTool,
   mountTools,
 } from "./testing/workspaces.ts";
+
+declare module "@cs/project/types" {
+  interface ComponentStates {
+    /** The slice of the test setting that an `agent` function reads: what an agent's call of `image.generate` does. */
+    tool_setting?: { agent: AgentCall };
+  }
+}
 
 /** An attachment service that accepts every image. */
 class MemoryAttachments {
@@ -339,6 +347,151 @@ describe("agent tools", () => {
       `Input 'reference' names an unknown asset ${"f".repeat(64)}.`,
     );
     expect(fixture.project.listRecords(projectId)).toHaveLength(records);
+  });
+
+  it("proposes or runs a call by the project's state when the operation's agent call is a function", async () => {
+    const fixture = await start();
+    fixture.project.registerComponent("tool_setting");
+    fixture.project.registerReducer("tool_setting", {
+      initial: () => ({ agent: "propose" as const }),
+      reduce: (slice, record) =>
+        record.operation === "tool_setting.choose"
+          ? { agent: standIn<AgentCall>(record.params["agent"]) }
+          : slice,
+    });
+    fixture.project.registerOperation({
+      ...operation({ name: "tool_setting.choose", component: "tool_setting", agent: "none" }),
+      params: { agent: { type: "string", required: true } },
+      inputs: {},
+      outsideHistory: true,
+    });
+    let runs = 0;
+    fixture.project.registerOperation(
+      operation({
+        name: "image.generate",
+        component: "image",
+        resource: "gpu",
+        agent: (state) => state.components.tool_setting?.agent ?? "propose",
+        execute: (context) => {
+          runs += 1;
+          return Promise.resolve({
+            outputs: [
+              context.importAsset(Buffer.from(`run ${String(runs)}`), {
+                mime: "image/png",
+                name: "run.png",
+              }),
+            ],
+          });
+        },
+      }),
+    );
+    expect(fixture.context.tools.get("cs_tool_setting_choose")).toBeUndefined();
+    expect(
+      fixture.context.tools.schemas().find((tool) => tool.name === "cs_image_generate")
+        ?.description,
+    ).toBe(`A test operation. Uses the GPU. ${BY_STATE_HINT}`);
+    expect(BY_STATE_HINT).toBe(
+      "Whether this call runs or only writes a proposal depends on the project's settings; the result's status says which.",
+    );
+    const projectId = await boundProject(fixture);
+    const choose = (agent: AgentCall) =>
+      fixture.project.run({
+        ...CREATE,
+        project: projectId,
+        operation: "tool_setting.choose",
+        params: { agent },
+        inputs: [],
+      });
+
+    // The default setting proposes.
+    const proposed = value(
+      await fixture.call("cs_image_generate", { reason: "a kite", prompt: "kite" }),
+    );
+    expect(proposed).toMatchObject({ status: "proposed", outputs: [], scheduled: [] });
+    expect(runs).toBe(0);
+    expect(
+      fixture.project.getRecord(projectId, brandString<RecordId>(proposed.record)).operation,
+    ).toBe("proj.propose");
+
+    // The user lets the agent run it: the next call runs as the agent.
+    await choose("run");
+    const ran = value(
+      await fixture.call("cs_image_generate", { reason: "a kite", prompt: "kite" }),
+    );
+    expect(ran).toMatchObject({ status: "done", summary: "made from kite" });
+    expect(runs).toBe(1);
+    expect(fixture.project.getRecord(projectId, brandString<RecordId>(ran.record))).toMatchObject({
+      operation: "image.generate",
+      actor: "agent",
+    });
+
+    // The user takes agent calls away: the tool stays and its call is refused as run refuses it, writing nothing.
+    await choose("none");
+    const records = fixture.project.listRecords(projectId).length;
+    const refused = await fixture.call("cs_image_generate", { reason: "a kite", prompt: "kite" });
+    expect(refused.isError && refused.error.message).toBe(
+      "An agent cannot call image.generate; only the user runs it.",
+    );
+    expect(fixture.project.listRecords(projectId)).toHaveLength(records);
+    expect(fixture.context.tools.get("cs_image_generate")).toBeDefined();
+  });
+
+  it("answers a call of a background operation with its pending record, shown as a scheduled call is", async () => {
+    const fixture = await start();
+    const projectId = await boundProject(fixture);
+    let release = noop;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    fixture.project.registerOperation(
+      operation({
+        name: "image.generate",
+        component: "image",
+        resource: "gpu",
+        background: true,
+        execute: async (context) => {
+          await held;
+          return {
+            outputs: [
+              context.importAsset(Buffer.from("later"), { mime: "image/png", name: "later.png" }),
+            ],
+          };
+        },
+      }),
+    );
+    const result = await fixture.call("cs_image_generate", { reason: "later", prompt: "kite" });
+    const pending = value(result);
+    expect(pending).toEqual({
+      project: projectId,
+      record: expect.any(String),
+      status: "pending",
+      summary: "cs_image_generate pending",
+      outputs: [],
+      scheduled: [],
+      params: { prompt: "kite" },
+    });
+    expect(result.isError ? [] : result.content).toEqual([
+      {
+        type: "text",
+        text: `pending ${pending.record}: cs_image_generate pending\nparams: {"prompt":"kite"}`,
+      },
+    ]);
+    expect(result.meta).toEqual({
+      record: pending.record,
+      tool: "image.generate",
+      status: "pending",
+      outputs: [],
+      cs_seen: {
+        project: projectId,
+        at: pending.record,
+        records: { [pending.record]: "pending" },
+      },
+    });
+    const id = brandString<RecordId>(pending.record);
+    expect(fixture.project.getRecord(projectId, id).status).not.toBe("done");
+    release();
+    await fixture.project.wait(projectId, [id]);
+    expect(fixture.project.getRecord(projectId, id).status).toBe("done");
   });
 
   it("refuses a call with an argument the tool does not declare, such as a project, before any record", async () => {

@@ -259,6 +259,71 @@ describe("Scheduler", () => {
     expect(seen).toEqual([null, null]);
   });
 
+  it("keeps running other projects' records when a project with a queued record is removed", async () => {
+    const m = startModules();
+    const gone = await createTestProject(m, "gone");
+    const kept = await createTestProject(m, "kept");
+    const held = gate();
+    const ran: string[] = [];
+    m.runner.registerOperation(
+      operation({
+        name: "image.render",
+        component: "image",
+        resource: "gpu",
+        async execute(context) {
+          const prompt = String(context.params["prompt"]);
+          if (prompt === "holds the gpu") await held.promise;
+          ran.push(prompt);
+          return { outputs: [] };
+        },
+      }),
+    );
+    const first = await schedule(m, kept, "image.render", "holds the gpu");
+    const lost = await schedule(m, gone, "image.render", "queued in the removed project");
+    const waiting = m.scheduler.wait(gone);
+    // The project goes away while its record is queued, and the scheduler is not told: its record cannot be read.
+    m.folders.remove(gone);
+    m.store.forget(gone);
+    expect(() => m.store.getRecord(gone, lost.id)).toThrow("There is no project");
+    const last = await schedule(m, kept, "image.render", "after the removal");
+    held.resolve();
+    await m.scheduler.wait(kept, [first.id, last.id]);
+    expect(ran).toEqual(["holds the gpu", "after the removal"]);
+    expect(m.store.getRecord(kept, last.id).status).toBe("done");
+    // The removed project's record left the queue without running, and nothing waits for it any more.
+    await waiting;
+  });
+
+  it("forgets a removed project's queued records and settles a wait for its records", async () => {
+    const m = startModules();
+    const gone = await createTestProject(m, "gone");
+    const held = gate();
+    const ran: string[] = [];
+    m.runner.registerOperation(
+      operation({
+        name: "image.render",
+        component: "image",
+        resource: "gpu",
+        async execute(context) {
+          await held.promise;
+          ran.push(String(context.params["prompt"]));
+          return { outputs: [] };
+        },
+      }),
+    );
+    await schedule(m, gone, "image.render", "running");
+    const queued = await schedule(m, gone, "image.render", "queued");
+    const waiting = m.scheduler.wait(gone, [queued.id]);
+    m.folders.remove(gone);
+    m.scheduler.forget(gone);
+    await waiting;
+    held.resolve();
+    // The record that had started still ends its run and frees the gpu; the queued one never runs.
+    await vi.waitFor(() => {
+      expect(ran).toEqual(["running"]);
+    });
+  });
+
   it("waits for every scheduled record of a project", async () => {
     const m = startModules();
     const project = await createTestProject(m);

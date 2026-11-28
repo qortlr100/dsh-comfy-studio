@@ -1,7 +1,7 @@
 /**
  * The handlers behind the browser routes, independent of transport: list, create, rename, remove and summarize
  * projects, read the project state, list operations, run an operation as the human, undo and redo, accept a stale
- * record, decide an agent's proposal, and list the history. The Fetch routes and the tests call these methods directly.
+ * record, stop an unfinished record, decide an agent's proposal, and list the history. The Fetch routes and the tests call these methods directly.
  *
  * Every write goes through `csProject` with actor `user`, the surface the request names, and the chat session the view
  * sits beside (`session`, when the request names one); it becomes a step after the project's current position.
@@ -583,7 +583,8 @@ export class ApiHandlers {
 
   /**
    * Run an operation as the human, from a view. The record goes after the current position of the project's history.
-   * A call whose inputs name an unfinished record is scheduled to run once that record is done.
+   * A call whose inputs name an unfinished record is scheduled to run once that record is done, and a call of a
+   * `background` operation is always scheduled; either answers at once with the `pending` record.
    * @param raw - the {@link OperationRequest}.
    * @returns the record, finished or pending.
    * @throws ApiRequestError when the body or the operation is unknown, or Project refuses the call.
@@ -715,6 +716,23 @@ export class ApiHandlers {
     const target = brandString<RecordId>(stringOf(body["record"], "record"));
     return refused(() =>
       this.project.acceptStale(projectId, target, humanOrigin(body, `accept ${target}`)),
+    );
+  }
+
+  /**
+   * Stop a record that has not finished, as the human: a queued record leaves the queue, an executing one is aborted;
+   * either ends `cancelled` with `error {code: 'stopped'}`. A finished record is answered as it is. Writes no record
+   * and moves no history position.
+   * @param raw - `{project, record, surface?, session?}`.
+   * @returns the record in its final status.
+   * @throws ApiRequestError (400 `invalid_params` for a missing record, 404 `unknown_project` or `unknown_record`).
+   */
+  async cancelRecord(raw: unknown): Promise<ProjectRecord> {
+    const body = objectOf(raw);
+    const projectId = this.requireProject(body["project"]);
+    const target = brandString<RecordId>(stringOf(body["record"], "record"));
+    return refused(() =>
+      this.project.cancel(projectId, target, humanOrigin(body, `stop ${target}`)),
     );
   }
 

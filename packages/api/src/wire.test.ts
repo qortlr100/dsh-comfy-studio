@@ -168,6 +168,8 @@ describe("toWireOperation", () => {
     expect(toWireOperation(spec({ agent: "propose" })).agent).toBe("propose");
     expect(toWireOperation(spec({ agent: "none" })).agent).toBe("none");
     expect(toWireOperation(spec({ agent: "run" })).agent).toBe("run");
+    // An operation that decides at each call from the project's state.
+    expect(toWireOperation(spec({ agent: () => "propose" })).agent).toBe("by_state");
   });
 
   it("adds the label only when the operation declares one", () => {

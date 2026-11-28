@@ -7,7 +7,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { brandString } from "@deepseek-ai/dsh-brand";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { OperationSpec } from "./operation-types.ts";
 import { DECIDE_OPERATION, PROPOSE_OPERATION, ProposalDecider } from "./proposals.ts";
 import { RecordStore } from "./record-store.ts";
@@ -485,6 +485,39 @@ describe("decideProposal", () => {
       expect(error.code).toBe(code);
     }
     expect(file(fixture)).toBe(before);
+  });
+
+  it("answers the acceptance of a background operation with its pending record, before the run ends", async () => {
+    const held = gate();
+    let runs = 0;
+    const fixture = await start({
+      background: true,
+      resource: "gpu",
+      execute: async () => {
+        runs += 1;
+        await held.promise;
+        return { outputs: [] };
+      },
+    });
+    const { m, project } = fixture;
+    const proposed = await m.runner.propose(proposal(fixture));
+    const outcome = await fixture.decider.decide(project, proposed.id, "accept", DECIDER);
+    const ran = defined(outcome.result?.record);
+    expect(ran).toMatchObject({ operation: "asset.delete", actor: "user", status: "pending" });
+    expect(outcome.proposal).toMatchObject({ status: "accepted", record: ran.id });
+    expect(recordsOf(fixture, DECIDE_OPERATION).map((record) => record.params)).toEqual([
+      { proposal: proposed.id, decision: "accepted", record: ran.id },
+    ]);
+    await vi.waitFor(() => {
+      expect(runs).toBe(1);
+    });
+    expect(m.store.getRecord(project, ran.id).status).toBe("running");
+    held.resolve();
+    await m.scheduler.wait(project, [ran.id]);
+    expect(m.store.getRecord(project, ran.id).status).toBe("done");
+    expect(runs).toBe(1);
+    expect(recordsOf(fixture, "asset.delete")).toHaveLength(1);
+    expect(recordsOf(fixture, DECIDE_OPERATION)).toHaveLength(1);
   });
 
   it("schedules an accepted call whose input names a record output that has not finished", async () => {

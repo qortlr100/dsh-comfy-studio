@@ -1,9 +1,22 @@
 /**
- * Values that several modules of the Project service use: the error classes, and the metadata key of what a tool result
- * showed of the project.
+ * Values that several modules of the Project service use: the error classes, the metadata key of what a tool result
+ * showed of the project, and the agent call of an operation in a state.
  *
  * @module @cs/project/shared
  */
+import type { OperationSpec } from "./operation-types.ts";
+import type { AgentCall, ProjectState } from "./types.ts";
+
+/**
+ * What an agent's call of an operation does in a state: the operation's `agent`, asked with the state when it is a
+ * function.
+ * @param spec - the operation, or its `agent` field.
+ * @param state - the project's current state, which the call writes after.
+ * @returns `run` when the operation declares no `agent`.
+ */
+export function agentCallOf(spec: Pick<OperationSpec, "agent">, state: ProjectState): AgentCall {
+  return typeof spec.agent === "function" ? spec.agent(state) : (spec.agent ?? "run");
+}
 
 /** Why a Project call was refused. The record store, the runner and history throw these codes. */
 export type ProjectErrorCode =
@@ -23,7 +36,10 @@ export type ProjectErrorCode =
   | "record_finished"
   | "nothing_to_undo"
   | "nothing_to_redo"
-  /** An agent's request for an operation whose `agent` is `propose` or `none`. */
+  /**
+   * An agent's request for an operation whose `agent` is `propose` or `none` (in the project's current state, for a
+   * function), or an agent's stop of a record.
+   */
   | "agent_not_allowed"
   /** A decision on a proposal while another decision on it is in flight. */
   | "proposal_busy";

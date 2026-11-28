@@ -5,7 +5,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { brandString } from "@deepseek-ai/dsh-brand";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 import type { ProjectModules } from "./testing/support.ts";
 import {
   agentOrigin,
@@ -13,6 +13,7 @@ import {
   createTestProject,
   defined,
   readLines,
+  STAND_IN_COMPONENTS,
   startModules,
   userOrigin,
 } from "./testing/support.ts";
@@ -21,8 +22,17 @@ import { RecordStore } from "./record-store.ts";
 import { projReducer, ReducerRegistry } from "./reducers.ts";
 import { Runner } from "./runner.ts";
 import { Scheduler } from "./scheduler.ts";
-import { OperationFailure } from "./shared.ts";
-import type { AssetId, ProjectId, ProjectRecord, RecordOrigin, RunRequest } from "./types.ts";
+import { OperationFailure, ProjectError } from "./shared.ts";
+import type {
+  AgentCall,
+  AssetId,
+  ProjectId,
+  ProjectRecord,
+  ProjectState,
+  RecordId,
+  RecordOrigin,
+  RunRequest,
+} from "./types.ts";
 
 declare module "@cs/project/types" {
   interface ComponentStates {
@@ -97,6 +107,42 @@ function gate<T = void>(): { promise: Promise<T>; resolve: (value: T) => void } 
     resolve = done;
   });
   return { promise, resolve };
+}
+
+/**
+ * Register the `runner_setting` component: its reducer keeps the `prompt` of every `runner_setting.choose` record, a
+ * user-only setting outside the history.
+ * @param m - the modules.
+ */
+function registerSetting(m: ProjectModules): void {
+  m.runner.registerComponent("runner_setting");
+  m.reducers.register("runner_setting", {
+    initial: () => ({ values: [] }),
+    reduce: (slice, record) =>
+      record.operation === "runner_setting.choose"
+        ? { values: [...(slice?.values ?? []), String(record.params.prompt)] }
+        : slice,
+  });
+  m.runner.registerOperation(
+    operation({
+      name: "runner_setting.choose",
+      component: "runner_setting",
+      outsideHistory: true,
+      agent: "none",
+    }),
+  );
+}
+
+/**
+ * Choose a setting as the user.
+ * @param m - the modules.
+ * @param project - the project.
+ * @param value - the `prompt` of the choice.
+ */
+async function choose(m: ProjectModules, project: ProjectId, value: string): Promise<void> {
+  await m.runner.run(
+    request(project, "runner_setting.choose", userOrigin(), { params: { prompt: value } }),
+  );
 }
 
 /**
@@ -846,5 +892,451 @@ describe("Runner", () => {
     expect(
       readLines(m.root, project).filter((line) => line["status"] === "cancelled"),
     ).toHaveLength(2);
+  });
+});
+
+/**
+ * An `agent` function that reads the last `runner_setting` choice: `run` or `none` as chosen, else `propose`.
+ * @param state - the project's state.
+ * @returns the agent call.
+ */
+function bySetting(state: ProjectState): AgentCall {
+  const last = state.components.runner_setting?.values.at(-1);
+  return last === "run" || last === "none" ? last : "propose";
+}
+
+describe("an agent call decided by the project's state", () => {
+  it("refuses an agent's run and check by the state at the call, writing nothing, and runs it for the user", async () => {
+    const m = startModules();
+    const project = await createTestProject(m);
+    registerSetting(m);
+    const states: string[] = [];
+    m.runner.registerOperation(
+      operation({
+        name: "image.generate",
+        component: "image",
+        agent: (state) => {
+          states.push(state.head);
+          return bySetting(state);
+        },
+      }),
+    );
+    const call = request(project, "image.generate", agentOrigin());
+    const refusal = async (): Promise<ProjectError> =>
+      asError(await m.runner.run(call).catch((error: unknown) => error), ProjectError);
+
+    // No choice yet: the call proposes, so an agent's run is refused, and so is its check.
+    const before = files(m, project);
+    const proposing = await refusal();
+    expect(proposing.code).toBe("agent_not_allowed");
+    expect(proposing.message).toContain("proposes the call");
+    expect((await m.runner.check(call)).problems).toEqual([proposing.message]);
+    expect(files(m, project)).toBe(before);
+    // The function was asked with the project's current state.
+    expect(states.every((head) => head === m.store.line(project)?.at)).toBe(true);
+
+    // The user turns agent runs on: the same call runs.
+    await choose(m, project, "run");
+    expect(await m.runner.check(call)).toEqual({ problems: [] });
+    expect((await m.runner.run(call)).record).toMatchObject({ actor: "agent", status: "done" });
+
+    // The user turns agent calls off: the call is refused as for an operation without a tool.
+    await choose(m, project, "none");
+    const off = await refusal();
+    expect(off.code).toBe("agent_not_allowed");
+    expect(off.message).toContain("only the user runs it");
+    // The user's run never asks the function.
+    states.length = 0;
+    expect((await m.runner.run(request(project, "image.generate"))).record?.status).toBe("done");
+    expect(states).toEqual([]);
+  });
+
+  it("refuses to register a read whose agent call is a function", () => {
+    const m = startModules();
+    expect(() =>
+      m.runner.registerOperation(
+        operation({ name: "inspect.look", component: "inspect", readOnly: true, agent: bySetting }),
+      ),
+    ).toThrow(expect.objectContaining({ code: "invalid_params" }));
+    expect(m.runner.listOperations()).toEqual([]);
+  });
+});
+
+describe("background operations", () => {
+  it("schedules every call, returns the pending record at once, and finishes it without the request's signal", async () => {
+    const m = startModules();
+    const project = await createTestProject(m);
+    const held = gate();
+    let signal: AbortSignal | null = null;
+    m.runner.registerOperation(
+      operation({
+        name: "image.generate",
+        component: "image",
+        resource: "gpu",
+        background: true,
+        execute: async (context) => {
+          signal = context.signal;
+          await held.promise;
+          return { outputs: [], report: { seed: 3 } };
+        },
+      }),
+    );
+    const turn = new AbortController();
+    const result = await m.runner.run(
+      request(project, "image.generate", agentOrigin(), { signal: turn.signal }),
+    );
+    expect(result).toEqual({
+      record: expect.objectContaining({ status: "pending" }),
+      outputs: [],
+      report: null,
+    });
+    const id = defined(result.record).id;
+    const seen = await vi.waitFor(() => defined<AbortSignal>(signal, "the operation's signal"));
+    expect(m.store.getRecord(project, id).status).toBe("running");
+    // The turn ends; the background run goes on.
+    turn.abort();
+    expect(seen.aborted).toBe(false);
+    held.resolve();
+    await m.scheduler.wait(project, [id]);
+    expect(m.store.getRecord(project, id)).toMatchObject({ status: "done", report: { seed: 3 } });
+  });
+
+  it("keeps the gpu and cpu limits for background runs", async () => {
+    const m = startModules({ cpu: 1, gpu: 1 });
+    const project = await createTestProject(m);
+    const held = gate();
+    const running = { gpu: 0, cpu: 0 };
+    const most = { gpu: 0, cpu: 0 };
+    for (const resource of ["gpu", "cpu"] as const) {
+      m.runner.registerOperation(
+        operation({
+          name: `image.${resource}`,
+          component: "image",
+          resource,
+          background: true,
+          execute: async () => {
+            running[resource] += 1;
+            most[resource] = Math.max(most[resource], running[resource]);
+            await held.promise;
+            running[resource] -= 1;
+            return { outputs: [] };
+          },
+        }),
+      );
+    }
+    const ids: RecordId[] = [];
+    for (const name of ["image.gpu", "image.gpu", "image.cpu", "image.cpu"]) {
+      ids.push(defined((await m.runner.run(request(project, name))).record).id);
+    }
+    await vi.waitFor(() => {
+      expect(running).toEqual({ gpu: 1, cpu: 1 });
+    });
+    expect(ids.map((id) => m.store.getRecord(project, id).status)).toEqual([
+      "running",
+      "pending",
+      "running",
+      "pending",
+    ]);
+    held.resolve();
+    await m.scheduler.wait(project);
+    expect(most).toEqual({ gpu: 1, cpu: 1 });
+    expect(ids.map((id) => m.store.getRecord(project, id).status)).toEqual([
+      "done",
+      "done",
+      "done",
+      "done",
+    ]);
+  });
+
+  it("refuses to register a background read or a background setting outside the history", () => {
+    const m = startModules();
+    for (const extra of [{ readOnly: true }, { outsideHistory: true }]) {
+      expect(() =>
+        m.runner.registerOperation(
+          operation({ name: "image.later", component: "image", background: true, ...extra }),
+        ),
+      ).toThrow(expect.objectContaining({ code: "invalid_params" }));
+    }
+    expect(m.runner.listOperations()).toEqual([]);
+  });
+});
+
+/**
+ * A runner and scheduler over the folders of `m` whose scheduler waits for `started` before it executes each record it
+ * starts, so that a test can reach a record that left the queue and has not begun executing.
+ * @param m - the modules whose folders and assets the new ones share.
+ * @param started - settles when the scheduler may execute the records it started.
+ * @returns the store, the scheduler and the runner.
+ */
+function startGated(
+  m: ProjectModules,
+  started: Promise<void>,
+): { store: RecordStore; scheduler: Scheduler; runner: Runner } {
+  const holder: { scheduler: Scheduler | null; runner: Runner | null } = {
+    scheduler: null,
+    runner: null,
+  };
+  const store = new RecordStore(m.folders, (project, event) => {
+    if (event.kind === "update" && ["done", "failed", "cancelled"].includes(event.record.status))
+      holder.scheduler?.recordFinished(project);
+  });
+  const reducers = new ReducerRegistry(
+    store,
+    (record) => holder.runner?.isOutsideHistory(record) ?? false,
+  );
+  const scheduler = new Scheduler(
+    store,
+    async (project, record) => {
+      await started;
+      return await defined(holder.runner, "the runner").execute(project, record);
+    },
+    { cpu: 4, gpu: 1 },
+  );
+  const runner = new Runner({ store, reducers, scheduler, assets: m.assets });
+  for (const key of STAND_IN_COMPONENTS) runner.registerComponent(key);
+  reducers.register("proj", projReducer);
+  holder.scheduler = scheduler;
+  holder.runner = runner;
+  onTestFinished(() => {
+    scheduler.dispose();
+  });
+  return { store, scheduler, runner };
+}
+
+/**
+ * The modules, a project, and `image.generate`: a background gpu operation (one at a time) that waits for `held`.
+ * @param execute - the operation's execute instead of the default, which records its `prompt` and waits for `held`.
+ * @returns the modules, the project, the gate and the prompts the default execute saw.
+ */
+async function startCancel(execute?: OperationSpec["execute"]): Promise<{
+  m: ProjectModules;
+  project: ProjectId;
+  held: { promise: Promise<void>; resolve: () => void };
+  executed: string[];
+}> {
+  const m = startModules({ cpu: 4, gpu: 1 });
+  const project = await createTestProject(m);
+  const held = gate();
+  const executed: string[] = [];
+  m.runner.registerOperation(
+    operation({
+      name: "image.generate",
+      component: "image",
+      resource: "gpu",
+      background: true,
+      execute:
+        execute ??
+        (async (context) => {
+          executed.push(String(context.params["prompt"]));
+          await held.promise;
+          return { outputs: [] };
+        }),
+    }),
+  );
+  return { m, project, held, executed };
+}
+
+/**
+ * Start `image.generate` as the user.
+ * @param m - the modules.
+ * @param project - the project.
+ * @param prompt - the call's `prompt`.
+ * @returns its pending record.
+ */
+async function generate(
+  m: ProjectModules,
+  project: ProjectId,
+  prompt: string,
+): Promise<ProjectRecord> {
+  return defined(
+    (await m.runner.run(request(project, "image.generate", userOrigin(), { params: { prompt } })))
+      .record,
+  );
+}
+
+/**
+ * @param m - the modules.
+ * @param record - a record.
+ * @param from - the index of the first event to read.
+ * @returns the status of each update event of the record since `from`.
+ */
+function updatesOf(m: ProjectModules, record: RecordId, from: number): string[] {
+  return m.events
+    .slice(from)
+    .flatMap(({ event }) =>
+      event.kind === "update" && event.record.id === record ? [event.record.status] : [],
+    );
+}
+
+describe("cancel", () => {
+  it("takes a queued record out of the queue and ends it, and fails the records that wait for it", async () => {
+    const { m, project, held, executed } = await startCancel();
+    const first = await generate(m, project, "first");
+    const queued = await generate(m, project, "queued");
+    m.runner.registerOperation(operation({ name: "batch.item_insert", component: "batch" }));
+    const waiting = defined(
+      (
+        await m.runner.run(
+          request(project, "batch.item_insert", userOrigin(), { after: [queued.id] }),
+        )
+      ).record,
+    );
+    await vi.waitFor(() => {
+      expect(m.store.getRecord(project, first.id).status).toBe("running");
+    });
+    const line = m.store.line(project);
+    const lines = readLines(m.root, project).length;
+    const events = m.events.length;
+
+    const stopped = await m.runner.cancel(project, queued.id, userOrigin({ intent: "stop" }));
+
+    expect(stopped).toMatchObject({
+      id: queued.id,
+      status: "cancelled",
+      error: { code: "stopped", message: "Stopped by the user." },
+    });
+    expect(stopped.finished_at).toBeDefined();
+    expect(m.store.line(project)).toEqual(line);
+    expect(
+      m.events.slice(events).some(({ event }) => event.kind === "record" || event.kind === "line"),
+    ).toBe(false);
+    expect(updatesOf(m, queued.id, events)).toEqual(["cancelled"]);
+    await m.scheduler.wait(project, [waiting.id]);
+    expect(m.store.getRecord(project, waiting.id)).toMatchObject({
+      status: "failed",
+      error: {
+        code: "input_failed",
+        message: `Record ${queued.id}, which this call waits for, ended cancelled: Stopped by the user.`,
+      },
+    });
+    // The running record goes on; the stopped one never executes.
+    held.resolve();
+    await m.scheduler.wait(project);
+    expect(m.store.getRecord(project, first.id).status).toBe("done");
+    expect(executed).toEqual(["first"]);
+    // One update line each: the stopped record, the record that waited for it, and the first record's `done`.
+    expect(readLines(m.root, project).length - lines).toBe(3);
+  });
+
+  it("aborts an executing record and resolves once it ended cancelled", async () => {
+    let listening = false;
+    const { m, project } = await startCancel(
+      (context) =>
+        new Promise((_resolve, reject) => {
+          listening = true;
+          context.signal.addEventListener("abort", () => {
+            reject(new Error("aborted"));
+          });
+        }),
+    );
+    const record = await generate(m, project, "a");
+    await vi.waitFor(() => {
+      expect(listening).toBe(true);
+    });
+    const line = m.store.line(project);
+    const events = m.events.length;
+    expect(await m.runner.cancel(project, record.id, userOrigin())).toMatchObject({
+      status: "cancelled",
+      error: { code: "stopped", message: "Stopped by the user." },
+    });
+    expect(updatesOf(m, record.id, events)).toEqual(["cancelled"]);
+    expect(m.store.line(project)).toEqual(line);
+    // A second stop answers the finished record.
+    expect((await m.runner.cancel(project, record.id, userOrigin())).status).toBe("cancelled");
+    expect(updatesOf(m, record.id, events)).toEqual(["cancelled"]);
+  });
+
+  it("waits for an execution that ignores the signal, without holding the project, and keeps its done", async () => {
+    const { m, project, held, executed } = await startCancel();
+    const record = await generate(m, project, "a");
+    await vi.waitFor(() => {
+      expect(executed).toEqual(["a"]);
+    });
+    let settled = false;
+    const stopping = m.runner.cancel(project, record.id, userOrigin()).then((ended) => {
+      settled = true;
+      return ended;
+    });
+    // While the stop waits, other edits of the project run.
+    m.runner.registerOperation(operation({ name: "batch.item_insert", component: "batch" }));
+    expect((await m.runner.run(request(project, "batch.item_insert"))).record?.status).toBe("done");
+    expect(settled).toBe(false);
+    held.resolve();
+    expect(await stopping).toMatchObject({ id: record.id, status: "done" });
+    expect(m.store.getRecord(project, record.id)).not.toHaveProperty("error");
+  });
+
+  it("ends a call stopped before its operation started without starting it", async () => {
+    const m = startModules();
+    const project = await createTestProject(m);
+    const execute = vi.fn(() => Promise.resolve({ outputs: [] }));
+    m.runner.registerOperation(operation({ name: "image.generate", component: "image", execute }));
+    // The stop comes when the record is written, before the run reaches the operation.
+    let stopping: Promise<ProjectRecord> | null = null;
+    const unsubscribe = m.subscriptions.subscribe(project, (event) => {
+      if (event.kind === "record" && event.record.operation === "image.generate")
+        stopping = m.runner.cancel(project, event.record.id, userOrigin());
+    });
+    const result = await m.runner.run(request(project, "image.generate"));
+    unsubscribe();
+    expect(result.record).toMatchObject({
+      status: "cancelled",
+      error: { code: "stopped", message: "Stopped by the user." },
+    });
+    expect(await defined<Promise<ProjectRecord>>(stopping)).toEqual(result.record);
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("ends a pending record that left the queue and has not begun executing, when it begins", async () => {
+    const m = startModules();
+    const project = await createTestProject(m);
+    const started = gate();
+    const gated = startGated(m, started.promise);
+    const execute = vi.fn(() => Promise.resolve({ outputs: [] }));
+    gated.runner.registerOperation(
+      operation({ name: "image.generate", component: "image", background: true, execute }),
+    );
+    const pending = defined((await gated.runner.run(request(project, "image.generate"))).record);
+    const stopping = gated.runner.cancel(project, pending.id, userOrigin());
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(gated.store.getRecord(project, pending.id).status).toBe("pending");
+    started.resolve();
+    expect(await stopping).toMatchObject({
+      status: "cancelled",
+      error: { code: "stopped", message: "Stopped by the user." },
+    });
+    expect(execute).not.toHaveBeenCalled();
+    const lines = readLines(m.root, project).filter((line) => line["update"] === pending.id);
+    expect(lines.map((line) => line["status"])).toEqual(["cancelled"]);
+  });
+
+  it("returns a finished record as it is, refuses an agent, and refuses unknown IDs", async () => {
+    const { m, project, held } = await startCancel();
+    m.runner.registerOperation(operation({ name: "batch.item_insert", component: "batch" }));
+    const done = defined((await m.runner.run(request(project, "batch.item_insert"))).record);
+    const running = await generate(m, project, "a");
+    await vi.waitFor(() => {
+      expect(m.store.getRecord(project, running.id).status).toBe("running");
+    });
+    const before = files(m, project);
+    expect(await m.runner.cancel(project, done.id, userOrigin())).toEqual(done);
+    const create = defined(m.store.listRecords(project)[0]);
+    expect(await m.runner.cancel(project, create.id, userOrigin())).toEqual(create);
+    const cases: Array<[ProjectId, RecordId, RecordOrigin, string]> = [
+      [project, running.id, agentOrigin(), "agent_not_allowed"],
+      [project, brandString<RecordId>("nope"), userOrigin(), "unknown_record"],
+      [brandString<ProjectId>("elsewhere"), running.id, userOrigin(), "unknown_project"],
+    ];
+    for (const [where, id, origin, code] of cases) {
+      const error = asError(
+        await m.runner.cancel(where, id, origin).catch((e: unknown) => e),
+        ProjectError,
+      );
+      expect(error.code).toBe(code);
+    }
+    expect(files(m, project)).toBe(before);
+    held.resolve();
+    await m.scheduler.wait(project);
+    expect(m.store.getRecord(project, running.id).status).toBe("done");
   });
 });

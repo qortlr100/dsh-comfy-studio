@@ -157,8 +157,9 @@ export function apply(ctx: Context): void {
 - **한 곳에서 막는다.** `ctx.csProject.run`은 `actor: "agent"`인 요청이 `propose`·`none` 연산을 부르면 기록 없이 거절한다(`agent_not_allowed`).
 - **제안은 히스토리 밖의 기록이다.** `proj.propose`(연산 이름, 파라미터, 입력)와 `proj.proposal_decide`(제안, 결정, 승인으로 실행된 기록) 둘이고, 단계가 아니라서 실행 취소로 사라지지 않고 뒤 단계를 버리지 않는다. `proj` 조각의 `proposals`가 이 둘에서 계산한 목록이다(`pending`·`accepted`·`rejected`).
 - **제안할 때와 승인할 때 둘 다 검사한다.** `ctx.csProject.propose(request)`는 `run`이 기록 전에 하는 검사(파라미터, 입력, `precondition`)를 그때의 상태로 하고, 걸리면 기록 없이 거절한다(에이전트에게는 도구 오류다). `ctx.csProject.decideProposal(project, proposal, "accept" | "reject", origin)`의 승인은 연산을 사용자 origin으로 `run`하므로 그때의 상태로 다시 검사된다. 기록 전에 거절되면 제안은 대기로 남고 오류가 사용자에게 간다.
-- **두 번 실행되지 않는다.** 이미 결정된 제안의 결정은 아무것도 쓰지 않고 지금 상태를 돌려준다. 같은 제안의 결정이 진행 중이면 `proposal_busy`다. 결정은 사용자만 한다(`actor: "agent"`인 결정은 `agent_not_allowed`). 에이전트의 히스토리 이동(`cs_proj_undo`, `cs_proj_redo`)도 `propose`·`none` 연산의 단계를 넘지 못한다: 사용자가 실행 취소한 삭제를 되살리지도, 사용자의 검토를 되돌리지도 못하고 `agent_not_allowed`로 거절된다(2026-11-29). 같은 세션이 같은 연산·파라미터·입력으로 낸 대기 중 제안은 하나로 접힌다.
+- **두 번 실행되지 않는다.** 이미 결정된 제안의 결정은 아무것도 쓰지 않고 지금 상태를 돌려준다. 같은 제안의 결정이 진행 중이면 `proposal_busy`다. 결정은 사용자만 한다(`actor: "agent"`인 결정은 `agent_not_allowed`). 에이전트의 히스토리 이동(`cs_proj_undo`, `cs_proj_redo`)도 `propose`·`none` 연산의 단계를 넘지 못한다: 사용자가 실행 취소한 삭제를 되살리지도, 사용자의 검토를 되돌리지도 못하고 `agent_not_allowed`로 거절된다(2026-11-29). 지금 등록돼 있지 않은 연산의 단계도 넘지 못한다(그 연산의 규칙을 물을 수 없다). 같은 세션이 같은 연산·파라미터·입력으로 낸 대기 중 제안은 하나로 접힌다.
 - **에이전트가 아는 것.** 도구 결과가 "제안했고 아직 바뀐 것은 없다"를 말한다(오류가 아니다). 대기 중인 제안은 프로젝트 요약의 `proposals`에, 사용자의 결정은 프로젝트 갱신 메시지의 줄로 간다. 프로젝트 규칙 절이 제안 도구를 되풀이해 부르지 말라고 적는다.
+- **호출 때 정해지는 `agent`.** 연산의 `agent`는 값 대신 함수 `(state) => "run" | "propose" | "none"`일 수 있다(2-3d). 실행기, 도구, 히스토리 이동 가드가 그때의 프로젝트 상태로 묻는다(`agentCallOf`). 그런 연산은 늘 도구가 있고 설명 끝에 "프로젝트 설정에 따라 실행되거나 제안만 남는다"는 문장이 붙는다. 화면용 API의 연산 선언에는 `agent: "by_state"`로 실린다. 생성(`gen.run`)이 쓴다.
 - **화면이 하는 것.** 제안 목록은 상태(`GET /api/cs/state`)의 `components.proj.proposals`에 있고, 결정은 `POST /api/cs/proposal/decide`다. 채팅 안의 카드는 3-4에서 그린다. 그때까지 화면에는 승인하는 곳이 없다.
 - 만료는 없다. 결정된 제안도 상태에 남는다.
 - 프리셋은 프로젝트 밖의 데이터라(아래 "데이터가 사는 곳") 프리셋 변경의 제안이 이 장치를 쓸지는 2-3f에서 정한다.
@@ -234,6 +235,23 @@ export function apply(ctx: Context): void {
 - 다른 기능 컴포넌트는 조각을 직접 뒤지지 않고 서비스에 묻는다: `ctx.csWorkflow.resolve(state, id)`(항목과 파싱한 그래프), `ctx.csWorkflow.objectInfo(target)`(그 자리의 노드 정보).
 - 에이전트 요약에 `workflows`(id, 이름, 설명, 필드 id. 30개까지)가 실린다.
 
+### 생성 — `@cs/generation`
+
+워크플로를 카탈로그의 `graph` 항목으로 실행하는 기능 컴포넌트다(2-3d. 컴포넌트 열쇠 `gen`). 아래는 단위 시험과, 가짜 생성 프로바이더를 등록한 조합 시험 `tests/integration/generation.test.ts`로 확인했다(**띄워 확인**, 2026-11-29). 실제 ComfyUI 서버로는 돌려 보지 않았다(4-2). 상세는 `docs/archive/PLAN_2-3d.md`.
+
+- **요청 하나가 배치 하나이고 기록 하나다**(기존 규칙). `gen.run`은 `count`번(1~4) 차례로 실행하고, 기록의 `report`(`GenRunReport`)에 실행마다의 시드·출력·오류가, 기록의 `outputs`에 모든 출력이 남는다. 출력은 에셋 라이브러리에 검토 대기로 들어온다. 배치의 목록은 조각에 따로 두지 않는다: 화면과 읽기 연산이 상태의 기록에서 읽는다.
+- **그래프를 만드는 순서**: 워크플로의 그래프(템플릿) → 그래프 패치(`ops`) → 필드 값(`values`) → 실행마다 시드. 템플릿은 바뀌지 않는다. 미디어 입력은 에셋으로 받고(`media` 입력과 `media_fields`), 생성 프로바이더가 실행 직전에 서버에 올린다. 준비한 그래프는 블롭으로 남는다(`report.graph`).
+- **에이전트의 생성은 기본이 제안이다.** 프로젝트 설정 `gen.settings`의 `agent_run`을 사용자가 켜면 에이전트의 호출이 바로 실행된다(기존 앱의 "생성 허용"). 조각 `gen`은 이 설정 하나다.
+- **생성은 배경에서 돈다.** `gen.run`은 기록을 `pending`으로 쓰고 바로 답한다. 스케줄러가 GPU 한도(동시에 하나) 안에서 실행한다. 화면의 요청, 에이전트의 도구 호출, 제안의 승인이 실행이 끝나기를 기다리지 않는다. 에이전트는 프로젝트 갱신 메시지로 끝난 것을 알거나 `cs_proj_wait`로 기다린다.
+- **끝나는 모양**: 하나라도 끝난 실행이 있으면 `done`이다(실패한 실행은 `report.runs[i].error`). 하나도 끝나지 못했으면 `failed`다(전부 서버가 받지 않았으면 코드 `not_queued`). 사용자가 멈추면(`POST /api/cs/record/cancel`) 남은 실행을 하지 않는다.
+- `gen.run`은 카탈로그에 `graph` 항목이 있는 동안만 등록된다. 생성 프로바이더가 없으면(지금의 번들) 도구 `cs_gen_run`도 없다.
+
+| 연산 | 에이전트가 부르면 | 하는 일 |
+| --- | --- | --- |
+| `gen.run` | 설정에 따라 제안(기본)이나 실행 | 워크플로를 실행한다 |
+| `gen.settings` | 도구 없음 | 에이전트가 생성을 바로 실행해도 되는지(히스토리 밖) |
+| `gen.targets`, `gen.list`, `gen.get` | 읽기 | 실행할 수 있는 자리(카탈로그의 `graph` 항목), 최근 배치, 배치 하나(실행마다의 시드·출력·검토 상태·오류) |
+
 ## 두 계약
 
 계획 2가 먼저 정해야 하는 것이다. 이 둘이 정해져야 계획 3(화면)과 계획 4(Comfy 연결)가 따로 갈 수 있다. 화면용 API는 2-2에서, 카탈로그 계약은 2-1에서 만들었다.
@@ -291,7 +309,7 @@ export function apply(ctx: Context): void {
 **정하지 않은 것.**
 
 - 재시작 후 이어받기. 계약에 `resume`은 있지만, 프로젝트 계층은 재시작 때 끝나지 않은 기록을 `cancelled`로 끝낸다. 이어받으려면 그 규칙을 바꾸거나 실행 id를 기록 밖에 둬야 한다(4-2).
-- 카탈로그를 읽는 에이전트 도구(DreamVerse의 `dv_models_list`·`dv_models_get`). 무엇을 보일지는 생성 기능 컴포넌트가 워크플로와 함께 정한다(2-3).
+- 카탈로그를 읽는 에이전트 도구는 생성 기능 컴포넌트의 `cs_gen_targets`다(2-3d).
 - 서버 id의 모양과 서버 목록의 자리(4-1).
 - 실행을 구현하며 정할 것(4-2): 중지한 뒤 서버가 아직 돌고 있을 때 순회가 끝나는 시점, 큰 미디어 입력(지금 `assets.read`는 파일 전체를 메모리에 올린다), 실행 중에 항목이 빠질 때, 한 항목에서 동시에 도는 실행, 마스크 같은 다른 올리기, `facts()`의 캐시, 긴 오류 메시지 자르기. 실행 중의 미리보기 프레임을 싣는 이벤트는 없다(3-3·4-2에서 필요하면 더한다).
 
@@ -315,6 +333,7 @@ export function apply(ctx: Context): void {
 | `/api/cs/redo` | POST | `{project}` | `{tip, at}` |
 | `/api/cs/stale/accept` | POST | `{project, record, session?, surface?}` | `proj.stale_accept` 기록 |
 | `/api/cs/history` | POST | `{project, actor?, component?, operation?, kind?, status?, session?, turn?, tool_call?, records?, before?, limit?}` | `WireHistory`(`{entries, assets}`). `limit`은 1~200, 기본 50 |
+| `/api/cs/record/cancel` | POST | `{project, record, surface?, session?}` | 멈춘 뒤의 기록. 끝나지 않은 기록을 멈춘다: 대기열에 있으면 빼고, 실행 중이면 그 실행의 신호를 끊고 끝날 때까지 기다린다(`cancelled`, `error.code: "stopped"`). 끝난 기록은 그대로 돌려준다. 2-3d |
 | `/api/cs/proposal/decide` | POST | `{project, proposal, decision: "accept" \| "reject", surface?, session?}` | `{proposal, record}`: 결정 뒤의 제안과, 승인으로 실행된 연산의 기록(거절이거나 이미 결정된 제안이면 `null`). 2-3a |
 | `/api/cs/catalog` | GET | — | `WireCatalogEntry[]`(`{primitive, provider, target, description, abilities, facts, problem}`): 카탈로그의 항목. 카탈로그가 없으면 `[]` |
 | `/cs/events?project=<id>` | GET | — | `text/event-stream`: `ready` 뒤에 `record`(기록 추가), `update`(기록 갱신), `line`(현재 위치나 끝이 바뀜), `catalog`(카탈로그가 바뀜. 데이터 없음) |
@@ -496,6 +515,7 @@ packages/
   asset/             @cs/asset         에셋 기능 컴포넌트(2-3b): 저장소, 라이브러리의 리듀서와 연산, 파일 라우트
   ffmpeg/            @cs/ffmpeg        ffmpeg·ffprobe를 실행하는 서비스 ctx.csFfmpeg(2-3b). 연산이 없다
   workflow/          @cs/workflow      워크플로 기능 컴포넌트(2-3c): 그래프 템플릿과 필드, 패치를 변형으로 저장, 읽기 도구
+  generation/        @cs/generation    생성 기능 컴포넌트(2-3d): 워크플로를 카탈로그의 graph 항목으로 실행, 배치, 설정
   <이름>/            기능 컴포넌트 하나에 패키지 하나
   ui-kit/            자체 부품과 화면 공용 브라우저 코드
   ui-shell/          셸(브랜드, 내비게이터, 가운데 틀, 우측 탭)
@@ -508,8 +528,7 @@ scripts/             프로필 만들기, 실행, 합성 구성 찍기(`dsh.ts`,
 | 과제                                                                                  | 정하는 단계 |
 | ------------------------------------------------------------------------------------- | ----------- |
 | 재시작 후 실행 이어받기(프로젝트 계층은 재시작 때 끝나지 않은 기록을 끝낸다)          | 4-2         |
-| 카탈로그를 읽는 에이전트 도구                                                         | 2-3         |
-| 배치를 기록과 리듀서로 옮기는 모양(폴더, 태그, 검토 상태는 2-3b에서 옮겼다)           | 2-3d        |
+| 끝나지 않은 기록의 진행(노드, 단계 수)을 화면에 알리는 길                             | 4-2, 3-2    |
 | ComfyUI 서버 목록과 서버별 모델 목록의 자리                                           | 4-1         |
 | 프리셋 저장소의 모양(dsh 저장소 도메인), 프리셋 변경의 제안이 프로젝트 계층의 장치를 쓸지 | 2-3f        |
 | 자체 부품의 범위와 디자인 문서                                                        | 3-1         |

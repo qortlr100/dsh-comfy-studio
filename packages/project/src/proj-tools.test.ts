@@ -39,6 +39,8 @@ declare module "@cs/project/types" {
   interface ComponentStates {
     /** The slice of the test reducer that adds a field to the project summary: the assets of finished records. */
     proj_tools_test?: { assets: AssetId[] };
+    /** The slice of the test setting that decides whether an agent's call of `asset.render` runs or proposes. */
+    proj_tools_guard?: { guarded: boolean };
   }
 }
 
@@ -470,6 +472,82 @@ describe("cs_proj_* tools", () => {
       `would undo step ${dropped} of asset.drop`,
     );
     expect(fixture.project.line(projectId).at).toBe(dropped);
+  });
+
+  it("refuses a move across a step of an operation that is not registered any more", async () => {
+    const fixture = await start();
+    fixture.project.registerOperation(still());
+    const unregister = fixture.project.registerOperation(still({ name: "asset.tint" }));
+    const projectId = brandString<ProjectId>(
+      String(json(await fixture.call("cs_proj_create", { title: "gone op" }))["project_id"]),
+    );
+    const first = value(await fixture.call("cs_asset_crop", { reason: "first", prompt: "one" }));
+    const tinted = value(await fixture.call("cs_asset_tint", { reason: "second", prompt: "two" }));
+    unregister();
+    expect(errorOf(await fixture.call("cs_proj_undo", {}))).toContain(
+      `would undo step ${tinted.record} of asset.tint, an operation that is not available now`,
+    );
+    expect(fixture.project.line(projectId).at).toBe(tinted.record);
+    // The user moves across it; the agent's own steps of registered operations still move.
+    await fixture.project.undo(projectId);
+    expect(fixture.project.line(projectId).at).toBe(first.record);
+    expect(json(await fixture.call("cs_proj_undo", {}))).toMatchObject({ records: 1 });
+  });
+
+  it("guards a step of an operation whose agent call is a function by the project's current state", async () => {
+    const fixture = await start();
+    fixture.project.registerComponent("proj_tools_guard");
+    fixture.project.registerReducer("proj_tools_guard", {
+      initial: () => ({ guarded: false }),
+      reduce: (slice, record) =>
+        record.operation === "proj_tools_guard.choose"
+          ? { guarded: record.params["guarded"] === true }
+          : slice,
+    });
+    fixture.project.registerOperation(
+      still({
+        name: "proj_tools_guard.choose",
+        component: "proj_tools_guard",
+        params: { guarded: { type: "boolean", required: true } },
+        inputs: {},
+        outputs: [],
+        outsideHistory: true,
+        agent: "none",
+        execute: () => Promise.resolve({ outputs: [] }),
+      }),
+    );
+    fixture.project.registerOperation(
+      still({
+        name: "asset.render",
+        agent: (state) => (state.components.proj_tools_guard?.guarded === true ? "propose" : "run"),
+      }),
+    );
+    const projectId = brandString<ProjectId>(
+      String(json(await fixture.call("cs_proj_create", { title: "by state" }))["project_id"]),
+    );
+    const asUser = async (operation: string, params: Record<string, unknown>): Promise<string> => {
+      const result = await fixture.project.run({
+        ...userOrigin(),
+        project: projectId,
+        operation,
+        params,
+        inputs: [],
+      });
+      return defined(result.record).id;
+    };
+    const rendered = await asUser("asset.render", { prompt: "one" });
+    // While the setting lets the agent run it, the agent moves across the step.
+    expect(json(await fixture.call("cs_proj_undo", {}))).not.toHaveProperty("record");
+    expect(json(await fixture.call("cs_proj_redo", {}))).toMatchObject({ head: rendered });
+    // Once the setting makes the agent propose it, the step is the user's to undo.
+    await asUser("proj_tools_guard.choose", { guarded: true });
+    expect(errorOf(await fixture.call("cs_proj_undo", {}))).toContain(
+      `would undo step ${rendered} of asset.render, which only the user decides`,
+    );
+    expect(fixture.project.line(projectId).at).toBe(rendered);
+    await asUser("proj_tools_guard.choose", { guarded: false });
+    expect(errorOf(await fixture.call("cs_proj_undo", {}))).toBe("");
+    expect(fixture.project.line(projectId).at).not.toBe(rendered);
   });
 
   it("moves back and forward without writing a record, discards the later steps on a write, and accepts a stale record only when called", async () => {

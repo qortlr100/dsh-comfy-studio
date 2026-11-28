@@ -55,7 +55,8 @@ export class Scheduler {
   /** Running records per limited resource class. */
   private readonly running = { cpu: 0, gpu: 0 };
   /** Pending `wait` calls; each returns true once it resolved and can be dropped. */
-  private readonly waiters = new Set<() => boolean>();
+  /** The pending {@link wait} calls: the project waited on and a check that resolves the call when it holds. */
+  private readonly waiters = new Set<{ project: ProjectId; check: (gone?: boolean) => boolean }>();
   private disposed = false;
   private pumping = false;
   private pumpAgain = false;
@@ -124,15 +125,26 @@ export class Scheduler {
       } catch (error: unknown) {
         return Promise.reject(error instanceof Error ? error : new Error(String(error)));
       }
-      settled = () =>
-        records.every((record) => FINISHED.has(this.store.getRecord(project, record).status));
+      settled = () => {
+        try {
+          return records.every((record) =>
+            FINISHED.has(this.store.getRecord(project, record).status),
+          );
+        } catch {
+          // The records cannot be read any more (the project was removed): there is nothing left to wait for.
+          return true;
+        }
+      };
     }
     if (settled()) return Promise.resolve();
     return new Promise((resolve) => {
-      this.waiters.add(() => {
-        if (!settled()) return false;
-        resolve();
-        return true;
+      this.waiters.add({
+        project,
+        check: (gone = false) => {
+          if (!gone && !settled()) return false;
+          resolve();
+          return true;
+        },
       });
     });
   }
@@ -155,6 +167,25 @@ export class Scheduler {
       return undefined;
     });
     return true;
+  }
+
+  /**
+   * Drop every queued record of a project that was removed: its records cannot be read or ended any more. Records of
+   * the project that already started leave the scheduler when their run ends. Every {@link wait} on the project
+   * settles: there is nothing left to wait for.
+   * @param project - the removed project.
+   */
+  forget(project: ProjectId): void {
+    for (let index = this.queue.length - 1; index >= 0; index -= 1) {
+      if (this.queue[index]?.project === project) this.queue.splice(index, 1);
+    }
+    // oxlint-disable-next-line unicorn/no-useless-spread
+    for (const waiter of [...this.waiters]) {
+      if (waiter.project !== project) continue;
+      waiter.check(true);
+      this.waiters.delete(waiter);
+    }
+    this.pump();
   }
 
   /** Stop starting queued records; records already running finish. Queued records stay `pending` on disk. */
@@ -180,7 +211,15 @@ export class Scheduler {
         // The loop removes items from the queue, so it walks a copy.
         // oxlint-disable-next-line unicorn/no-useless-spread
         for (const item of [...this.queue]) {
-          const readiness = this.readiness(item);
+          let readiness: Readiness;
+          try {
+            readiness = this.readiness(item);
+          } catch {
+            // The record or one it waits for cannot be read (its project was removed meanwhile). It leaves the queue;
+            // one unreadable item must never stop the walk for the records of every other project.
+            this.queue.splice(this.queue.indexOf(item), 1);
+            continue;
+          }
           if (readiness.kind === "waiting") continue;
           if (
             readiness.kind === "ready" &&
@@ -200,7 +239,7 @@ export class Scheduler {
     // A waiter that is satisfied is removed from the set during the walk, so it walks a copy.
     // oxlint-disable-next-line unicorn/no-useless-spread
     for (const waiter of [...this.waiters]) {
-      if (waiter()) this.waiters.delete(waiter);
+      if (waiter.check()) this.waiters.delete(waiter);
     }
   }
 

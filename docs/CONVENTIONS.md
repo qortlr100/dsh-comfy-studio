@@ -109,6 +109,7 @@ lib/client.js           브라우저 번들. 빌드 결과이고 커밋하지 �
 
 - 서비스를 주는 플러그인은 `Service`를 상속한 클래스를 기본 export로 둔다. 기다릴 서비스는 `static inject`, 설정은 `static Config`(schemastery)다. 서비스의 타입은 같은 파일에서 `declare module "@deepseek-ai/cordis"`로 `Context`에 붙인다. 서비스가 없는 플러그인은 `name`과 `apply(ctx)`를 export한다.
 - 상태 조각의 타입은 `declare module "@cs/project/types"`로 `ComponentStates`에 붙인다. `"@cs/project"`로 보강하지 않는다: 한 프로그램에서 둘을 섞으면 한쪽의 보강이 보이지 않고(2-3b에서 밟았다), `@cs/project`는 호스트 모듈이라 브라우저 절반이 읽는 타입 모듈에 둘 수 없다.
+- 다른 기능 컴포넌트의 것을 쓸 때는 그 컴포넌트의 서비스(`ctx.csWorkflow.resolve`)나 순수 함수 모듈(`@cs/workflow/files`)을 쓴다. 다른 컴포넌트의 조각을 타입으로 가져오지 않고, 꼭 읽어야 하면 모양을 확인하며 읽는다(생성이 에셋의 검토 상태를 읽는 `reviewOf`). 다른 컴포넌트의 연산을 이름으로 부르지 않는다.
 - 연산의 `label`(화면에 보이는 한국어)은 패키지의 `strings.ts`에 둔다. 에이전트가 읽는 `description`과 `summarize`의 글은 영어이고 연산 옆에 둔다.
 - 있어야 도는 서비스는 `inject`에 적는다. 있으면 쓰는 서비스는 `ctx.inject(["이름"], (inner) => …)`로 그 서비스가 있는 동안만 등록하거나 `ctx.get("이름")`으로 읽는다(`ctx.이름`은 주입하지 않았으면 던진다).
 - 등록(도구, 라우트, 리듀서, 연산)은 정리 함수와 짝을 맞춰 `ctx.effect`에 넣는다. 플러그인이 내려갈 때 자기가 연 것(열어 둔 응답, 타이머)을 직접 닫는다.

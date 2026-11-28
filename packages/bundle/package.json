@@ -20,6 +20,7 @@
     "@cs/asset": "workspace:*",
     "@cs/catalog": "workspace:*",
     "@cs/ffmpeg": "workspace:*",
+    "@cs/generation": "workspace:*",
     "@cs/project": "workspace:*",
     "@cs/ui-shell": "workspace:*",
     "@cs/workflow": "workspace:*"
