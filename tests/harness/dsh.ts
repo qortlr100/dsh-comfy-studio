@@ -55,6 +55,11 @@ export function redactLoginUrls(text: string): string {
     .replace(/\btoken=[^\s&"'<>]+/g, "token=<redacted>");
 }
 
+/** The login token of a login URL (empty when it has none). Never print it. */
+export function tokenOf(loginUrl: string): string {
+  return new URL(loginUrl).searchParams.get("token") ?? "";
+}
+
 export interface TestHome {
   /** DSH_HOME. Its profile comfy-studio links the bundle of this checkout. */
   readonly dshHome: string;
@@ -69,7 +74,16 @@ export interface LaunchOptions {
   home?: TestHome;
   /** `--patch` files, in this order. */
   patches?: readonly string[];
-  /** Web app arguments, appended after `--no-open --port 0`. */
+  /** Listening port; default 0 (any free one). A restart on the same home needs a fixed one. */
+  port?: number;
+  /** `--trusted-host`: the host name a reverse proxy in front of dsh shows the browser. */
+  trustedHost?: string;
+  /**
+   * `--public-url`: the address the browser uses. dsh then prints the login URL with this
+   * origin, so `DshInstance.url` is usable through the proxy as it is.
+   */
+  publicUrl?: string;
+  /** Further web app arguments, appended after `--no-open --port <port>` and the above. */
   args?: readonly string[];
   /** Added on top of the allowlisted variables. */
   env?: Readonly<Record<string, string>>;
@@ -85,7 +99,10 @@ export interface DshExit {
 }
 
 export interface DshInstance {
-  /** Login URL with the token. Never print it. */
+  /**
+   * Login URL with the token, as dsh printed it (with the origin of `publicUrl` when given).
+   * Never print it.
+   */
   readonly url: string;
   readonly home: TestHome;
   /** stdout and stderr so far, URLs redacted. */
@@ -187,7 +204,10 @@ export async function launchDsh(options: LaunchOptions = {}): Promise<DshInstanc
   const args = ["--profile", PROFILE];
   // Launcher options must come before the web app's own options, or dsh rejects them.
   for (const patch of options.patches ?? []) args.push("--patch", patch);
-  args.push("--no-open", "--port", "0", ...(options.args ?? []));
+  args.push("--no-open", "--port", String(options.port ?? 0));
+  if (options.trustedHost !== undefined) args.push("--trusted-host", options.trustedHost);
+  if (options.publicUrl !== undefined) args.push("--public-url", options.publicUrl);
+  args.push(...(options.args ?? []));
 
   let child: ChildProcess;
   try {
