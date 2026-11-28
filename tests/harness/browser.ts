@@ -7,15 +7,25 @@ import { redactLoginUrls } from "./dsh.ts";
 
 export interface PageSession {
   readonly page: Page;
-  /** Console errors and warnings plus uncaught page errors, URLs redacted. */
+  /** Console errors and warnings plus uncaught page errors of every tab, URLs redacted. */
   readonly issues: readonly string[];
+  /**
+   * Opens the app in another tab of the same browser profile: the login cookie and what the
+   * app stored in the browser carry over, as when a user closes the tab and comes back.
+   */
+  openTab(): Promise<Page>;
   /** Closes the browser too. Safe to call more than once. */
   close(): Promise<void>;
 }
 
 export interface OpenPageOptions {
-  /** Default true: closes the two dialogs of a fresh home with their buttons. */
+  /** Default true: closes the dialogs of a fresh home with their buttons. */
   dismissFirstRun?: boolean;
+  /**
+   * Default false. A home with a usable model (the fake one of `llm.ts`) shows no
+   * "Get started" dialog, so only the preview notice is closed.
+   */
+  modelConfigured?: boolean;
   /** Default "light". */
   colorScheme?: "light" | "dark";
 }
@@ -63,24 +73,41 @@ export async function openPage(url: string, options: OpenPageOptions = {}): Prom
       viewport: { width: 1400, height: 900 },
       colorScheme: options.colorScheme ?? "light",
     });
-    const page = await context.newPage();
     const issues: string[] = [];
-    page.on("console", (message) => {
-      const type = message.type();
-      if (type === "error" || type === "warning") {
-        issues.push(redactLoginUrls(`console.${type}: ${message.text()}`));
-      }
-    });
-    page.on("pageerror", (error) => {
-      issues.push(redactLoginUrls(`pageerror: ${error.stack ?? error.message}`));
-    });
+    const watch = (tab: Page): Page => {
+      tab.on("console", (message) => {
+        const type = message.type();
+        if (type === "error" || type === "warning") {
+          issues.push(redactLoginUrls(`console.${type}: ${message.text()}`));
+        }
+      });
+      tab.on("pageerror", (error) => {
+        issues.push(redactLoginUrls(`pageerror: ${error.stack ?? error.message}`));
+      });
+      return tab;
+    };
 
+    const page = watch(await context.newPage());
     await page.goto(url, { waitUntil: "networkidle" });
     if (options.dismissFirstRun ?? true) {
       await closeDialog(page, "Preview Notice", "Continue");
-      await closeDialog(page, "Get started", "Close");
+      if (!(options.modelConfigured ?? false)) await closeDialog(page, "Get started", "Close");
     }
-    return { page, issues, close };
+
+    // The origin alone: the cookie of the first visit logs the new tab in, no token needed.
+    const origin = new URL(url).origin;
+    const openTab = async (): Promise<Page> => {
+      try {
+        const tab = watch(await context.newPage());
+        await tab.goto(origin, { waitUntil: "networkidle" });
+        return tab;
+      } catch (error) {
+        const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
+        // oxlint-disable-next-line eslint/preserve-caught-error
+        throw new Error(`Could not open another tab: ${redactLoginUrls(message)}`);
+      }
+    };
+    return { page, issues, openTab, close };
   } catch (error) {
     await close();
     // Playwright puts the navigated URL, token included, into its messages, so the original

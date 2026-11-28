@@ -115,7 +115,7 @@ export function apply(ctx: Context): void {
 
 - `origin`은 누가(`actor`: `user`·`agent`·`system`), 어디서(`surface`: `chat`·`view`·`api`·`history`), 어느 세션·턴·도구 호출에서, 왜(`intent`) 했는지다. 기록마다 남는다. `view`는 우리 화면에서 한 사용자 동작이다.
 - 프로젝트 폴더의 `.comfy-studio/`에 `records.jsonl`(기록 줄과 갱신 줄, 추가만 한다)과 `line.json`(히스토리의 끝 `tip`과 현재 위치 `at`)이 있다. 이 디렉터리는 프로젝트 계층만 읽고 쓴다.
-- 에이전트에게 가는 것: 연산마다의 도구 `cs_<연산 이름>`, 프로젝트 도구 여덟 개(`cs_proj_create`, `_rename`, `_state`, `_history_list`, `_undo`, `_redo`, `_stale_accept`, `_wait`), 시스템 프롬프트의 `cs:project` 절(규칙만), 대화에 덧붙는 프로젝트 상태 메시지와 갱신 메시지. 도구가 에이전트의 목록에 실제로 들어가는지와 메시지가 턴에 붙는지는 모델 키가 없어 **미확인**이다(1-3).
+- 에이전트에게 가는 것: 연산마다의 도구 `cs_<연산 이름>`, 프로젝트 도구 여덟 개(`cs_proj_create`, `_rename`, `_state`, `_history_list`, `_undo`, `_redo`, `_stale_accept`, `_wait`), 시스템 프롬프트의 `cs:project` 절(규칙만), 대화에 덧붙는 프로젝트 상태 메시지와 갱신 메시지. 기본 `standard` 프리셋의 에이전트가 이 도구들을 받고 규칙 절과 두 메시지가 실제 턴에 붙는다(**띄워 확인**, 2026-11-28: 실제 모델과 조합 시험 `tests/integration/chat.test.ts`. `docs/DSH.md` "실제 모델로 확인한 것").
 - 설정(번들의 `cs-project` 행): `projectsFolder`(새 프로젝트 폴더를 둘 곳. 환경 변수 `CS_PROJECTS_FOLDER`에서 읽고, 없거나 비어 있으면 `<사용자 홈>/comfy-studio-projects`), `cpuConcurrency`(4), `gpuConcurrency`(1), `promptSectionOrder`(4900).
 - 프로젝트 규칙 절은 DreamVerse의 것을 뜻 그대로 옮겼다("모든 호출은 바로 히스토리의 단계다. 사용자가 변경을 승인하지 않는다"). 기존 앱의 "제안 후 승인"(삭제, 그래프 패치)과 맞추는 일은 기능 컴포넌트를 만드는 2-3에서 한다.
 

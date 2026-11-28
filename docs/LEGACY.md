@@ -176,7 +176,7 @@ project_files project_file_versions tags asset_tags presets preset_versions agen
 | LLM 프로바이더 관리                         | `lib/llm`, `providers`                      | dsh 설정 → Models                                             | dsh. OAuth 로그인 방식의 프로바이더가 되는지는 미확인 |
 | 스트리밍 채팅, 대화 저장, 재생성·편집       | `lib/chat`, `conversations`, `messages`     | dsh 세션과 대화 화면                                          | dsh. 재생성·편집의 동작은 미확인                  |
 | 도구 호출 루프                              | 프로바이더 구현 안                          | dsh 도구 루프                                                 | dsh                                               |
-| 연결에서 뗀 턴, 진행·안 읽음                | `turn-hub`, `turn_runs`                     | dsh 호스트의 에이전트 루프                                    | dsh. 브라우저를 닫아도 턴이 도는지는 미확인(1-3)  |
+| 연결에서 뗀 턴, 진행·안 읽음                | `turn-hub`, `turn_runs`                     | dsh 호스트의 에이전트 루프                                    | dsh. 브라우저를 닫아도 턴이 끝까지 돈다(띄워 확인, 1-3). 진행·안 읽음 표시는 미확인 |
 | MCP 서버                                    | `lib/mcp`, `mcp_servers`                    | dsh MCP(`mcp-manager`)                                        | dsh                                               |
 | 예약 실행                                   | `schedules`, `lib/scheduler.ts`             | dsh 예약(`schedule`, Automation tasks 화면)                   | dsh. 예약 도구는 에이전트 프리셋에 넣어야 한다    |
 | 웹 검색, 페이지 가져오기                    | `web_search`, `fetch_page`                  | dsh 웹 검색(`web-search-deepseek`), 웹 도구(`tool-web`)       | 후보. DeepSeek 외 모델에서 되는지 미확인          |
