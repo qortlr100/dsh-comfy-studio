@@ -32,14 +32,13 @@ import type {
   TurnId,
 } from "@cs/project";
 import { summarizeProject, type WireProjectSummary } from "./summaries.ts";
+import { toWireOperation, type WireOperation } from "./wire-operation.ts";
 import {
   projectIdOf,
-  toWireOperation,
   toWireState,
   type WireAsset,
   type WireCatalogEntry,
   type WireHistory,
-  type WireOperation,
   type WireProject,
   type WireState,
 } from "./wire.ts";

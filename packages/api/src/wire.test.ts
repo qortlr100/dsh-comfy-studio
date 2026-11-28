@@ -1,13 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { AssetId, OperationSpec, ProjectLine, ProjectState } from "@cs/project";
 import { standIn } from "@cs/project/testing/support";
-import {
-  mentionedAssets,
-  projectIdOf,
-  toWireOperation,
-  toWireState,
-  type WireAsset,
-} from "./wire.ts";
+import { toWireOperation } from "./wire-operation.ts";
+import { mentionedAssets, projectIdOf, toWireState, type WireAsset } from "./wire.ts";
 
 /** A state with two records: `r1` makes `a1`, `r2` reads `a1` and `a2` (and an unresolved input). */
 function sampleState(): ProjectState {
