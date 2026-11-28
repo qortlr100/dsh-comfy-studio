@@ -402,7 +402,7 @@ ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () =>
   ctx.slots.register({ name: 'sidebar.right.pane.tab', key: CHAT_ID }, ChatTab)))
 ```
 
-- 이 코드로 우측 탭에 채팅 화면과 입력창이 그려지고 글이 쳐지는 것까지 **띄워 확인**했다. 메시지를 보내고 받는 것은 모델 키가 없어 확인하지 못했다(1-3). 규칙대로 쓴 형태는 `packages/ui-shell/src/client/ChatTab.tsx`와 `index.ts`의 탭 등록이고, 조합 시험이 입력창에 글이 쳐지는 것을 본다(2026-11-28).
+- 이 코드로 우측 탭에 채팅 화면과 입력창이 그려지고, 메시지를 보내면 답·추론·도구 호출이 그려진다(**띄워 확인**, 2026-11-28. 아래 "실제 모델로 확인한 것"). 규칙대로 쓴 형태는 `packages/ui-shell/src/client/ChatTab.tsx`와 `index.ts`의 탭 등록이고, 조합 시험 `tests/integration/shell.test.ts`가 입력창에 글이 쳐지는 것을, `chat.test.ts`가 턴이 도는 것을 본다.
 - **탭을 여는 `ctx.sidebarRight.openTab(kind)`는 화면에 그 세션의 자리가 마운트돼 있어야 한다.** 없으면 던진다("no session surface is mounted"). `ctx.sidebarRight.mounted`(관찰 가능한 값)가 그 세션을 줄 때 부르고, 던지면 다시 시도한다(`follow.ts`). 우측 패널의 탭과 펼침은 세션마다 따로다. `isExpanded()`는 자리가 없으면 `false`이고 `toggleExpanded()`는 자리가 없으면 던진다(**소스 확인**: 업스트림 `packages/client/ui-sidebar-right/src/client/service.ts`). 펼침 여부를 구독하는 값은 없다.
 - **펼침은 세션마다 따로라서, 접어 둔 세션으로 돌아오면 접힌 채다.** 홈으로 갈 때 접은 패널은 그 세션의 것이다. 다른 프로젝트를 다녀온 뒤 돌아오면 dsh는 그 세션의 접힌 상태를 되살린다. 그래서 우리 셸은 사용자가 프로젝트나 채팅을 열 때마다 "채팅 요청"을 하나 올리고(`ShellState.chatRequest`), 그 이동이 연 세션의 자리가 마운트된 뒤에 탭을 다시 연다. 자리가 바뀌기 전에 열면 떠나는 세션의 탭이 열린다(**띄워 확인**, 2026-11-28: 조합 시험이 홈 → 둘째 프로젝트 → 홈 → 첫 프로젝트 순서로 채팅이 다시 보이는 것을 본다. 요청을 무시하게 망가뜨리면 실패한다).
 - 채팅 탭의 내용은 탭을 닫지 않는 한 홈으로 가도 DOM에 남는다(`keepMounted`. 패널만 접힌다). 세션을 옮겨도 앞 세션의 탭 본문이 숨겨진 채 남으므로, 시험은 `[data-cs-chat]`의 개수가 아니라 보이는 것의 개수를 센다.
@@ -489,10 +489,10 @@ DreamVerse의 서버 쪽 패키지가 dsh에서 가져다 쓰는 것이다. 전�
 프로젝트 계층을 옮기며 알게 된 것(2-0, 2026-11-27. **띄워 확인**은 조합 시험 `tests/integration/project.test.ts`, **시험 확인**은 실제 Cordis `Context`와 dsh 플러그인을 올리는 단위 시험이다):
 
 - **세션 프로젝션**: `ctx.sessionProjections.register(정의)`는 `Promise<ProjectionHandle<S>>`를 준다. 상태는 그 핸들의 `handle.stateOf(session)`으로 읽는다. 정의의 타입은 `ProjectionDefinition<K, S>`(인자 둘)이고, 클라이언트로 내보내지 않는 호스트 전용 단위는 `wire`를 빼면 된다. 레지스트리의 `stateOf(session, key)`는 deprecated이고 `unknown`을 준다(등록됐는지 밖에서 볼 때만 쓴다). 실제 dsh에서 등록하고 새 세션의 초기 상태를 읽었다(**띄워 확인**).
-- **`agent/pre-step`**: 에이전트 루프가 단계에 들어가기 전에 부르는 waterfall 이벤트다. 에이전트를 `this`로 넘겨 부른다(`ctx.waterfall(agent, "agent/pre-step", payload, next)`). 리스너는 `await next()`로 받은 결정(`{ kind: "enter", messages }` 또는 `{ kind: "reject" }`)의 `messages`를 바꿔 돌려준다. 프로젝트 계층의 리스너가 프로젝트 상태 메시지를 끼워 넣는 것을 이 꼴로 불러 봤다(**시험 확인**: `packages/project/src/project-updates-listener.test.ts`. 프로젝션 레지스트리와 에이전트는 흉내다. 실제 턴에서는 미확인).
-- **턴 번호**: `ctx.get("agents")?.turnBoundaryOf(session).lastTurn`. 0이면 첫 턴 전이다. `turnBoundary` 프로젝션을 열쇠로 읽던 길은 없어졌다(**시험 확인**은 흉내 낸 `agents`로 했다. 실제 턴에서는 미확인).
+- **`agent/pre-step`**: 에이전트 루프가 단계에 들어가기 전에 부르는 waterfall 이벤트다. 에이전트를 `this`로 넘겨 부른다(`ctx.waterfall(agent, "agent/pre-step", payload, next)`). 리스너는 `await next()`로 받은 결정(`{ kind: "enter", messages }` 또는 `{ kind: "reject" }`)의 `messages`를 바꿔 돌려준다. 프로젝트 계층의 리스너가 프로젝트 상태 메시지를 끼워 넣는 것을 이 꼴로 불러 봤다(**시험 확인**: `packages/project/src/project-updates-listener.test.ts`. 프로젝션 레지스트리와 에이전트는 흉내다). 실제 턴에서도 붙는다: 첫 요청에 `Project state.`로 시작하는 `user` 메시지가, 화면에서 연산을 실행한 뒤의 턴에는 `Project updates since your last step` 메시지가 모델에게 간다(**띄워 확인**, 2026-11-28: `tests/integration/chat.test.ts`). dsh 화면은 이 메시지를 턴의 접힌 단계 안에 "Context injection · cs-project" 줄로 보여 준다.
+- **턴 번호**: `ctx.get("agents")?.turnBoundaryOf(session).lastTurn`. 0이면 첫 턴 전이다. `turnBoundary` 프로젝션을 열쇠로 읽던 길은 없어졌다(**시험 확인**은 흉내 낸 `agents`로 했다). 실제 턴에서 에이전트가 부른 연산의 기록에 `turn: "1"`과 세션 id, 도구 호출 id가 남는다(**띄워 확인**, 2026-11-28: `chat.test.ts`).
 - **도구 실행**: `ctx.tools.execute`는 호출 하나가 아니라 묶음을 받는다: `{ calls: [{ type: "tool-call", id, name, arguments: <JSON 문자열> }], signal, agent? }` → `{ results: [{ callId, result }] }`. 실행기는 `tools` 서비스에 들어 있지 않고 플러그인이 준다(`@deepseek-ai/dsh-tool-executor-native`. 실행기가 없으면 `execute`가 거절한다고 타입 선언의 주석에 있다, **소스 확인**). 시험에서 도구를 부르려면 `dsh-tools`와 함께 이 플러그인을 올린다(**시험 확인**: `packages/project/src/testing/workspaces.ts`의 `mountTools`·`callTool`).
-- **등록한 도구의 자리**: `ctx.inject(["tools"], (child) => child.tools.register(정의))`로 등록한 도구가 `ctx.tools.definitions()`의 전역 목록에 나온다(**띄워 확인**). 전역 등록은 에이전트 범위가 물려받는다고 타입 선언의 주석에 있다("Restrictions across the scope chain intersect over inherited global and ancestor tools", **소스 확인**). 프리셋의 에이전트가 실제로 그 도구를 받는지는 **미확인**이다(1-3).
+- **등록한 도구의 자리**: `ctx.inject(["tools"], (child) => child.tools.register(정의))`로 등록한 도구가 `ctx.tools.definitions()`의 전역 목록에 나온다(**띄워 확인**). 전역 등록은 에이전트 범위가 물려받는다고 타입 선언의 주석에 있다("Restrictions across the scope chain intersect over inherited global and ancestor tools", **소스 확인**). `standard` 프리셋의 에이전트가 그 도구를 받는다: 모델에게 가는 요청의 도구 목록에 프리셋의 도구와 함께 프로젝트 도구 여덟 개와 연산 도구가 있고, 모델이 부르면 실행된다(**띄워 확인**, 2026-11-28: `chat.test.ts`).
 - **작업공간**: `ctx.workspaceRegistry`의 `resolveByPath`·`create`·`list`·`get`과 작업공간의 `setTitle`이 플러그인에서 된다. 임시 home에서 폴더 하나를 작업공간으로 등록하고 목록에서 다시 읽었다(**띄워 확인**). 작업공간에 세션을 붙이는 `attachSession`은 부르기만 했고 붙었는지는 보지 않았다(프로젝트 계층은 실패를 경고로만 남긴다).
 - **세션 만들기(호스트)**: `ctx.sessions.create(undefined, { meta: { cwd } })`가 작업 폴더가 `cwd`인 세션을 만든다. 헤더의 `cwd`로 그 세션의 프로젝트를 찾는다(**띄워 확인**).
 - **선택 서비스 읽기**: `ctx.get("이름")`은 주입하지 않은 서비스도 읽고, 없으면 `undefined`다(`ctx.이름`은 던진다. **시험 확인**).
@@ -519,12 +519,14 @@ dsh 웹(`dsh-web-app` 번들)에서 에이전트가 가질 도구·스킬·페�
 - 사용자가 설정 화면에서 고른 기본 프리셋(`selectedDefault`)이 `config.default`보다 우선한다(**소스 확인**). 그래서 우리 프리셋을 기본으로 두는 것만으로는 사용자가 `standard`로 바꾸는 것을 막지 못한다.
 - 세션을 만들 때 프리셋을 줄 수 있다(`ctx.sessions.create({ agentPreset })`, **소스 확인**).
 - **DreamVerse가 한 것**(**소스 확인(DreamVerse)**): 자기 프리셋 `dreamverse`를 기본으로 두고 그 안에 `persona`, `skill-filesystem`(자기 스킬 폴더만), `tool-skill`, `tool-ask-user`, compaction 묶음만 넣었다. 셸·파일 도구가 없다. 연산 도구(`dv_*`)는 프리셋 안이 아니라 `@dv/project`가 `tools` 서비스에 등록한다(`ctx.inject(['tools'], …)`). 레지스트리에는 `modeSelectionEnabled: false`를 준다(이름으로 보아 프리셋 고르기를 끄는 설정이다. 동작은 읽지 않았다). 이 필드는 0.2.2-rc.5의 레지스트리에서 빠졌다(업스트림 문서가 "retired"라고 적는다).
-- 확인하지 못한 것: 0.2.2-rc.5에서 우리 프리셋을 넣어 띄우는 것, 프리셋 밖에서 `tools` 서비스에 등록한 도구가 그 프리셋의 에이전트에게 보이는지(2-0에서 전역 레지스트리에 등록되는 데까지 봤다. 에이전트 쪽은 1-3), 기본 제공 프리셋 행을 끄거나 덮었을 때의 동작.
+- 프리셋 밖에서 `tools` 서비스에 등록한 도구는 프리셋의 에이전트에게 보인다(`standard`에서 **띄워 확인**, 2026-11-28. "호스트 쪽"의 "등록한 도구의 자리"). DreamVerse의 방식(연산 도구는 프리셋 밖에서 등록하고 프리셋에는 셸·파일 도구를 넣지 않는다)을 그대로 쓸 수 있다는 뜻이다.
+- `standard` 프리셋의 에이전트가 받는 도구는 우리 것을 빼고 31개였다(2026-11-28, 모델에게 간 요청에서 셌다): `ask_user_question`, `bash`, `create_goal`, `edit`, `get_goal`, `glob`, `grep`, `job_kill`, `job_list`, `job_output`, `list_agents`, `list_subagent_models`, `plugin_manager`, `present`, `read`, `read_image`, `schedule_create`·`_edit`·`_list`·`_view`, `send_message`, `skill`, `subagent`, `subagent_fork`, `todo_write`, `update_goal`, `wait_agent`, `web_fetch`, `workflow`, `working_directory`, `write`. 웹 검색 도구는 없었다(DeepSeek 키가 없는 구성이었다. 키가 있으면 생기는지는 **미확인**). 시스템 프롬프트는 "You are a coding agent…"으로 시작하고, 첫 턴에 작업 폴더·파일 정책·스킬 목록·시각이 메시지로 붙는다. 빈 프로젝트에서 한마디를 보내는 턴의 입력이 약 11,000토큰이었다.
+- 확인하지 못한 것: 0.2.2-rc.5에서 우리 프리셋을 넣어 띄우는 것, 기본 제공 프리셋 행을 끄거나 덮었을 때의 동작(1-4).
 - **에이전트에게 무엇을 줄지는 정해지지 않았다**(`docs/DECISIONS.md` "미정", 1-4).
 
 ## dsh가 이미 주는 기능
 
-패키지와 문서로 확인했다(**소스 확인**). 직접 써 보지는 않았다.
+패키지와 문서로 확인했다(**소스 확인**). LLM 프로바이더만 직접 써 봤다(아래 "LLM 프로바이더 붙이기").
 
 | 기능              | 내용                                                                                                                                                                              | 문서                                    |
 | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
@@ -538,6 +540,65 @@ dsh 웹(`dsh-web-app` 번들)에서 에이전트가 가질 도구·스킬·페�
 | 원격 접속         | 리버스 프록시 + `--public-url`·`--trusted-host`. 로그인은 토큰 주소 + 세션 쿠키                                                                                                   | `docs/user/guide/public-deployments.md` |
 
 예약 도구(`tool-schedule`)와 웹 도구(`tool-web`)는 `standard` 프리셋의 플러그인이다. 우리 프리셋에 무엇을 넣는지에 따라 에이전트가 쓸 수 있는 기능이 달라진다("에이전트 프리셋").
+
+### LLM 프로바이더 붙이기
+
+기본 구성의 모델은 `agent-default-model` 행의 `provider: deepseek-official`, `model: deepseek-flash`이고, 키는 `DEEPSEEK_API_KEY`다. DeepSeek 말고 다른 것을 붙이려면 `llm-pi-ai` 행에 프로바이더를 적고 `agent-default-model`을 그쪽으로 돌린다. OpenAI 호환 서버를 이렇게 붙여 채팅했다(**띄워 확인**, 2026-11-28).
+
+```yaml
+# $DSH_HOME/profiles/comfy-studio/cordis.patch.yml (또는 --patch 파일)
+- id: llm-pi-ai
+  config:
+    providers:
+      my-llm:                          # 프로바이더 id. 소문자와 하이픈
+        displayName: My model
+        api: openai-completions        # OpenAI Chat Completions
+        baseURL: http://<host>:<port>/v1
+        headers:
+          Authorization: Bearer <값>   # 키를 받지 않는 서버에도 필요하다(아래)
+        reasoning: medium              # 입력창의 "Default"가 보내는 추론 강도
+        compat:
+          thinkingFormat: openai       # 추론 강도를 reasoning_effort로 보낸다
+        models:
+          - id: <model id>
+            name: <표시 이름>
+            contextWindow: 131072      # 모델에 맞춘다
+            maxTokens: 16384
+            reasoningEfforts: { off: none, low: low, medium: medium, high: high }   # 단계: 서버가 받는 값
+- id: agent-default-model
+  config:
+    provider: my-llm
+    model: <model id>
+```
+
+- **키를 받지 않는 서버에도 `Authorization` 헤더나 키가 있어야 한다.** dsh가 쓰는 OpenAI 호환 구현은 둘 다 없으면 요청을 보내지 않는다(**소스 확인**: `@deepseek-ai/dsh-llm-pi-ai` README "Known Limitations"). `headers`에 아무 값이나 적거나, `apiKeyEnv: <환경 변수 이름>`을 적고 그 변수에 아무 값이나 준다. 둘 다 해 봤다(**띄워 확인**).
+- 프로필의 `cordis.patch.yml`에 적어도 되고 `--patch` 파일로 줘도 된다. 프로필 파일에 적은 것은 dsh가 설정 화면의 값을 같은 파일에 덧붙여도 주석까지 그대로 남았다(**띄워 확인**). 패치로 넣은 프로바이더는 설정 → Models에 "Custom"으로 보인다.
+- 이렇게 모델이 잡힌 home에서는 "Get started" 창이 뜨지 않는다. 새로고침해도 뜨지 않는다(**띄워 확인**).
+- **추론.** 응답의 `reasoning_content`는 `compat` 설정 없이도 추론으로 읽히고, 다음 요청에 그 메시지의 `reasoning_content`로 되돌아간다. `reasoningEfforts`를 적지 않으면 추론 관련 값을 아무것도 보내지 않아 서버의 기본값대로 돈다. 적으면 입력창의 모델 선택에 "Effort"가 생기고 고른 단계의 값이 `reasoning_effort`로 간다(`thinkingFormat: openai`일 때). 프로바이더의 `reasoning`을 적지 않았을 때 "Default"는 `off`의 값을 보냈고, `reasoning: medium`을 적자 `medium`의 값을 보냈다. 세션 제목을 만드는 요청은 그때도 `off`의 값으로 갔다(**띄워 확인**: 요청을 기록하는 프록시로 봤다).
+- dsh가 보내는 요청: `stream: true`, `stream_options.include_usage`, `store: false`, `max_completion_tokens`(모델의 `maxTokens`. 제목 요청은 4096). 첫 메시지 뒤에 세션 제목을 만드는 요청이 도구 없이 따로 간다(시스템 프롬프트 "Create a concise title…"). 답이 세션의 이름이 되어 우리 내비게이터의 줄에 뜬다.
+- 설정 화면의 폼("Add model provider" → "Custom model API")으로 추가하는 것은 폼이 뜨는 데까지만 봤다(**미확인**). `compat`와 `reasoningEfforts`를 폼으로 적을 수 있는지도 모른다.
+- 이미지 입력은 모델 항목의 `input: [text, image]`로 켠다(**소스 확인**. 해 보지 않았다).
+
+## 실제 모델로 확인한 것
+
+1-3에서 실제 모델을 붙여 본 것이다(2026-11-28, **띄워 확인**). 모델은 DeepSeek가 아닌 OpenAI 호환 서버의 추론 모델이고(위 "LLM 프로바이더 붙이기"의 구성. 주소와 모델 이름은 적지 않는다), 에이전트 프리셋은 기본 `standard`다. 같은 항목을 가짜 LLM을 붙인 조합 시험 `tests/integration/chat.test.ts`가 본다("띄워서 확인하는 법"). DeepSeek 프로바이더로는 해 보지 않았다.
+
+| 항목 | 결과 |
+| --- | --- |
+| 메시지 | 우측 탭의 입력창에서 Enter로 보내면 사용자 글과 답(Markdown, 코드 블록)이 그려진다. 콘솔 오류·경고는 0건이다 |
+| 추론 | 턴의 단계 안에 "Think" 줄로 그려진다(`data-variant="think"`) |
+| 도구 호출 | 턴의 단계 안에 `tool.call.toolview` 슬롯으로 그려진다. 뿌리 요소에 `data-tool="<도구 이름>"`과 `data-state`가 붙는다. 우리 연산 도구는 dsh의 기본 모양("Tool call · cs_… · <인자 요약>")으로 나온다 |
+| 턴의 단계 | 턴이 끝나면 추론·도구 호출·끼워 넣은 메시지가 "Completed in N s" 줄(`button[data-turn-process]`) 아래로 접히고 답만 남는다. 접힌 동안 그 안의 요소는 DOM에 없다 |
+| 중지 | 턴이 도는 동안 전송 버튼이 중지 버튼이 된다(같은 요소이고 `aria-label`이 "Send message"에서 "Stop generating"으로 바뀐다). 누르면 약 1.5초 안에 멈추고, 모델로 가던 요청도 끊긴다. 그때까지 온 글과 "Stopped" 표시가 남고, 다음 턴이 정상으로 돈다. Esc로는 멈추지 않는다 |
+| 브라우저를 닫아도 도는 턴 | 턴 도중에 탭이나 브라우저를 닫아도 호스트가 도구를 실행하고 모델과 계속 주고받아 턴을 끝낸다. 결과는 세션에 남는다. 같은 브라우저로 다시 열면 같은 세션이 열리고, 턴이 아직 도는 중이면 진행 중인 모습 그대로 이어서 보인다 |
+| 새 브라우저 | 저장된 상태가 없는 브라우저(다른 기기, 시크릿 창)로 열면 마지막 프로젝트의 **새 빈 채팅**이 열린다. 앞의 세션은 내비게이터 목록에 있다 |
+| 셸 도구 | `bash` 도구가 돈다(`echo`, `sleep`). pnpm이 `node-pty` 등의 설치 스크립트를 돌리지 않은 상태 그대로다 |
+| 우리 도구 | 프로젝트 도구 여덟 개와 연산 도구가 에이전트의 도구 목록에 있고, 모델이 불러 실행된다("호스트 쪽") |
+| 프로젝트 규칙과 상태 | 시스템 프롬프트에 프로젝트 규칙 절이, 첫 턴에 프로젝트 상태 메시지가, 화면에서 바꾼 뒤의 턴에 갱신 메시지가 있다("호스트 쪽") |
+| 기록 | 에이전트가 부른 연산의 기록에 `actor: agent`, `surface: chat`, 턴 번호, 세션, 도구 호출 id가 남는다 |
+| 세션 여럿 | 한 프로젝트에 대화가 있는 세션이 여럿이면 내비게이터에 제목과 함께 줄로 뜨고, 줄을 누르면 그 대화가 보인다. 새로고침해도 보던 세션이 열린다 |
+
+하지 않은 것: 채팅 안의 카드 슬롯에 우리 React 컴포넌트를 그리는 것(3-4), 승인을 묻는 도구(`ask_user_question`, 파일 정책에 걸리는 명령), 첨부와 이미지 입력, 서브에이전트·예약·스킬·웹 도구(1-4), 긴 대화의 압축, 재생성·편집·분기, DeepSeek 프로바이더에서의 추론 표시와 웹 검색.
 
 ## 포크에서만 되는 것
 
@@ -584,10 +645,10 @@ span[class$="_brandMark"]:has(> [data-slot="sidebar.brand.mark"]:empty) { displa
 - 새 프로필을 처음 열면 "Preview Notice" 창(버튼은 `Continue`)과 "Get started" 창(API 키·로그인, `Close`로 닫는다)이 차례로 뜬다. 첫 창이 떠 있는 동안 페이지 전체가 inert라 클릭이 막힌다.
 - Preview Notice 창은 페이지 로드가 끝난(`networkidle`) 뒤에 뜬다(2026-11-27에 잰 것은 약 24ms 뒤). 로드 직후에 `count()`로 있는지 보면 0이 나와 닫지 못하고 지나간다(2026-11-26에 그렇게 됐다). 창이 뜨기를 기다린 뒤 닫는다. 조합 시험의 `openPage`가 그렇게 한다.
 - 두 창을 설정으로 끄는 길이 소스에 있다: Preview Notice는 `ui-settings-general` 행의 `welcomeNoticeVersion`이 지금 판(`2026-09-28.1`)과 같으면 뜨지 않고, Get started는 `ui-settings-models` 행의 `credentialOnboarding: false`로 끈다(**소스 확인**. 띄워 보지 않았다. 패치는 행의 `config` 전체를 바꾸므로 그 행의 다른 키도 같이 적어야 한다).
-- dsh는 환경 변수의 모델 키(`DEEPSEEK_API_KEY` 등)를 읽는다(**소스 확인**). 키가 있는 셸에서 띄우면 첫 실행 창과 프로바이더 상태가 달라질 수 있다. 조합 시험은 허용 목록의 환경 변수만 넘긴다.
+- dsh는 환경 변수의 모델 키(`DEEPSEEK_API_KEY` 등)를 읽는다(**소스 확인**. 프로바이더의 `apiKeyEnv`가 가리키는 환경 변수를 읽는 것은 **띄워 확인**, 2026-11-28). 키가 있는 셸에서 띄우면 첫 실행 창과 프로바이더 상태가 달라질 수 있다. 조합 시험은 허용 목록의 환경 변수만 넘긴다.
 - 런처의 옵션은 웹 앱 옵션보다 앞에 적는다("기본 정보"의 CLI).
 - `playwright-core install`은 브라우저를 받으면서, 지금 있는 어떤 Playwright 설치도 쓰지 않는 판을 캐시(`~/.cache/ms-playwright`)에서 지운다. 경로로 지정해 쓰던 옛 판이 사라질 수 있다(2026-11-27에 `chromium-1243`이 그렇게 지워졌다). `playwright-core` 1.65.1이 찾는 것은 1255판(Chromium 159)이다.
-- pnpm 10은 의존성의 설치 스크립트를 돌리지 않는다. dsh를 설치하면 `@deepseek-ai/dsh-subprocess-local`(`node-pty`의 `spawn-helper`에 실행 권한을 준다), `node-pty`, `koffi`, `protobufjs`, `@google/genai` 다섯 개가 무시됐다고 나온다. 그 상태로 웹은 뜬다(**띄워 확인**, 2026-11-26). 에이전트의 셸 도구가 그 상태로 도는지는 보지 않았다(1-3, 1-4). 필요하면 `pnpm-workspace.yaml`의 `onlyBuiltDependencies`에 적어 돌리게 한다.
+- pnpm 10은 의존성의 설치 스크립트를 돌리지 않는다. dsh를 설치하면 `@deepseek-ai/dsh-subprocess-local`(`node-pty`의 `spawn-helper`에 실행 권한을 준다), `node-pty`, `koffi`, `protobufjs`, `@google/genai` 다섯 개가 무시됐다고 나온다. 그 상태로 웹은 뜨고(**띄워 확인**, 2026-11-26) 에이전트의 셸 도구 `bash`도 돈다(**띄워 확인**, 2026-11-28: 실제 모델과 조합 시험 `chat.test.ts`가 `echo`의 출력을 받는다. Linux x64에서 봤다). 무시된 나머지 스크립트가 걸리는 기능은 따로 보지 않았다. 필요해지면 `pnpm-workspace.yaml`의 `onlyBuiltDependencies`에 적어 돌리게 한다.
 - "Get started" 창의 DOM 노드를 강제로 지우면 `sidebar.settings` 슬롯이 `removeChild` 오류로 죽는다. 반드시 버튼으로 닫는다.
 - Preview Notice를 넘기면 프로필 `cordis.patch.yml`의 `ui-settings-general` 행에 `welcomeNoticeVersion`이 기록된다(관찰).
 - 실행 때 출력되는 주소에는 로그인 토큰이 들어 있다. 로그나 문서에 붙이지 않는다.
@@ -596,7 +657,10 @@ span[class$="_brandMark"]:has(> [data-slot="sidebar.brand.mark"]:empty) { displa
 - **dsh를 띄워 둔 채 `lib/client.js`가 바뀌면 새로고침 없이 화면이 새 번들로 바뀐다**(**띄워 확인**, 2026-11-26. 파일을 바꾸고 1.5초 뒤에 이미 바뀌어 있었고 콘솔 오류는 없었다). 개발할 때는 dsh를 띄워 두고 `pnpm build`만 다시 돌리면 된다. 호스트 절반을 고친 것이 다시 실리는지는 보지 않았다.
 - `verbatimModuleSyntax` 아래에서 `import { type X } from "…"`는 값 import로 남는다. 표 밖의 `@deepseek-ai/*`면 빌드가 거절한다. `import type { X } from "…"`로 쓴다.
 - 임시 home으로 처음 띄우면 "Unable to create default workspace. Use Choose workspace to select a folder." 토스트가 뜬다(관찰, 2026-11-26. 콘솔 오류는 아니다. `HOME`까지 임시 폴더로 줘도 뜬다, 2026-11-27). dsh는 기본 작업공간을 `<문서 폴더>/deepseek-harness/default-workspace`에 두는데, 문서 폴더를 OS에 물어 얻고(Linux는 `xdg-user-dir DOCUMENTS`) 답이 없거나 홈 폴더와 같으면 던진다(**소스 확인**: `@deepseek-ai/dsh-api-workspace-controller`의 `default-directory`. 이 함수는 공개 진입점으로 나오지 않는다). 토스트의 원인은 이것으로 보인다(추정). 우리 새 프로젝트 폴더는 이 규칙을 쓰지 않는다(`docs/ARCHITECTURE.md` "프로젝트 계층"). 3-0부터는 셸이 그 초기화를 가려서 우리 번들로 띄우면 이 토스트가 뜨지 않는다(**띄워 확인**, 2026-11-28. "dsh 내부에 기대는 장치").
-- 같은 dsh에서 페이지를 새로고침하면 "Get started" 창이 다시 뜬다(모델 키를 넣지 않은 home에서. **띄워 확인**, 2026-11-28). Preview Notice는 다시 뜨지 않는다. 새로고침 뒤의 화면을 보는 시험은 요소가 붙었는지(`state: "attached"`)만 보거나 창을 다시 닫는다.
+- 같은 dsh에서 페이지를 새로고침하면 "Get started" 창이 다시 뜬다(모델 키를 넣지 않은 home에서. **띄워 확인**, 2026-11-28). Preview Notice는 다시 뜨지 않는다. 새로고침 뒤의 화면을 보는 시험은 요소가 붙었는지(`state: "attached"`)만 보거나 창을 다시 닫는다. 모델이 잡힌 home에서는 "Get started" 창이 처음에도 새로고침 뒤에도 뜨지 않는다(조합 시험의 `openPage`에 `modelConfigured: true`를 준다).
+- 끝난 턴의 추론과 도구 호출은 접힌 줄(`button[data-turn-process]`) 아래에 있고, 접힌 동안에는 DOM에 없다. 시험에서 세려면 그 줄을 먼저 펼친다(`data-open="true"`가 펼친 상태다).
+- 모델에게 가는 요청의 마지막 `user` 메시지는 사용자의 글이 아닐 수 있다. dsh와 우리 프로젝트 계층이 사용자의 글 뒤에 메시지를 끼워 넣는다(프로젝트 상태, 작업 폴더와 파일 정책, 스킬 목록, 시각). 가짜 LLM의 대본은 마지막 메시지가 아니라 사용자의 글을 찾아서 갈래를 정한다(`chat.test.ts`의 `turnOf`).
+- 키를 받지 않는 OpenAI 호환 서버를 붙일 때도 `Authorization` 헤더나 키를 줘야 한다("LLM 프로바이더 붙이기").
 - 왼쪽 사이드바의 `sidebar.workspaces` 자리는 dsh의 사이드바 뷰포트가 스크롤한다. 그 안의 우리 요소에 `overflow`를 주면 줄 아래로 내려오는 메뉴가 잘린다(2026-11-28에 밟았다. Playwright는 스크롤해서 누르므로 클릭은 통과한다. 시험은 `document.elementFromPoint`로 가려지지 않았는지를 본다).
 - `pointer-events: none`인 요소는 Playwright의 `click()`이 기다리다 시간 초과로 끝난다. 눌러도 아무 일이 없는지를 볼 때는 `page.mouse.click(x, y)`로 좌표를 누른다.
 - 헤드리스 확인에서 `page.evaluate`에 넘기는 문자열은 식이다. `locator.evaluate`에 함수 모양의 문자열을 넘기면 요소를 받지 못한다. 선택자를 문자열 안에 넣어 `page.evaluate`로 부른다.
@@ -621,7 +685,8 @@ pnpm exec vitest run --project integration tests/integration/shell.test.ts  # �
 | 틀 | 하는 일 |
 | --- | --- |
 | `launchDsh(options?)`(`dsh.ts`) | 임시 home에 프로필을 만들고 dsh를 빈 포트에 띄운다. 주소 줄을 기다려 `{ url, home, output(), exited, stop() }`를 준다. 행 하나라도 활성화에 실패했으면 거절한다. `patches`로 `--patch` 파일을 얹는다 |
-| `openPage(url, options?)`(`browser.ts`) | 헤드리스 Chromium으로 열고 첫 실행 창 둘을 버튼으로 닫는다. `{ page, issues, close() }`를 준다. `issues`는 콘솔의 error·warning과 잡히지 않은 페이지 오류다 |
+| `openPage(url, options?)`(`browser.ts`) | 헤드리스 Chromium으로 열고 첫 실행 창 둘을 버튼으로 닫는다(`modelConfigured: true`면 Preview Notice만). `{ page, issues, openTab(), close() }`를 준다. `issues`는 콘솔의 error·warning과 잡히지 않은 페이지 오류다. `openTab()`은 같은 브라우저 프로필로 탭을 하나 더 연다(쿠키와 저장된 상태가 남는다) |
+| `startFakeLlm(script)`(`llm.ts`) | OpenAI Chat Completions를 흉내 내는 가짜 LLM 서버를 띄운다. `{ baseURL, requests, patch, close() }`를 준다. `patch`를 `launchDsh({ patches })`에 주면 그 dsh의 기본 모델이 이 서버다(아래 "모델이 있어야 하는 시험") |
 | `runHostScenario(scenario, options?)`(`host.ts`) | 시나리오 모듈을 dsh 프로세스 안에서 실행하고 돌려준 값을 받는다(아래 "호스트 쪽 서비스를 부르는 시험"). `input`, `patches`, `env`, `timeoutMs`를 받는다 |
 | `redactLoginUrls(text)`(`dsh.ts`) | 주소와 토큰을 가린다. 틀이 내보내는 글은 모두 이것을 거친다. 주소는 `DshInstance.url`로만 건넨다 |
 
@@ -677,12 +742,38 @@ expect(result.names).toContain("working_directory");
 - 시나리오가 워크스페이스 패키지를 값으로 import하면 dsh가 프로필을 거쳐 실은 것과 같은 모듈이다(둘 다 `packages/` 아래의 실제 경로로 풀린다. **띄워 확인**, 2026-11-27: 시나리오가 가져온 `ProjectError`로 서비스가 던진 오류에 `instanceof`가 맞는다). 그 패키지는 루트 `package.json`의 `devDependencies`에 `workspace:*`로 있어야 한다.
 - `runHostScenario`의 `env`로 dsh에 환경 변수를 더 넘긴다(허용 목록 위에 얹는다).
 
+### 모델이 있어야 하는 시험
+
+채팅의 턴(메시지, 추론, 도구 호출)은 모델이 답해야 돈다. 조합 시험은 실제 모델 대신 **가짜 LLM 서버**(`tests/harness/llm.ts`)를 dsh에 붙인다. 키가 필요 없고, dsh가 모델에게 보낸 요청을 시험이 그대로 본다. 1-3에서 만들었다(**띄워 확인**, 2026-11-28. 명세는 `docs/archive/PLAN_1-3.md`).
+
+```ts
+// tests/integration/chat.test.ts에서 추렸다
+const llm = await startFakeLlm((request) => {
+  if (request.tools.length === 0) return { text: "Memo chat" };          // dsh의 세션 제목 요청
+  return request.messages.at(-1)?.role === "tool"
+    ? { text: "memo saved" }                                             // 도구 결과를 받은 뒤의 답
+    : { reasoning: "The user wants a memo.",
+        toolCalls: [{ name: "cs_probe_memo_add", arguments: { text: "alpha", reason: "asked" } }] };
+});
+const dsh = await launchDsh({ patches: [llm.patch] });
+const session = await openPage(dsh.url, { modelConfigured: true });
+// … 입력창에 쓰고 Enter → 화면의 답을 기다린다 → llm.requests로 dsh가 보낸 것을 단언한다
+```
+
+- **대본 함수**가 요청마다 답(`reasoning`, `text`, `toolCalls`, `delayMs`, `chunkDelayMs`)을 정한다. 서버는 그것을 실제 서버와 같은 순서의 SSE 조각으로 흘린다(추론은 `reasoning_content`).
+- `llm.requests`는 온 요청의 목록이다: 도구 이름들(`tools`), 펴 놓은 메시지(`messages`의 `role`·`text`·`toolCalls`·`toolCallId`), 원래 본문(`body`), 상태(`state`: `open`·`done`·`aborted`·`failed`). dsh가 요청을 끊으면 `aborted`가 된다(중지 시험이 이것을 본다).
+- `llm.patch`는 `llm-pi-ai` 행에 프로바이더 `cs-test-llm`을, `agent-default-model` 행에 그 모델을 적은 패치다. 키 대신 `Authorization` 헤더를 준다.
+- dsh는 사용자의 글 뒤에 메시지를 끼워 넣고, 첫 메시지 뒤에 제목 요청을 따로 보낸다. 대본은 도구가 없는 요청(제목)과 마지막 메시지가 `tool`인 요청(도구 결과)을 먼저 가르고, 나머지는 사용자의 글에 넣어 둔 표시로 가른다.
+- dsh의 채팅 DOM에서 시험이 잡는 것(전송·중지 버튼, 접힌 턴, 추론, 도구 호출)은 공개 계약이 아니다. `chat.test.ts` 머리의 `DSH_CHAT` 한 곳에 모았다. 버전을 올리거나 언어 팩을 바꾸면(버튼은 영어 `aria-label`로 가른다) 다시 본다.
+- 가짜 서버는 모델의 판단을 흉내 내지 않는다. 도구 설명을 읽고 모델이 맞는 도구를 고르는지 같은 것은 실제 모델로 본다("LLM 프로바이더 붙이기"의 구성으로 띄운다).
+
 알아 둘 것:
 
 - 시험 하나가 dsh를 한 번 띄운다. 띄우고 내리는 데 약 2초, 브라우저까지 열면 약 3.5초다(2026-11-27).
 - 끝나면 dsh와 브라우저 프로세스, 임시 폴더(`cs-dsh-test-*`)가 남지 않아야 한다. 틀이 `stop()`과 `close()`에서 정리하므로 시험은 `try`/`finally`로 둘을 반드시 부른다.
 - 시험이 시간 초과로 끊기면 Vitest가 워커를 신호로 죽여서 `finally`가 돌지 않는다. 그때는 `tests/harness/global-setup.ts`의 전역 정리가 남은 dsh를 죽이고 그 실행의 임시 폴더를 지운다. Vitest 자체를 Ctrl+C나 SIGTERM으로 끊어도 같다(**띄워 확인**, 2026-11-27). 브라우저는 워커가 죽을 때 같이 닫혔다(브라우저까지 연 채 시간 초과가 난 경우를 봤다).
-- 실제 모델이 있어야 하는 것(메시지, 도구 호출)은 이 틀로 보지 못한다. 키 없이 돈다.
+- 조합 시험 전체는 시험 17개, 약 24초다(2026-11-28. 파일끼리는 병렬로 돈다. 가장 긴 것은 가짜 LLM으로 턴을 도는 `chat.test.ts`의 약 21초다).
+- 시험은 키 없이 돈다. 메시지와 도구 호출은 가짜 LLM으로 본다(위 "모델이 있어야 하는 시험").
 - 살아 있는 슬롯 트리는 dsh의 `cordis_inspect what:"client"`로 물어볼 수 있다고 업스트림 문서에 있다(미확인).
 
 ## 버전 올리기
@@ -721,16 +812,16 @@ expect(result.names).toContain("working_directory");
 
 ## 확인하지 못한 것
 
-- **실제 모델과의 채팅.** 모델 키가 없어 메시지를 주고받지 못했다. 우측 탭의 채팅에 메시지·도구 호출이 그려지는지, 채팅 안의 카드 슬롯에 우리 React 컴포넌트가 그려지는지는 1-3과 3-4에서 본다. 3-0의 셸에서 본 것은 입력창에 글이 쳐지는 데까지다.
+- **채팅에서 남은 것.** 메시지·추론·도구 호출·중지·탭을 닫아도 도는 턴은 1-3에서 확인했다("실제 모델로 확인한 것"). 남은 것: 채팅 안의 카드 슬롯에 우리 React 컴포넌트를 그리는 것(3-4), 승인을 묻는 도구, 첨부와 이미지 입력, 긴 대화의 압축, 재생성·편집·분기, DeepSeek 프로바이더에서의 동작(추론 표시, 웹 검색), 설정 화면의 폼으로 프로바이더를 추가하는 것.
+- **저장된 상태가 없는 브라우저로 열면 새 빈 채팅이 열린다.** 다른 기기나 시크릿 창에서 열면 마지막 프로젝트의 앞 세션이 아니라 새 빈 채팅이 열린다(**띄워 확인**, 2026-11-28). dsh의 동작인지 우리 셸이 주 세션을 따르는 방식 때문인지는 가르지 않았다. 앞 세션을 열게 할지는 정하지 않았다(1-5에서 다른 기기로 접속할 때 다시 본다).
 - **홈에서 우측 패널을 다시 펼치는 길.** 홈으로 가면 패널을 접을 뿐이고 패널은 dsh의 것이다. dsh의 펼침 버튼이 홈에서도 남아 있으면 사용자가 눌러 직전 세션의 채팅을 볼 수 있다(리뷰가 소스로 짚었다. 띄워 보지 않았다, **미확인**). 막으려면 dsh 내부에 기대는 장치가 하나 더 든다. 사용자가 고른 "최소"의 밖이라 하지 않았다.
-- **셸(3-0)에서 보지 못한 것.** 대화가 있는(비어 있지 않은) 세션이 여럿인 프로젝트의 세션 목록과 전환(모델 키가 있어야 세션에 대화가 생긴다), 브라우저 탭 둘이 같은 프로젝트를 볼 때, 플러그인이 내려갈 때 두 장치가 되돌아가는지, 브랜드에 키보드로 닿아 Enter를 누르는 경우(CSS로는 막지 못한다), 접힌 사이드바의 모양.
+- **셸(3-0)에서 보지 못한 것.** 브라우저 탭 둘이 같은 프로젝트를 볼 때(대화가 있는 세션이 여럿일 때의 목록과 전환은 1-3에서 확인했다), 플러그인이 내려갈 때 두 장치가 되돌아가는지, 브랜드에 키보드로 닿아 Enter를 누르는 경우(CSS로는 막지 못한다), 접힌 사이드바의 모양.
 - **슬롯 등록의 `store`·`locale` 칸.** `inject`(값, 콜백)와 `hooks`, TSX와 JSX 자동 런타임, dsh 타입으로 하는 타입 검사, 공유 모듈 열한 개만 external로 둔 빌드, Astryx가 전혀 없는 브라우저 번들은 1-1에서 확인했다(2026-11-26).
 - 서드파티 패키지가 같이 실린 브라우저 번들, 공유 모듈의 하위 경로(`zod/v4` 등), 플러그인이 내려갈 때 로더가 우리 `<style>`을 지우는 것, 호스트 절반을 고쳤을 때 다시 실리는지.
-- **에이전트 프리셋.** 우리 프리셋을 넣어 띄우는 것, 프리셋 밖에서 등록한 도구가 에이전트에게 보이는지, 기본 제공 프리셋을 끄는 것.
-- 무시된 설치 스크립트(`node-pty` 등)가 에이전트의 셸 도구에 주는 영향("함정").
+- **에이전트 프리셋.** 우리 프리셋을 넣어 띄우는 것, 기본 제공 프리셋을 끄는 것(1-4).
 - DreamVerse의 서버 쪽 코드 가운데 프로젝트 계층과 화면용 API 밖의 것을 0.2.2-rc.5에서 실행하는 것(프로젝트 계층은 2-0, `@dv/api`는 2-2에서 옮겨 돌렸다. 에셋은 2-3).
 - 이벤트 스트림이 리버스 프록시 뒤에서 버퍼링 없이 흐르는지(1-5). dsh가 도는 중에 우리 서비스가 다시 실릴 때 브라우저가 스트림을 다시 잇는지.
-- 프로젝트 계층이 에이전트의 실제 턴에서 하는 일: 연산 도구가 에이전트의 도구 목록에 들어가는지, `agent/pre-step`에서 프로젝트 상태·갱신 메시지가 붙는지, 턴 번호가 기록에 남는지(모델 키가 있어야 한다. 1-3).
+- 프로젝트 계층이 에이전트의 실제 턴에서 하는 일 가운데 남은 것: 실행 취소·다시 실행·stale을 에이전트가 도구로 다루는 턴, 연산이 오래 걸릴 때의 `cs_proj_wait`, 턴을 중지했을 때 돌던 연산의 기록(`stopped`). 도구 목록·상태와 갱신 메시지·턴 번호는 1-3에서 확인했다.
 - 가운데에 입력창을 끼운 첫 화면, `@` 메뉴에 우리 항목 추가.
 - `ctx.credentials`와 `ctx.storageDomain`을 저장소 밖 플러그인에서 쓰는 것(`ctx.tools`를 읽는 것은 1-2에서 확인했다).
 - 첫 실행 창을 설정으로 끄는 것, 같은 home으로 dsh를 다시 띄웠을 때의 화면(조합 시험은 늘 새 home이다).
