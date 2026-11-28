@@ -2,15 +2,16 @@
 // as our shell draws it, and the reading of the requests the fake model got. Used by
 // chat.test.ts, preset.test.ts and dsh-features.test.ts.
 
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { zstdDecompressSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 import type { Locator, Page } from "playwright-core";
 import { expect } from "vitest";
 import { openPage } from "../harness/browser.ts";
 import type { PageSession } from "../harness/browser.ts";
 import { launchDsh, tempParent } from "../harness/dsh.ts";
-import type { DshInstance, LaunchOptions } from "../harness/dsh.ts";
+import type { DshInstance, LaunchOptions, TestHome } from "../harness/dsh.ts";
 import { startFakeLlm } from "../harness/llm.ts";
 import type { FakeLlm, FakeRequest, FakeScript } from "../harness/llm.ts";
 
@@ -48,6 +49,51 @@ export const DSH_CHAT = {
   /** The tool call's view slot (public) and the tool name dsh puts on its root. */
   toolCall: (tool: string) => `[data-slot="tool.call.toolview"] [data-tool="${tool}"]`,
 };
+
+// dsh's own sidebar markup and session storage, which are not public contracts either; look
+// again when the dsh version moves, like DSH_CHAT.
+export const DSH_SIDEBAR = {
+  /**
+   * The wide sidebar's brand: dsh's New Session button, which holds our brand name. A click is
+   * blocked by the shell (chrome.ts device 2); focus and Enter still press it.
+   */
+  brand: '[data-slot="sidebar"] button:has([data-cs-brand])',
+};
+
+/**
+ * The presets a session's log recorded as `agent-preset/selected`, in order. The log is
+ * `$DSH_HOME/sessions/<folder key>/<session id>/session.v4.jsonl.zstd` (seen on 0.2.2-rc.5; the
+ * event is in dsh's persistence catalog). Empty while the log is missing or mid-write.
+ */
+export function selectedPresets(home: TestHome, sessionId: string): string[] {
+  const root = join(home.dshHome, "sessions");
+  if (!existsSync(root)) return [];
+  for (const folder of readdirSync(root)) {
+    const log = join(root, folder, sessionId, "session.v4.jsonl.zstd");
+    if (!existsSync(log)) continue;
+    let text: string;
+    try {
+      text = zstdDecompressSync(readFileSync(log)).toString("utf8");
+    } catch {
+      return [];
+    }
+    return text.split("\n").flatMap((line) => {
+      if (!line.includes('"agent-preset/selected"')) return [];
+      let event: unknown;
+      try {
+        event = JSON.parse(line);
+      } catch {
+        return [];
+      }
+      const data: unknown =
+        typeof event === "object" && event !== null ? Reflect.get(event, "data") : undefined;
+      const preset: unknown =
+        typeof data === "object" && data !== null ? Reflect.get(data, "agentPreset") : undefined;
+      return typeof preset === "string" ? [preset] : [];
+    });
+  }
+  return [];
+}
 
 const dirs: string[] = [];
 

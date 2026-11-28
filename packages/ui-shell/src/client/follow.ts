@@ -1,13 +1,21 @@
 // The subscriptions `apply` starts for the plugin's lifetime: the project list follows dsh's
-// workspace feed, the open project follows the dsh main session, and the chat tab opens when a
-// project session's right-panel seat mounts (docs/archive/PLAN_3-0.md "고른 것").
+// workspace feed, the open project follows the dsh main session, the chat tab opens when a
+// project session's right-panel seat mounts (docs/archive/PLAN_3-0.md "고른 것"), and a blank
+// project chat goes back on our agent preset (stage 1-4).
 
 import type { Context } from "@deepseek-ai/cordis";
 import type { ProjectReader } from "./actions.ts";
 import type { ShellStore } from "./contract.ts";
 import { hostOf } from "./host.ts";
 import type { ShellHost } from "./host.ts";
-import { followMainSession, listedOrHome, projectOfSession, startupRestore } from "./navigation.ts";
+import { AGENT_PRESET } from "./ids.ts";
+import {
+  followMainSession,
+  listedOrHome,
+  presetToRestore,
+  projectOfSession,
+  startupRestore,
+} from "./navigation.ts";
 
 /** Milliseconds before a failed project list read is tried again. */
 export const PROJECT_READ_RETRY_MS = 2000;
@@ -17,6 +25,12 @@ export const CHAT_TAB_RETRY_MS = 250;
 
 /** Tries to open the chat tab for one mounted session before giving up. */
 export const CHAT_TAB_ATTEMPTS = 20;
+
+/** Milliseconds before another try to put a blank project chat back on our agent preset. */
+export const PRESET_RETRY_MS = 1000;
+
+/** Tries per session to put it back on our agent preset before giving up with one warning. */
+export const PRESET_ATTEMPTS = 3;
 
 /**
  * Every project is a dsh workspace, so a project created, renamed or removed anywhere (another
@@ -196,6 +210,135 @@ function followChatTab(host: ShellHost, store: ShellStore): () => void {
 }
 
 /**
+ * A blank chat of a project goes back on our agent preset when it lists another one
+ * (`presetToRestore`): dsh's own entry points reuse it under the user's default, which can be
+ * `standard` with the shell and file tools. A chat whose conversation has started keeps its
+ * preset; neither the shell nor dsh changes a composition once a turn ran.
+ *
+ * One request per session at a time, and none while one is in flight (dsh's list updates that
+ * our own request causes land here too). A request that ends while the list still reports the
+ * other preset is followed by another only after `PRESET_RETRY_MS`, so a list update that is
+ * merely late settles it first; after `PRESET_ATTEMPTS` the shell stops trying for that session
+ * with one warning. The list reporting our preset starts the count over, so a later switch
+ * (settings' "Set as new task default" on the blank on screen) is put back again. When dsh
+ * declines because the conversation started meanwhile, the shell leaves the session alone.
+ * A request dsh makes for its own selection (settings, the preset chip) is ordered by the host
+ * per session, so the last one to arrive wins and the list update after it decides again.
+ */
+function followAgentPreset(host: ShellHost, store: ShellStore): () => void {
+  let disposed = false;
+  let track:
+    | {
+        readonly session: string;
+        attempts: number;
+        busy: boolean;
+        /** Declined by dsh or given up; only the list reporting our preset clears it. */
+        settled: boolean;
+        timer: ReturnType<typeof setTimeout> | undefined;
+        failure: unknown;
+      }
+    | undefined;
+
+  const stopTimer = (): void => {
+    if (track?.timer === undefined) return;
+    clearTimeout(track.timer);
+    track.timer = undefined;
+  };
+
+  /** The main session's project when the rule asks to put the session back now. */
+  const due = (): { project: string; session: string } | undefined => {
+    const { projects, sessionId } = store.getSnapshot();
+    if (sessionId === undefined) return undefined;
+    const workspaces = host.workspaces.getSnapshot();
+    if (workspaces.phase !== "ready") return undefined;
+    const project = projectOfSession(projects, workspaces.items, sessionId);
+    const restore = presetToRestore({
+      project,
+      session: host.sessions.getSnapshot().byId[sessionId],
+      archived: workspaces.archivedSessionIds.includes(sessionId),
+      listed: host.sessionPreset(sessionId),
+      wanted: AGENT_PRESET,
+    });
+    return restore && project !== null ? { project, session: sessionId } : undefined;
+  };
+
+  const fire = (): void => {
+    const entry = track;
+    const target = due();
+    if (disposed || entry === undefined || entry.busy || target?.session !== entry.session) return;
+    entry.busy = true;
+    entry.attempts += 1;
+    void (async () => {
+      try {
+        const outcome = await host.selectPreset(target.project, target.session, AGENT_PRESET);
+        if (outcome === "declined") entry.settled = true;
+      } catch (error) {
+        entry.failure = error ?? new Error("selectPreset failed");
+      } finally {
+        entry.busy = false;
+        if (!disposed && track === entry) check();
+      }
+    })();
+  };
+
+  function check(): void {
+    if (disposed) return;
+    const main = store.getSnapshot().sessionId;
+    if (track !== undefined && track.session !== main) {
+      stopTimer();
+      track = undefined;
+    }
+    if (main === undefined) return;
+    track ??= {
+      session: main,
+      attempts: 0,
+      busy: false,
+      settled: false,
+      timer: undefined,
+      failure: undefined,
+    };
+    if (host.sessionPreset(main) === AGENT_PRESET) {
+      stopTimer();
+      track.attempts = 0;
+      track.settled = false;
+      track.failure = undefined;
+      return;
+    }
+    if (due() === undefined) {
+      stopTimer();
+      return;
+    }
+    if (track.busy || track.settled || track.timer !== undefined) return;
+    if (track.attempts >= PRESET_ATTEMPTS) {
+      track.settled = true;
+      console.warn("cs-shell: putting the chat back on the agent preset failed", track.failure);
+      return;
+    }
+    if (track.attempts === 0) {
+      fire();
+      return;
+    }
+    const entry = track;
+    entry.timer = setTimeout(() => {
+      entry.timer = undefined;
+      fire();
+    }, PRESET_RETRY_MS);
+  }
+
+  const stops = [
+    store.subscribe(check),
+    host.sessions.subscribe(check),
+    host.workspaces.subscribe(check),
+  ];
+  check();
+  return () => {
+    disposed = true;
+    stopTimer();
+    for (const stop of stops) stop();
+  };
+}
+
+/**
  * Start the shell's subscriptions over a dsh face. `followShell` is this with the real services.
  * @param host - the dsh face.
  * @param store - the shell store.
@@ -211,6 +354,7 @@ export function followShellWith(
     followProjectList(host, readProjects),
     followOpenProject(host, store),
     followChatTab(host, store),
+    followAgentPreset(host, store),
   ];
   return () => {
     for (const stop of stops) stop();

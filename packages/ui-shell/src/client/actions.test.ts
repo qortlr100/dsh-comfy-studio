@@ -92,6 +92,8 @@ function fakeHost(options: FakeOptions = {}) {
       seat(blank);
       return Promise.resolve();
     },
+    sessionPreset: () => undefined,
+    selectPreset: () => Promise.reject(new Error("not used by the actions")),
     beginNavigation: () => {
       calls.push("beginNavigation");
     },

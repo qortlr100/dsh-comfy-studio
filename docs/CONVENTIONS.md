@@ -149,7 +149,7 @@ lib/client.js           브라우저 번들. 빌드 결과이고 커밋하지 �
   - 시험은 `launchDsh`와 `openPage`를 `try`/`finally`로 감싸 `stop()`과 `close()`를 반드시 부른다.
   - 시험 끝에 콘솔 오류·경고가 0건인지 본다(`session.issues`).
   - 채팅의 턴은 가짜 LLM 서버(`startFakeLlm`)로 돈다. 실제 모델의 주소와 이름은 저장소에 적지 않는다.
-  - dsh 자신의 DOM을 잡는 선택자는 시험 파일 머리의 상수 한 곳에 모은다(`chat.test.ts`의 `DSH_CHAT`). 공개 계약이 아니라서 버전을 올릴 때 다시 본다.
+  - dsh 자신의 DOM을 잡는 선택자는 상수 한 곳에 모은다(`tests/integration/chat-rig.ts`의 `DSH_CHAT`. 채팅을 도는 시험이 같이 쓰는 도우미도 거기 있다). 공개 계약이 아니라서 버전을 올릴 때 다시 본다.
   - dsh 프로세스 안에서 도는 시나리오(`tests/integration/scenarios/`)와 시험용 플러그인(`fixtures/`)은 Node가 바로 읽는다. 지울 수 있는 문법만 쓰고 `expect`를 쓰지 않는다.
 - 틀이 내보내는 글은 로그인 주소와 토큰을 가린다(`redactLoginUrls`). 시험과 로그에 주소를 찍지 않는다.
 - 화면이 걸린 변경은 타입 검사와 단위 시험이 통과해도 띄워서 본다(`AGENTS.md` "확인하는 법").

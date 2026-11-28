@@ -95,10 +95,87 @@ A에서 `workflow`(자식 에이전트 여럿을 스크립트로 엮는 도구)�
 
 옮길지부터 정해지지 않은 것이다: 미디어 검수(ffmpeg, 받아쓰기), Blender 렌더, S3 호환 스토리지와 백업·내보내기, 사용량·요금 집계. 옮기기로 한 것만 로드맵에 단계로 더한다.
 
+## 사용자가 정한 것
+
+2026-11-28에 위 네 질문에 답했고, 구현 뒤의 리뷰가 낸 지적 둘에 다시 답했다(`docs/DECISIONS.md` "확정").
+
+| 질문 | 답 |
+| --- | --- |
+| 1. 에이전트 프리셋에 넣을 것 | "기능 포함, 셸·파일 없음"(A) |
+| 2. 기본 제공 프리셋 | "그대로 두고 셸이 우리 프리셋 지정"(가) |
+| 3. 대응표의 "후보"와 옮길 순서 | "권고안대로" |
+| 4. 대응표의 "미정" | "미디어 검수, Blender 렌더, S3 스토리지·백업"(사용량·요금 집계는 고르지 않았다) |
+| 리뷰 지적 1: 기본 프리셋을 `standard`로 바꾼 home에서 dsh 자체의 진입점이 만드는 채팅 | "셸이 빈 세션을 되돌린다" |
+| 리뷰 지적 2: dsh의 예약 도구 | "지금은 프리셋에서 뺀다" |
+
 ## 고른 것
 
-(사용자가 정한 뒤에 채운다.)
+Claude가 고른 것이다(`docs/DECISIONS.md` "전제"). 사용자가 고른 안 아래의 세부다.
+
+| 무엇 | 고른 것 | 이유 | 뒤집으면 |
+| --- | --- | --- | --- |
+| 프리셋의 이름 | id `comfy-studio`, 번들 행 `preset-comfy-studio`, 표시 이름 ComfyStudio | 프로필과 제품의 이름이다 | 번들의 행과 `ids.ts`의 `AGENT_PRESET`을 같이 바꾼다 |
+| 페르소나 | `prefix`에 짧은 영어 문장(ComfyStudio의 조수이고 프로젝트 하나에서 프로젝트의 도구로만 바꾼다). `complete`는 쓰지 않는다 | `complete`는 프로젝트 규칙 절까지 지운다. 일의 순서는 2-4의 스킬이 적는다 | 번들의 행 |
+| 웹 검색 | `tool-web`의 `search: false` | 켜 두면 DeepSeek 계정이 있는 home에서 `web_search`가 정하지 않은 채 생긴다. 우리 검색 플러그인을 만들 때 켠다 | 번들의 행 |
+| 서브에이전트의 모델 | `modelSelection: false`, `modelDiscovery: false` | 모델 목록 도구 없이 모델 id를 고르게 하면 틀린 id를 넣을 수 있다. 자식은 부모의 모델로 돈다 | 번들의 행 |
+| `workflow`, `subagent_fork` | 넣지 않는다 | 계획의 A에 적은 대로다. `workflow`는 자식 여럿을 스크립트로 엮는 도구다 | 번들의 행 |
+| 스킬 폴더 | dsh의 기본 위치만(프로젝트의 `.dsh/skills`·`.agents/skills`, home의 `skills`) | 사용자가 스킬을 넣는 자리다. `standard`가 주는 코딩용 스킬은 필요 없다 | 번들의 행 |
+| 끈 호스트 행 | `tool-working-directory`, `harness-dev-context`, `skill-office` | 프리셋 밖에서 모든 에이전트에게 붙는다. 첫째는 세션의 작업 폴더를 옮기는데 프로젝트 계층이 그 폴더로 프로젝트를 찾는다. 나머지 둘은 우리 에이전트에게 맞지 않는 글이다 | 번들의 행. 기본 제공 프리셋의 세션도 같이 달라진다 |
+| `includeRuntimeContext` | 기본값(켬) | 끄면 서브에이전트의 자식에게 가는 위임 깊이와 권한 범위의 안내도 빠진다 | 번들의 행 |
+| 빈 채팅을 되돌리는 길 | `ctx.sessions.create`에 그 빈 세션의 id와 우리 프리셋을 준다 | 이미 타입을 받는 공개 서비스다. 설정 화면이 쓰는 `remote.agentPresets.select`는 타입 패키지 둘이 더 든다 | `host.ts`의 `selectPreset` |
+| 조합 시험 | 도구 목록을 통째로 견준다. dsh의 기능은 우리 프리셋 아래에서 스킬, `web_fetch`, MCP, 서브에이전트를 본다 | 도구 하나가 슬쩍 늘어도 시험이 실패한다 | `preset.test.ts`, `dsh-features.test.ts` |
+| 시험으로 남기지 않은 것 | 예약, 첨부, 분기, 웹 검색 백엔드를 꽂는 자리, 기본 제공 프리셋 끄기, 구성별 요청 크기, 실제 모델 | 우리 프리셋에 없거나(예약) 다음 단계의 것이다. 실험 결과는 `docs/DSH.md`에 "띄워 확인(실험)"으로 적었다 | 그 기능을 만드는 단계에서 시험을 쓴다 |
 
 ## 결과
 
-(구현 뒤에 채운다.)
+### 만든 것
+
+| 파일 | 내용 |
+| --- | --- |
+| `packages/bundle/cordis.patch.yml` | 프리셋 행 `preset-comfy-studio`, 레지스트리의 기본값, 끈 호스트 행 셋 |
+| `packages/ui-shell/src/client/ids.ts`, `host.ts` | `AGENT_PRESET`. `openWorkspace`가 프리셋을 명시한다. `sessionPreset`, `selectPreset` |
+| `packages/ui-shell/src/client/navigation.ts`, `follow.ts` | 빈 프로젝트 채팅을 우리 프리셋으로 되돌리는 규칙 `presetToRestore`와 구독 `followAgentPreset` |
+| `tests/integration/preset.test.ts` | 도구 목록이 정확히 정한 것인지, 기본값이 `standard`여도 그런지, 그때 브랜드에 Enter를 누른 뒤의 채팅이 우리 프리셋으로 돌아오는지 |
+| `tests/integration/dsh-features.test.ts` | 우리 프리셋 아래의 스킬, `web_fetch`, MCP, 서브에이전트 |
+| `tests/integration/chat-rig.ts` | 채팅을 도는 시험의 도우미와 dsh의 DOM 선택자(`DSH_CHAT`, `DSH_SIDEBAR`) |
+| `tests/integration/scenarios/agent-presets.ts`, `fixtures/mcp-echo-server.mjs` | 프리셋 목록을 읽는 시나리오, 시험용 MCP 서버 |
+| `tests/integration/chat.test.ts`, `host-scenario.test.ts` | 셸 도구의 턴을 뺐다. 전역 도구의 예를 `working_directory`에서 `team_task_create`로 바꿨다(그 행을 껐다) |
+
+### 에이전트가 받는 것
+
+프로젝트 도구 여덟(`cs_proj_create`, `_rename`, `_state`, `_history_list`, `_undo`, `_redo`, `_stale_accept`, `_wait`), 등록된 연산마다의 연산 도구, dsh 도구 여덟(`ask_user_question`, `skill`, `web_fetch`, `todo_write`, `subagent`, `list_agents`, `send_message`, `wait_agent`). 빈 프로젝트에 한마디를 보낸 첫 요청은 약 22,000자였다(예약 도구를 빼기 전에 쟀다. `standard`에서는 약 47,000자).
+
+### 리뷰
+
+구현과 독립된 리뷰(diff와 이 문서만 받았다)가 낸 것이다. P1은 없었다.
+
+| 지적 | 처리 |
+| --- | --- |
+| P2. 사용자가 기본 프리셋을 `standard`로 바꾼 home에서 dsh 자체의 진입점(브랜드에 Enter, 단축키, 시작 복원, Automation의 New, 설정의 기본값 바꾸기)이 프로젝트 안에 `standard`의 채팅을 만들거나 우리 빈 채팅을 `standard`로 바꾼다(브랜드에 Enter는 띄워 재현) | 사용자가 정했다: 셸이 빈 채팅을 되돌린다. `followAgentPreset`과 조합 시험을 더했다. 주석의 "설정의 기본값이 바뀌어도 달라지지 않는다"를 실제대로 고쳤다 |
+| P2. `schedule_list`·`schedule_edit`가 home의 모든 예약을 보고 고치고 승인 없이 지운다. 다른 프리셋의 세션으로 가는 예약의 프롬프트도 바꾼다(소스 확인) | 사용자가 정했다: 예약 도구를 프리셋에서 뺐다. 에이전트용 예약 도구는 2-3의 후속이다 |
+| P3. `subagent`의 `cwd` 인자로 자식이 다른 폴더에서 돌 수 있다 | 설정으로 끌 수 없다. 연산을 거치므로 기록은 남는다. `docs/DSH.md`에 적었다 |
+| P3. MCP 서버의 도구는 프리셋을 가리지 않는다 | `docs/DSH.md`에 적었다 |
+| P3. 프리셋 머리 주석이 `standard`에서 뺀 것을 일부만 적었다 | 주석을 고쳤다 |
+
+리뷰가 확인하고 문제없다고 본 것: 스킬은 스크립트를 실행하지 않는다, `web_fetch`는 디스크에 쓰지 않는다, `send_message`·`wait_agent`는 자기 서브에이전트만 닿는다, 분기한 대화는 원래 세션의 프리셋을 잇는다, 셸이 세션을 만드는 길은 `openWorkspace` 하나다, 번들의 행과 키가 모두 0.2.2-rc.5에 있다, 끈 호스트 행을 쓰는 곳이 없다.
+
+### 실험에서 돌린 것(시험으로 남기지 않았다)
+
+- 구성 다섯(`standard`, 최소, 최소(정리), 기능 포함, 기능 + 읽기)을 가짜 LLM으로 띄워 도구 목록과 요청 크기를 쟀다.
+- 기본 제공 프리셋 넷을 끄고 설정 화면과 기존 `standard` 세션을 봤다. 사용자의 기본값(`selectedDefault`)이 번들의 기본값을 이기는 것, 레지스트리 행을 `--patch`로 덮으면 설정 쓰기가 거절되는 것.
+- `standard`에서 예약(일회성 예약이 세션으로 들어오는 것, 재시작 뒤에도 남는 것, Automation tasks 화면, 화면에서 만들기), MCP stdio 서버, 스킬(폴더와 플러그인 등록), `web_fetch`, 가짜 검색 백엔드로 `web_search`가 생기는 것, 서브에이전트, 이미지와 그 밖의 파일 첨부, 메시지의 버튼과 분기.
+- 실제 모델로 예약 만들기, 스킬 고르기, 서브에이전트 위임을 한 번씩.
+
+### 계획과 달라진 것
+
+- 계획의 A에 있던 예약 도구는 리뷰 뒤에 뺐다.
+- 계획의 2번 "가"는 dsh가 스스로 만드는 세션의 예로 예약의 새 세션만 들었다. 리뷰가 우리 화면 안의 다른 진입점을 찾았고 셸이 빈 채팅을 되돌리게 했다.
+- "기능 + 읽기"와 "최소(정리)" 구성의 `includeRuntimeContext: false`는 쓰지 않았다.
+
+### 남긴 것
+
+- 에이전트가 예약을 만드는 우리 도구(2-3). 그때까지 예약은 Automation tasks 화면의 "Create manually"로만 만든다.
+- 웹 검색 플러그인과 `web_search` 켜기(2-3).
+- 내비게이터의 진행·안 읽음 표시와 대화 검색 입력(3-6).
+- 대화가 시작된 세션과 예약이 만드는 새 세션은 가진 프리셋 그대로다(사용자가 기본값을 `standard`로 바꾼 home에서만).
+- `docs/DSH.md` "확인하지 못한 것"의 "에이전트 프리셋에서 남은 것"과 "dsh의 기능에서 남은 것".

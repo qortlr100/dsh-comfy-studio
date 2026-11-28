@@ -1,5 +1,6 @@
 // Pure navigation rules of the shell: which project follows the main session, which chat
-// session opening a project shows. No React and no dsh types, so tests need no fixtures.
+// session opening a project shows, when a blank project chat goes back on our agent preset.
+// No React and no dsh types, so tests need no fixtures.
 
 export interface WorkspaceRow {
   readonly workspaceId: string;
@@ -72,6 +73,34 @@ export function startupRestore(input: {
   const { armed, sessionProject, open } = input;
   if (!armed || sessionProject === null) return { swallow: false, armed };
   return { swallow: open === null, armed: false };
+}
+
+/**
+ * Decide whether the shell puts the main session back on our agent preset. dsh's own entry
+ * points (the sidebar brand by keyboard, the `session.new` shortcut, the startup restore,
+ * Automation's "New task", settings' "Set as new task default") name no preset or another one,
+ * and dsh then reuses a project's blank chat under the default the user picked, so a blank chat
+ * our shell made can end up on `standard`. Only a blank session is put back: once a
+ * conversation has started its composition is fixed, by decision (2026-11-28) and by dsh (the
+ * host refuses the swap), so such a chat keeps whatever preset it began with.
+ * @param input.project - the session's project; null outside every project.
+ * @param input.session - the session as dsh lists it; undefined while unlisted.
+ * @param input.archived - dsh lists the session as archived (dsh never reuses those).
+ * @param input.listed - the preset dsh's session list reports; undefined while it reports none,
+ *   which waits for the next list update rather than guessing.
+ * @param input.wanted - our preset.
+ * @returns true when the shell should select `wanted` on the session.
+ */
+export function presetToRestore(input: {
+  project: string | null;
+  session: SessionInfo | undefined;
+  archived: boolean;
+  listed: string | undefined;
+  wanted: string;
+}): boolean {
+  const { project, session, archived, listed, wanted } = input;
+  if (project === null || session === undefined || !session.blank || archived) return false;
+  return listed !== undefined && listed !== wanted;
 }
 
 /**

@@ -3,6 +3,7 @@ import {
   followMainSession,
   listedOrHome,
   pickSession,
+  presetToRestore,
   projectOfSession,
   projectSessions,
   startupRestore,
@@ -176,5 +177,30 @@ describe("visibleSessions", () => {
   it("hides blank rows except the current one, keeping order", () => {
     expect(visibleSessions(rows, "c").map((r) => r.id)).toEqual(["a", "c"]);
     expect(visibleSessions(rows, undefined).map((r) => r.id)).toEqual(["a"]);
+  });
+});
+
+describe("presetToRestore", () => {
+  const base = {
+    project: "p1",
+    session: s("a", 1, true),
+    archived: false,
+    listed: "standard",
+    wanted: "ours",
+  };
+
+  it("puts a blank project chat on another preset back", () => {
+    expect(presetToRestore(base)).toBe(true);
+  });
+
+  it.each([
+    ["already on our preset", { listed: "ours" }],
+    ["reporting no preset yet", { listed: undefined }],
+    ["outside every project", { project: null }],
+    ["not listed", { session: undefined }],
+    ["with a conversation", { session: s("a", 1, false) }],
+    ["archived", { archived: true }],
+  ])("leaves a session %s alone", (_name, patch) => {
+    expect(presetToRestore({ ...base, ...patch })).toBe(false);
   });
 });

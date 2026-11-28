@@ -35,6 +35,9 @@ export interface HostSessionList {
   readonly byId: Readonly<Record<string, SessionInfo | undefined>>;
 }
 
+/** How `ShellHost.selectPreset` ended. */
+export type PresetOutcome = "selected" | "declined";
+
 /** The dsh services the shell's actions and subscriptions call, reduced to what they use. */
 export interface ShellHost {
   readonly workspaces: HostSource<HostWorkspaceList>;
@@ -46,11 +49,26 @@ export interface ShellHost {
   /** Make a listed session the main session. Throws `strings.unknownSession` for an unlisted one. */
   openSession(sessionId: string): void;
   /**
-   * Make the workspace's blank session (reused or created by dsh) the main session. The session
-   * runs our agent preset (`AGENT_PRESET`), whatever default the user picked in dsh's settings.
-   * Rejects with `strings.workspaceNotReady` when the workspace is not listed.
+   * Make the workspace's blank session (reused or created by dsh) the main session. The call
+   * names our agent preset (`AGENT_PRESET`), so the session runs it whatever default the user
+   * picked in dsh's settings. Rejects with `strings.workspaceNotReady` when the workspace is not
+   * listed.
    */
   openWorkspace(workspaceId: string): Promise<void>;
+  /**
+   * The agent preset a session runs, as dsh's session list reports it. Undefined when the
+   * session is unlisted or its row reports no preset yet. Never throws.
+   */
+  sessionPreset(sessionId: string): string | undefined;
+  /**
+   * Ask dsh to run a blank session of a workspace under a preset, keeping the session.
+   * @returns `selected` when dsh reused the session under the preset; `declined` when dsh found
+   *   it no longer reusable (its conversation had started) and left it as it was. dsh then
+   *   made another blank session in the workspace, which stays unopened.
+   * Rejects with `strings.workspaceNotReady` or `strings.unknownSession` for an unlisted one,
+   * and with dsh's error when dsh refuses the request.
+   */
+  selectPreset(workspaceId: string, sessionId: string, preset: string): Promise<PresetOutcome>;
   /** Cancel dsh's pending navigation, such as the startup restore of the saved session. */
   beginNavigation(): void;
   /**
@@ -73,7 +91,8 @@ export interface ShellHost {
 }
 
 /**
- * The shell's host over the client services.
+ * The shell's host over the client services. Every dsh call here is a declared member of a
+ * public client service; the devices that lean on dsh internals live in chrome.ts.
  * @param ctx - the client context with `workspaces`, `sessions`, `uiWorkspace`, `layout`, `sidebarRight`.
  * @returns the host; it reads the services on every call, so it stays current.
  */
@@ -108,7 +127,46 @@ export function hostOf(ctx: Context): ShellHost {
       if (typed === undefined) throw new Error(strings.workspaceNotReady);
       // dsh reuses a blank that lists no preset or this one, or creates one under this preset
       // (upstream packages/client/ui-workspace/src/client/navigation.ts `createInWorkspace`).
+      // dsh's own entry points name no preset and follow the registry default instead; the
+      // shell's `followAgentPreset` (follow.ts) puts a blank project chat back on ours.
       await ctx.uiWorkspace.openWorkspace(typed, undefined, { agentPreset: AGENT_PRESET });
+    },
+    sessionPreset(sessionId) {
+      const typed = typedSession(sessionId);
+      const values = typed === undefined ? undefined : sessions.getSnapshot().byId[typed];
+      const projected = values?.projectionValues;
+      // `agentPreset` is the preset registry's session projection, carried on every list row
+      // (declared in @deepseek-ai/dsh-agent-preset-registry/types; dsh's ui-workspace and
+      // ui-agent-preset read it the same way). That package is not one of our type packages,
+      // so the key is read by a guard instead of its declaration.
+      const value: unknown =
+        projected === undefined ? undefined : Reflect.get(projected, "agentPreset");
+      return typeof value === "string" ? value : undefined;
+    },
+    async selectPreset(workspaceId, sessionId, preset) {
+      const workspace = workspaces
+        .getSnapshot()
+        .items.find((item) => item.workspaceId === workspaceId)?.workspaceId;
+      if (workspace === undefined) throw new Error(strings.workspaceNotReady);
+      const typed = typedSession(sessionId);
+      if (typed === undefined) throw new Error(strings.unknownSession);
+      // The documented reuse of `sessions.create`: the host reuses the named blank session while
+      // it is reusable and runs it under the named preset, logging the change; a session that
+      // has started a turn stays unchanged and the host makes another one instead (upstream
+      // packages/api/session-controller/src/client/contract/sessions.ts `create`, host side
+      // src/agent.ts `reuseLive`). dsh's own navigation names blanks this way.
+      const created = await ctx.sessions.create({
+        workspaceId: workspace,
+        sessionId: typed,
+        agentPreset: preset,
+      });
+      if (created === typed) return "selected";
+      // As dsh does for a declined blank: its row may still read blank from cached metadata
+      // (upstream ui-workspace navigation.ts `createNamed`).
+      ctx.sessions.refreshProjections(typed).catch((error: unknown) => {
+        console.warn("cs-shell: session projection reload failed", error);
+      });
+      return "declined";
     },
     beginNavigation() {
       ctx.layout.beginNavigation();

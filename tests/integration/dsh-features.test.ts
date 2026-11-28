@@ -1,7 +1,8 @@
-// The dsh features our agent relies on (stage 1-4, docs/PLAN_1-4.md), under our agent preset
+// The dsh features our agent relies on (stage 1-4, docs/archive/PLAN_1-4.md), under our agent preset
 // and the bundle as it ships, with the fake model calling the tools: a skill of a skill folder,
-// web_fetch, a subagent, a schedule that fires on its own, and an MCP server. One dsh launch and
-// one chat carry all of them, turn after turn.
+// web_fetch, a subagent and an MCP server. One dsh launch and one chat carry all of them, turn
+// after turn. Our preset gives no schedule tools (decided by the user, 2026-11-28); how a
+// schedule set by the agent under dsh's tool fired is recorded in docs/DSH.md as an experiment.
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
@@ -36,27 +37,10 @@ const SKILL_BODY = "CS-SKILL-BODY: the steps of the test procedure.";
 const PAGE_MARK = "CS-WEB-PAGE";
 const CHILD_TASK = "CS-CHILD-TASK";
 const CHILD_RESULT = "CS-CHILD-RESULT-42";
-const FIRED = "CS-FIRED";
-/** How far ahead the one-shot schedule is set. */
-const SCHEDULE_LEAD_MS = 4_000;
-
-/** An RFC 5545 rule that fires once, `inMs` from now (UTC, second precision). */
-function oneShot(inMs: number): string {
-  const at = new Date(Date.now() + inMs);
-  const stamp = at
-    .toISOString()
-    .replace(/[-:]/g, "")
-    .replace(/\.\d+Z$/, "Z");
-  return `DTSTART:${stamp}\nRRULE:FREQ=DAILY;COUNT=1`;
-}
 
 function isChild(request: FakeRequest): boolean {
   const users = userTexts(request);
   return users.some((text) => text.startsWith(CHILD_TASK)) && turnOf(request) === undefined;
-}
-
-function hasFired(request: FakeRequest): boolean {
-  return userTexts(request).some((text) => text.includes(FIRED));
 }
 
 function call(name: string, args: Record<string, unknown>): FakeReply {
@@ -67,7 +51,6 @@ function scriptFor(pageUrl: string): FakeScript {
   return (request) => {
     if (isTitleRequest(request)) return { text: "Features chat" };
     if (isChild(request)) return { text: CHILD_RESULT };
-    if (hasFired(request)) return { text: "reply to the scheduled message" };
     const done = afterTool(request);
     switch (turnOf(request)) {
       case "skill":
@@ -88,15 +71,6 @@ function scriptFor(pageUrl: string): FakeScript {
         );
         return { text: back ? `parent saw ${CHILD_RESULT}` : "parent waits" };
       }
-      case "sched":
-        return done
-          ? { text: "scheduled" }
-          : call("schedule_create", {
-              title: "Test one-shot",
-              prompt: `${FIRED} report back`,
-              rrule: oneShot(SCHEDULE_LEAD_MS),
-              target: "this_session",
-            });
       default:
         return { text: "plain reply" };
     }
@@ -109,7 +83,7 @@ function toolResult(requests: readonly FakeRequest[], turn: string): string {
   return back?.messages.at(-1)?.text ?? "";
 }
 
-test("skills, web_fetch, MCP, a subagent and a schedule work under our preset", async () => {
+test("skills, web_fetch, MCP and a subagent work under our preset", async () => {
   const site = createServer((_request, response) => {
     response.writeHead(200, { "content-type": "text/html" });
     response.end(`<html><body><h1>${PAGE_MARK}</h1><p>fetched text</p></body></html>`);
@@ -142,9 +116,9 @@ test("skills, web_fetch, MCP, a subagent and a schedule work under our preset", 
       async ({ llm, session, page }) => {
         await createProject(page);
         const chat = visibleChat(page);
-        const turn = async (name: string, reply: string, timeout?: number): Promise<void> => {
+        const turn = async (name: string, reply: string): Promise<void> => {
           await send(page, `cs-turn:${name} go`);
-          await seeText(chat, reply, timeout);
+          await seeText(chat, reply);
           await waitIdle(page);
         };
 
@@ -177,16 +151,6 @@ test("skills, web_fetch, MCP, a subagent and a schedule work under our preset", 
         expect([...(child?.tools ?? [])].toSorted()).toEqual(
           [...(mcpFirst?.tools ?? [])].toSorted(),
         );
-
-        // Schedule: a one-shot set by the agent fires into this chat with nobody at the page.
-        await turn("sched", "scheduled");
-        await expect
-          .poll(() => llm.requests.some(hasFired), { timeout: SCHEDULE_LEAD_MS + 15_000 })
-          .toBe(true);
-        const fired = llm.requests.find(hasFired);
-        // The same session: the earlier turns of the chat are in the request.
-        expect(fired === undefined ? undefined : turnOf(fired)).toBe("sched");
-        await seeText(chat, "reply to the scheduled message");
 
         expect(llm.requests.map((request) => request.state)).not.toContain("failed");
         expect(session.issues).toEqual([]);

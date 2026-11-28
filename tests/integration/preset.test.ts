@@ -1,14 +1,16 @@
-// Our agent preset (stage 1-4, decided by the user on 2026-11-28; docs/PLAN_1-4.md): what the
+// Our agent preset (stage 1-4, decided by the user on 2026-11-28; docs/archive/PLAN_1-4.md): what the
 // agent of a session made from our shell gets with the bundle as it ships. Exactly our tools and
 // the dsh tools of the decision, and no shell or file tool, so the agent can change a project
 // only through the project layer's operations. The same holds when the user's default in dsh's
-// settings is another preset, because the shell names ours on every session it creates.
+// settings is another preset: the shell names ours on every session it creates, and puts a
+// project's blank chat that one of dsh's own entry points moved to the default back on ours.
 
 import { afterEach, expect, test } from "vitest";
 import { runHostScenario } from "../harness/host.ts";
 import { FAKE_MODEL } from "../harness/llm.ts";
 import type { FakeLlm, FakeReply, FakeRequest, FakeScript } from "../harness/llm.ts";
 import {
+  DSH_SIDEBAR,
   MEMO_TOOL,
   PROJECT_TOOLS,
   STEP_TIMEOUT_MS,
@@ -18,6 +20,7 @@ import {
   patchFile,
   removeTempFiles,
   seeText,
+  selectedPresets,
   send,
   sessionRows,
   turnOf,
@@ -36,10 +39,6 @@ const PRESET = "comfy-studio";
 const DSH_TOOLS = [
   "ask_user_question",
   "list_agents",
-  "schedule_create",
-  "schedule_edit",
-  "schedule_list",
-  "schedule_view",
   "send_message",
   "skill",
   "subagent",
@@ -107,11 +106,25 @@ test("a chat made from the shell gets our preset: our tools, the decided dsh too
   expect(roster.presets.filter((preset) => preset.broken !== undefined)).toEqual([]);
 });
 
-test("with the user's default switched to standard, chats made from the shell keep our preset", async () => {
-  // What dsh's settings page writes when the user makes standard the default.
-  const userDefault = patchFile([
+/** What dsh's settings page writes when the user makes standard the default. */
+function standardDefault(): string {
+  return patchFile([
     { id: "agent-preset-registry", config: { default: PRESET, selectedDefault: "standard" } },
   ]);
+}
+
+/** Resolves true once `check` holds, false after `timeout`. Never rejects. */
+async function eventually(check: () => boolean, timeout = STEP_TIMEOUT_MS): Promise<boolean> {
+  const deadline = Date.now() + timeout;
+  for (;;) {
+    if (check()) return true;
+    if (Date.now() >= deadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
+test("with the user's default switched to standard, chats made from the shell keep our preset", async () => {
+  const userDefault = standardDefault();
 
   // The patch does switch dsh's default: a session made without a named preset would be standard.
   const roster = await runHostScenario<AgentPresetsResult>(presets, { patches: [userDefault] });
@@ -141,5 +154,38 @@ test("with the user's default switched to standard, chats made from the shell ke
       expect(session.issues).toEqual([]);
     },
     { patches: [userDefault] },
+  );
+});
+
+test("with the user's default switched to standard, a project's blank chat that dsh's own entry reuses goes back to our preset", async () => {
+  await withChat(
+    script,
+    async ({ dsh, llm, session, page }) => {
+      await createProject(page);
+      const [chat] = await sessionRows(page);
+      if (chat === undefined) throw new Error("The project has no chat row.");
+
+      // dsh's brand by keyboard (the shell blocks only the pointer): dsh reuses the project's
+      // blank chat for a new session without naming a preset, and the host moves it to the
+      // user's default. The log proves that step happened, so the test sees the real path.
+      await page.locator(DSH_SIDEBAR.brand).focus();
+      await page.keyboard.press("Enter");
+      await expect
+        .poll(() => selectedPresets(dsh.home, chat.id), { timeout: STEP_TIMEOUT_MS })
+        .toContain("standard");
+      // The shell's correction, given time to land before the user would type. Without it the
+      // turn below runs under standard and the tool list check fails.
+      await eventually(() => selectedPresets(dsh.home, chat.id).at(-1) === PRESET);
+
+      // The chat on screen is still that session, and it runs our preset.
+      expect((await sessionRows(page)).find((row) => row.active)?.id).toBe(chat.id);
+      await send(page, "cs-turn:brand hello");
+      await seeText(visibleChat(page), "reply brand");
+      await waitIdle(page);
+      expect([...firstOf(llm, "brand").tools].toSorted()).toEqual(EXPECTED_TOOLS);
+      expect(selectedPresets(dsh.home, chat.id).at(-1)).toBe(PRESET);
+      expect(session.issues).toEqual([]);
+    },
+    { patches: [standardDefault()] },
   );
 });

@@ -4,10 +4,19 @@ import {
   CHAT_TAB_ATTEMPTS,
   CHAT_TAB_RETRY_MS,
   followShellWith,
+  PRESET_ATTEMPTS,
+  PRESET_RETRY_MS,
   PROJECT_READ_RETRY_MS,
 } from "./follow.ts";
-import type { HostSessionList, HostSource, HostWorkspaceList, ShellHost } from "./host.ts";
-import type { WorkspaceRow } from "./navigation.ts";
+import type {
+  HostSessionList,
+  HostSource,
+  HostWorkspaceList,
+  PresetOutcome,
+  ShellHost,
+} from "./host.ts";
+import { AGENT_PRESET } from "./ids.ts";
+import type { SessionInfo, WorkspaceRow } from "./navigation.ts";
 import { createShellStore } from "./store.ts";
 
 interface FakeSource<T> extends HostSource<T> {
@@ -86,6 +95,8 @@ function fakeHost(ready = true, firstVisit = false) {
     knowsSession: unused,
     openSession: unused,
     openWorkspace: unused,
+    sessionPreset: () => undefined,
+    selectPreset: unused,
     beginNavigation: unused,
     leavePage: unused,
     openChatTab: () => {
@@ -430,5 +441,182 @@ describe("chat tab", () => {
     stop();
     await vi.advanceTimersByTimeAsync(CHAT_TAB_RETRY_MS * 5);
     expect(chatTab).toHaveBeenCalledTimes(2);
+  });
+});
+
+function info(row: { id: string; blank: boolean }): SessionInfo {
+  return { id: row.id, updatedAt: 1, blank: row.blank };
+}
+
+/**
+ * A host for the agent-preset rule: sessions s1 (project A), s2 (project B) and w1 (no project),
+ * each with a listed preset, and `selectPreset` answered by the test.
+ */
+function presetHost(rows: { id: string; blank: boolean; preset: string | undefined }[]) {
+  const { host, workspaces } = fakeHost();
+  const presets = new Map(rows.map((row) => [row.id, row.preset]));
+  const sessions = source<HostSessionList>({
+    phase: "ready",
+    byId: Object.fromEntries(rows.map((row) => [row.id, info(row)])),
+  });
+  const answers: { resolve(outcome: PresetOutcome): void; reject(error: unknown): void }[] = [];
+  const select = vi.fn<(workspaceId: string, sessionId: string, preset: string) => void>();
+  const presetFace: ShellHost = {
+    ...host,
+    sessions,
+    sessionPreset: (id) => presets.get(id),
+    selectPreset(workspaceId, sessionId, preset) {
+      select(workspaceId, sessionId, preset);
+      return new Promise<PresetOutcome>((resolve, reject) => {
+        answers.push({ resolve, reject });
+      });
+    },
+  };
+  /** dsh's list reports a session's preset, or its blank flag, anew. */
+  const list = (id: string, patch: { preset?: string; blank?: boolean }): void => {
+    if ("preset" in patch) presets.set(id, patch.preset);
+    const current = sessions.getSnapshot();
+    const row = current.byId[id];
+    const blank = patch.blank ?? row?.blank ?? true;
+    sessions.set({ ...current, byId: { ...current.byId, [id]: info({ id, blank }) } });
+  };
+  /** Answers the oldest open request. */
+  const answer = async (outcome: PresetOutcome | Error): Promise<void> => {
+    const next = answers.shift();
+    if (next === undefined) throw new Error("No request is open.");
+    if (outcome instanceof Error) next.reject(outcome);
+    else next.resolve(outcome);
+    await settle();
+  };
+  return { host: presetFace, workspaces, select, list, answer };
+}
+
+describe("agent preset", () => {
+  it("puts a project's blank chat on another preset back on ours, once at a time", async () => {
+    const { host, select, list, answer } = presetHost([
+      { id: "s1", blank: true, preset: "standard" },
+    ]);
+    const stop = followShellWith(host, openOn("s1"), noRead);
+    expect(select.mock.calls).toEqual([["A", "s1", AGENT_PRESET]]);
+    // dsh's list updates while the request is in flight start nothing.
+    list("s1", { preset: "standard" });
+    expect(select).toHaveBeenCalledTimes(1);
+    await answer("selected");
+    list("s1", { preset: AGENT_PRESET });
+    list("s1", { preset: AGENT_PRESET });
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(console.warn).not.toHaveBeenCalled();
+    stop();
+  });
+
+  it.each([
+    ["already on our preset", "s1", true, AGENT_PRESET],
+    ["with a conversation", "s1", false, "standard"],
+    ["outside every project", "w1", true, "standard"],
+    ["reporting no preset", "s1", true, undefined],
+  ])("leaves a main session %s alone", (_name, id, blank, preset) => {
+    const { host, select } = presetHost([{ id, blank, preset }]);
+    const stop = followShellWith(host, openOn(id), noRead);
+    expect(select).not.toHaveBeenCalled();
+    stop();
+  });
+
+  it("leaves the chat once its conversation starts", async () => {
+    const { host, select, list, answer } = presetHost([
+      { id: "s1", blank: true, preset: "standard" },
+    ]);
+    const stop = followShellWith(host, openOn("s1"), noRead);
+    list("s1", { blank: false });
+    await answer("selected");
+    expect(select).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
+  it("stops for a session dsh declined, until the list reports our preset", async () => {
+    vi.useFakeTimers();
+    const { host, select, list, answer } = presetHost([
+      { id: "s1", blank: true, preset: "standard" },
+    ]);
+    const stop = followShellWith(host, openOn("s1"), noRead);
+    await answer("declined");
+    list("s1", { preset: "standard" });
+    await vi.advanceTimersByTimeAsync(PRESET_RETRY_MS * 5);
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(console.warn).not.toHaveBeenCalled();
+    stop();
+  });
+
+  it("waits for a late list update before asking again", async () => {
+    vi.useFakeTimers();
+    const { host, select, list, answer } = presetHost([
+      { id: "s1", blank: true, preset: "standard" },
+    ]);
+    const stop = followShellWith(host, openOn("s1"), noRead);
+    await answer("selected");
+    list("s1", { preset: "standard" });
+    expect(select).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(PRESET_RETRY_MS - 1);
+    list("s1", { preset: AGENT_PRESET });
+    await vi.advanceTimersByTimeAsync(PRESET_RETRY_MS * 5);
+    expect(select).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
+  it("puts a later switch back again", async () => {
+    const { host, select, list, answer } = presetHost([
+      { id: "s1", blank: true, preset: "standard" },
+    ]);
+    const stop = followShellWith(host, openOn("s1"), noRead);
+    await answer("selected");
+    list("s1", { preset: AGENT_PRESET });
+    // Settings' "Set as new task default" on the blank on screen.
+    list("s1", { preset: "standard" });
+    expect(select).toHaveBeenCalledTimes(2);
+    stop();
+  });
+
+  it("tries a bounded number of times after refusals and warns once", async () => {
+    vi.useFakeTimers();
+    const { host, select, list, answer } = presetHost([
+      { id: "s1", blank: true, preset: "standard" },
+    ]);
+    const stop = followShellWith(host, openOn("s1"), noRead);
+    for (let attempt = 1; attempt <= PRESET_ATTEMPTS; attempt += 1) {
+      expect(select).toHaveBeenCalledTimes(attempt);
+      await answer(new Error("refused"));
+      await vi.advanceTimersByTimeAsync(PRESET_RETRY_MS);
+    }
+    list("s1", { preset: "standard" });
+    await vi.advanceTimersByTimeAsync(PRESET_RETRY_MS * 5);
+    expect(select).toHaveBeenCalledTimes(PRESET_ATTEMPTS);
+    expect(console.warn).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
+  it("follows the main session to another project's chat", async () => {
+    const { host, select, answer } = presetHost([
+      { id: "s1", blank: true, preset: AGENT_PRESET },
+      { id: "s2", blank: true, preset: "standard" },
+    ]);
+    const store = openOn("s1");
+    const stop = followShellWith(host, store, noRead);
+    expect(select).not.toHaveBeenCalled();
+    store.set({ sessionId: "s2", projectId: "B" });
+    expect(select.mock.calls).toEqual([["B", "s2", AGENT_PRESET]]);
+    await answer("selected");
+    stop();
+  });
+
+  it("stops when the plugin goes down, a pending retry included", async () => {
+    vi.useFakeTimers();
+    const { host, select, list, answer } = presetHost([
+      { id: "s1", blank: true, preset: "standard" },
+    ]);
+    const stop = followShellWith(host, openOn("s1"), noRead);
+    await answer(new Error("refused"));
+    stop();
+    await vi.advanceTimersByTimeAsync(PRESET_RETRY_MS * 5);
+    list("s1", { preset: "standard" });
+    expect(select).toHaveBeenCalledTimes(1);
   });
 });
