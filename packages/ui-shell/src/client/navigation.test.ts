@@ -5,6 +5,7 @@ import {
   pickSession,
   projectOfSession,
   projectSessions,
+  startupRestore,
   visibleSessions,
   type SessionInfo,
   type WorkspaceRow,
@@ -79,6 +80,33 @@ describe("followMainSession", () => {
   ];
   it.each(cases)("%s", (_name, input, expected) => {
     expect(followMainSession(input)).toBe(expected);
+  });
+});
+
+describe("startupRestore", () => {
+  it("swallows the first resolution to a project while armed and home", () => {
+    expect(startupRestore({ armed: true, sessionProject: "a", open: null })).toEqual({
+      swallow: true,
+      armed: false,
+    });
+  });
+  it("waits while the session is in no project", () => {
+    expect(startupRestore({ armed: true, sessionProject: null, open: null })).toEqual({
+      swallow: false,
+      armed: true,
+    });
+  });
+  it("swallows nothing once disarmed", () => {
+    expect(startupRestore({ armed: false, sessionProject: "a", open: null })).toEqual({
+      swallow: false,
+      armed: false,
+    });
+  });
+  it("uses the arming up without swallowing when a project is already open", () => {
+    expect(startupRestore({ armed: true, sessionProject: "a", open: "b" })).toEqual({
+      swallow: false,
+      armed: false,
+    });
   });
 });
 

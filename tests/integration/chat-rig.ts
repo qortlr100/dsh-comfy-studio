@@ -170,7 +170,8 @@ export function visibleChat(page: Page): Locator {
   return page.locator("[data-cs-chat]:visible");
 }
 
-function composer(chat: Locator): Locator {
+/** The text box of a chat tab. */
+export function composer(chat: Locator): Locator {
   return chat.locator('[contenteditable="true"]').first();
 }
 

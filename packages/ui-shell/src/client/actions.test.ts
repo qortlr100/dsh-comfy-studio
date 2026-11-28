@@ -105,6 +105,7 @@ function fakeHost(options: FakeOptions = {}) {
     collapseRightPanel: () => {
       calls.push("collapseRightPanel");
     },
+    claimFirstVisit: () => false,
   };
   return { host, calls, workspaces, sessions, mounted, chatTab };
 }
@@ -169,6 +170,45 @@ describe("openProject", () => {
     expect(calls).toEqual(["leavePage"]);
     await settle();
     expect(calls).toEqual(["leavePage", "beginNavigation", "openSession s2"]);
+  });
+
+  it("counts a navigation of the user, and only those", async () => {
+    const { actions, store } = setup();
+    expect(store.getSnapshot().navigations).toBe(0);
+    actions.openProject("A");
+    actions.goHome();
+    actions.openSession("s1");
+    await settle();
+    expect(store.getSnapshot().navigations).toBe(3);
+    actions.noteMainSession("s1");
+    expect(store.getSnapshot().navigations).toBe(3);
+  });
+
+  it("does not keep the blank chat dsh's startup restore opened, and shows the latest written one", async () => {
+    const { actions, store, calls } = setup({
+      workspaces: [{ workspaceId: "A", sessionIds: ["s1", "s2", "blank-A"] }],
+      sessions: [written("s1", 1), written("s2", 2), { id: "blank-A", updatedAt: 3, blank: true }],
+    });
+    store.set({ sessionId: "blank-A", restoredSession: "blank-A" });
+    actions.openProject("A");
+    await settle();
+    expect(calls).toEqual(["leavePage", "beginNavigation", "openSession s2"]);
+    expect(store.getSnapshot().restoredSession).toBeUndefined();
+  });
+
+  it("keeps that blank chat once the user has navigated: only the first navigation skips it", async () => {
+    const { actions, store, calls } = setup({
+      workspaces: [{ workspaceId: "A", sessionIds: ["s1", "blank-A"] }],
+      sessions: [written("s1", 1), { id: "blank-A", updatedAt: 3, blank: true }],
+    });
+    store.set({ sessionId: "blank-A", restoredSession: "blank-A" });
+    actions.goHome();
+    await settle();
+    calls.length = 0;
+    // The main session is still the blank chat; by now it counts as the project's current chat.
+    actions.openProject("A");
+    await settle();
+    expect(calls).toEqual(["leavePage"]);
   });
 
   it("opens the session asked for", async () => {

@@ -30,6 +30,18 @@ export interface ShellState {
    * screen. The chat tab opens once for every request, and once for a session's first mount.
    */
   readonly chatRequest: number;
+  /**
+   * Grows with every navigation the user started through the shell (opening a project, a chat,
+   * going home, creating a project). The startup rule of `follow.ts` reads it to tell the user's
+   * own move from dsh's restore.
+   */
+  readonly navigations: number;
+  /**
+   * The main session that dsh's startup restore opened on a first visit while the center stayed
+   * home. It is not a chat the user chose, so opening its project shows the project's latest
+   * written chat instead of it. The user's first navigation takes the value and clears it.
+   */
+  readonly restoredSession: string | undefined;
   readonly failure: ShellFailure | null;
 }
 

@@ -8,6 +8,8 @@ describe("createShellStore", () => {
       projectId: null,
       sessionId: undefined,
       chatRequest: 0,
+      navigations: 0,
+      restoredSession: undefined,
       failure: null,
     });
     expect(createShellStore({ projectId: "p" }).getSnapshot().projectId).toBe("p");

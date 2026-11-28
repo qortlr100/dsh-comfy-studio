@@ -278,9 +278,9 @@ export function apply(ctx: Context): void {
 - `/client` 진입점은 `apply`와 `inject`(있으면 `Config`)만 값으로 export한다. React 컴포넌트가 타입으로만 쓰는 store 팩토리는 예외다.
 - 기능 플러그인이 다른 기능 플러그인의 값을 런타임에 import하지 않는다. 동작은 주입된 서비스로, UI는 슬롯으로 넘긴다.
 - 등록은 `apply` 안에서만 한다. 모듈 최상위에 부작용을 두지 않는다.
-- 색은 토큰으로, 화면 문자열은 로케일 사전으로. 문자열 쪽은 이 저장소에서 1-6까지 미뤘다(`AGENTS.md`의 임시 규칙).
+- 색은 토큰으로, 화면 문자열은 로케일 사전으로. 문자열 쪽은 이 저장소에서 따르지 않는다: 우리 화면의 문자열은 패키지의 `strings.ts`에 한국어로 둔다(사용자가 정했다, 2026-11-28. "그릴 재료"의 "언어").
 
-**주의**: 2026-11-24~25의 시험 코드는 빨리 확인하려고 `ctx`의 값을 모듈 변수와 수동 구독으로 React 컴포넌트에 넘겼다. "화면 교체"와 "채팅을 우측 탭으로 옮기는 코드"의 조각은 그때의 동작 확인용이다. 실제 구현은 위 규칙대로 쓴다. 규칙대로 쓴 셸 전체(`inject`의 값·콜백·`hooks`, 슬롯이 주는 훅)는 3-0에서 **띄워 확인**했다(2026-11-28, `packages/ui-shell/src/client`). `store`와 `locale` 칸은 아직 띄워 보지 않았다.
+**주의**: 2026-11-24~25의 시험 코드는 빨리 확인하려고 `ctx`의 값을 모듈 변수와 수동 구독으로 React 컴포넌트에 넘겼다. "화면 교체"와 "채팅을 우측 탭으로 옮기는 코드"의 조각은 그때의 동작 확인용이다. 실제 구현은 위 규칙대로 쓴다. 규칙대로 쓴 셸 전체(`inject`의 값·콜백·`hooks`, 슬롯이 주는 훅)는 3-0에서 **띄워 확인**했다(2026-11-28, `packages/ui-shell/src/client`). `locale` 칸은 1-6의 실험에서 띄워 봤고 쓰지 않기로 했다("그릴 재료"의 "언어"). `store` 칸은 아직 띄워 보지 않았다.
 
 우리 셸은 `ctx`를 쓰는 곳을 다섯 파일로 묶었다: `index.ts`(등록), `host.ts`(dsh 서비스를 좁은 인터페이스 `ShellHost`로 감싼다. 문자열 id를 dsh의 브랜드 id로 바꾸는 곳도 여기 하나다: 단언하지 않고 dsh 스냅샷에서 찾아 쓴다), `actions.ts`·`follow.ts`(`ShellHost`만 본다. 그래서 단위 시험이 Cordis 없이 손으로 만든 호스트로 돈다), `views.ts`, `chrome.ts`.
 
@@ -438,7 +438,20 @@ ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () =>
 
 ### 언어
 
-dsh가 싣고 오는 언어는 영어, 중국어, 일본어, 스페인어, 프랑스어, 독일어, 러시아어, 브라질 포르투갈어다. **한국어는 없다.** 플러그인은 `ctx.locale.register`로 자기 사전을 등록하고(타입이 있는 객체 형태는 `zh`와 `en`이 필수), 외부 언어 팩도 등록할 수 있다(**소스 확인**: `packages/client/locale/README.md`). 한국어 언어 팩을 만들지, 우리 문자열을 사전으로 옮길지는 1-6에서 정한다. 그때까지는 `AGENTS.md`의 임시 규칙을 따른다(한국어 문자열을 패키지마다 한 모듈에 모은다).
+dsh가 싣고 오는 언어는 영어, 중국어, 일본어, 스페인어, 프랑스어, 독일어, 러시아어, 브라질 포르투갈어다. **한국어는 없다.**
+
+**정해진 것**(사용자, 2026-11-28. `docs/DECISIONS.md` "확정"): dsh의 화면은 영어 그대로 두고 **우리 화면만 한국어**다. 우리 문자열은 로케일 사전에 넣지 않고 **패키지마다 `strings.ts` 한 모듈**에 한국어로 둔다. 한국어 언어 팩은 만들지 않는다. 아래는 그 결정에 쓴 사실이고, 결정을 다시 볼 때의 출발점이다(1-6의 실험, 2026-11-28. 실험 코드는 남기지 않았다. 무엇을 돌렸는지는 `docs/archive/PLAN_1-6.md`).
+
+- 브라우저 쪽 서비스 `ctx.locale`의 타입은 `@deepseek-ai/dsh-client-locale/client`에 있다. 공유 모듈 표에 없으므로 값으로 가져오지 않는다. `register(ns, { zh, en, … })`(타입이 있는 형태), `register(ns, 언어, 사전)`(언어 하나, 타입 없음), `addLanguage({ id, label, fallback })`, `setLocale(id)`, `getLocale()`, `subscribe`, `bind(ns)`, `resolveText`가 있다(**소스 확인**: 업스트림 `packages/client/locale/`. 앞의 넷은 **띄워 확인**).
+- 슬롯 등록에 `locale: "<ns>"`를 주면 React 컴포넌트가 props로 번역 함수 `t`를 받고, 언어가 바뀌면 새로고침 없이 다시 그려진다. 키의 타입은 `@deepseek-ai/dsh-client-ui-slots`의 `LocaleNamespaceMap` 선언 병합으로 준다(**띄워 확인**: 셸의 버튼 하나를 옮겨 봤다).
+- 타입이 있는 형태는 `zh`와 `en`이 필수다. 컴파일할 때만 검사한다(**띄워 확인**: 일부러 틀린 코드로 타입 검사를 돌렸다).
+- **활성 언어**: 호스트에 저장된 값(`locale` 행의 `config.preference`. 설정 → General → Language에서 고르면 프로필의 `cordis.patch.yml`에 쓰인다) → 브라우저 언어와 등록된 언어의 대조 → `en`. 저장은 브라우저가 아니라 home 단위다(**띄워 확인**).
+- **언어 팩**: 플러그인이 `addLanguage`로 `ko`를 더하고 dsh의 네임스페이스에 `register(ns, "ko", 사전)`으로 번역을 얹을 수 있다. 번역한 키는 한국어로, 나머지는 영어로 나온다. `ko`가 등록돼 있으면 한국어 브라우저에서는 자동으로 `ko`가 된다. 번들 패치의 `locale` 행에 `preference: ko`를 주면 영어 브라우저에서도 한국어로 뜨고, 뒤의 `--patch`가 그 행을 덮는다(**띄워 확인**).
+- **전체의 크기**: 웹 프로필이 뜬 직후 등록돼 있던 영어 사전은 네임스페이스 63개, 키 2,928개, 약 12,500낱말이다(**띄워 확인**: 실행 중인 서비스에서 셌다. 늦게 실리는 플러그인의 사전은 빠졌을 수 있다). 사전은 dsh 플러그인마다 흩어져 있다(**소스 확인**).
+- 사전을 타지 않는 글이 있다: 플러그인의 제목·설명과 도구 승인 사유(`{ en, … }` 맵), 등록할 때 번역을 한 번만 읽는 문자열(슬래시 명령의 설명 등. **소스 확인**).
+- 밖에서 얹은 언어 팩에서 빠진 키를 알려 주는 장치는 없다. dsh 버전을 올려 키가 늘면 조용히 영어로 나온다(**소스 확인**).
+- 로케일 서비스는 화면 계층이다. 시스템 프롬프트와 도구 설명은 활성 언어를 쓰지 않는다(**소스 확인**).
+- **조합 시험은 영어 화면에 기댄다.** 틀은 첫 실행 창을 영어 버튼 글자로 닫고 `chat.test.ts`는 전송·중지 버튼을 영어 `aria-label`로 가른다. 시험이 영어인 것은 헤드리스 브라우저의 언어가 `en-US`라서다. 언어 팩을 넣게 되면 시험이 `locale` 행 `preference: en` 패치를 얹어 영어를 강제한다.
 
 ## 브라우저 쪽 서비스
 
@@ -504,7 +517,7 @@ DreamVerse의 서버 쪽 패키지가 dsh에서 가져다 쓰는 것이다. 전�
 - **fetch 라우트**: `ctx.inject(["connection"], (inner) => inner.connection.fetch.register({ path, methods, requestBody: "buffered", fetch }))`로 `/api/…` 아래의 정확 일치 경로를 등록한다. `fetch`는 Fetch `Request`를 받아 `Response`를 돌려준다. 메서드는 `GET`·`HEAD`·`POST`뿐이다. `register`가 돌려주는 정리 함수는 `Promise`를 준다. 로그인한 페이지의 `fetch("/api/cs/…")`가 닿고(같은 출처라 쿠키가 실린다), 쿠키 없는 요청은 401이다(**띄워 확인**).
 - **소유자만 닿는다**: dsh의 공용 처리기가 정확 일치 라우트를 부르기 전에 Peer의 `principal.kind`가 `owner`인지 보고 아니면 403을 준다(**소스 확인**: 업스트림 `packages/client/connection/src/rpc-host.ts`의 `createSharedFetchHandler`).
 - **날 HTTP 라우트**: `ctx.webServer.register({ kind: "exact" | "prefix", path, handler(req, res) })`. 응답을 열어 둘 수 있어서 이벤트 스트림(SSE)에 쓴다. **dsh가 인증해 주지 않는다.** 처리기 안에서 `ctx.connection.admit({ headers: req.headers })`를 불러 `{ rejection: 401 | 403 }`이면 그 상태로 끝내고, `{ peer }`면 `peer.principal.kind`를 본다. `requestRejection(…)`은 같은 검사의 거절 상태만 준다(소유자인지는 알려 주지 않는다). `admit`은 Host·Origin과 쿠키(또는 API 자격 증명)를 보고 이미 있는 Peer를 돌려줄 뿐 새 Peer를 만들지 않는다(**소스 확인**: 업스트림 `rpc-host.ts`). 라우트를 빼도(`register`가 준 정리 함수) 이미 열어 둔 응답은 닫히지 않으므로, 플러그인이 내려갈 때 자기가 연 응답을 직접 끝내야 한다(**시험 확인**: `packages/api/src/events.test.ts`).
-- **이벤트 스트림**: 로그인한 페이지의 `new EventSource("/cs/events?…")`가 열리고 이벤트가 실시간으로 온다(**띄워 확인**: 연산을 실행하자 `record`·`update`·`line`이 도착했다). 헤더는 `content-type: text/event-stream`, `cache-control: no-store, no-transform`, `x-accel-buffering: no`이고 조용할 때 주석 줄을 보낸다. 리버스 프록시 뒤에서 끊기지 않는지는 보지 않았다(1-5).
+- **이벤트 스트림**: 로그인한 페이지의 `new EventSource("/cs/events?…")`가 열리고 이벤트가 실시간으로 온다(**띄워 확인**: 연산을 실행하자 `record`·`update`·`line`이 도착했다). 헤더는 `content-type: text/event-stream`, `cache-control: no-store, no-transform`, `x-accel-buffering: no`이고 조용할 때 주석 줄을 보낸다. 리버스 프록시 뒤에서도 바로 흐른다(1-5, "리버스 프록시와 로그인").
 - **조합 시험에 시험용 기능 컴포넌트를 얹는 법**: 호스트 플러그인 파일(`tests/integration/fixtures/memo-component.ts`)을 패치 행의 `name`에 절대 경로로 적어 `launchDsh({ patches })`로 띄운다. 모듈의 `inject`와 `apply`가 번들의 플러그인과 같게 돈다.
 - **페이지 안에서 부르기**: 시험 프로그램은 DOM 타입 없이 검사되므로(`lib`가 ES2024뿐이다) 페이지에서 돌릴 코드는 문자열로 써서 `page.evaluate<결과 타입>(문자열)`로 넘긴다.
 
@@ -526,7 +539,7 @@ dsh 웹(`dsh-web-app` 번들)에서 에이전트가 가질 도구·스킬·페�
 
 ## dsh가 이미 주는 기능
 
-패키지와 문서로 확인했다(**소스 확인**). LLM 프로바이더만 직접 써 봤다(아래 "LLM 프로바이더 붙이기").
+패키지와 문서로 확인했다(**소스 확인**). LLM 프로바이더(아래 "LLM 프로바이더 붙이기")와 원격 접속("리버스 프록시와 로그인")은 직접 써 봤다.
 
 | 기능              | 내용                                                                                                                                                                              | 문서                                    |
 | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
@@ -537,7 +550,7 @@ dsh 웹(`dsh-web-app` 번들)에서 에이전트가 가질 도구·스킬·페�
 | 서브에이전트      | `subagent`, `tool-subagent` 행, 에이전트 프리셋                                                                                                                                   | `docs/subsystems/subagent.md`           |
 | 웹 검색           | `web-search-deepseek` 행. DeepSeek 외의 모델에서 되는지는 미확인                                                                                                                  | —                                       |
 | 기억              | 서드파티 MCP 기억 서버 세 가지의 예시 구성만 있다(기본 꺼짐)                                                                                                                      | `docs/user/guide/mcp-memory.md`         |
-| 원격 접속         | 리버스 프록시 + `--public-url`·`--trusted-host`. 로그인은 토큰 주소 + 세션 쿠키                                                                                                   | `docs/user/guide/public-deployments.md` |
+| 원격 접속         | 리버스 프록시 + `--trusted-host`. 로그인은 토큰 주소 + 세션 쿠키. 띄워 봤다(아래 "리버스 프록시와 로그인")                                                                      | `docs/user/guide/public-deployments.md` |
 
 예약 도구(`tool-schedule`)와 웹 도구(`tool-web`)는 `standard` 프리셋의 플러그인이다. 우리 프리셋에 무엇을 넣는지에 따라 에이전트가 쓸 수 있는 기능이 달라진다("에이전트 프리셋").
 
@@ -599,6 +612,38 @@ dsh 웹(`dsh-web-app` 번들)에서 에이전트가 가질 도구·스킬·페�
 | 세션 여럿 | 한 프로젝트에 대화가 있는 세션이 여럿이면 내비게이터에 제목과 함께 줄로 뜨고, 줄을 누르면 그 대화가 보인다. 새로고침해도 보던 세션이 열린다 |
 
 하지 않은 것: 채팅 안의 카드 슬롯에 우리 React 컴포넌트를 그리는 것(3-4), 승인을 묻는 도구(`ask_user_question`, 파일 정책에 걸리는 명령), 첨부와 이미지 입력, 서브에이전트·예약·스킬·웹 도구(1-4), 긴 대화의 압축, 재생성·편집·분기, DeepSeek 프로바이더에서의 추론 표시와 웹 검색.
+
+## 리버스 프록시와 로그인
+
+dsh 웹을 다른 기기에서 쓰는 길이다. 1-5에서 띄워 봤다(2026-11-28). 표시가 **띄워 확인**이면 조합 시험 `tests/integration/proxy.test.ts`가 지금도 본다. **띄워 확인(실험)**은 그 단계에서 한 번 돌려 본 것이고 시험 코드는 남기지 않았다(컨테이너의 nginx 1.27과 Caddy 2.8, 자체 서명 인증서가 필요해서다. 무엇을 돌렸는지는 `docs/archive/PLAN_1-5.md`). 권하는 구성은 `docs/ARCHITECTURE.md` "접속과 배포"에 있다.
+
+**프록시 뒤에서**
+
+- dsh에 줄 옵션은 **`--trusted-host <브라우저가 보는 호스트>` 하나**다. 포트를 빼면 모든 포트에 맞는다. `--public-url`은 출력되는 로그인 주소를 그 출처로 바꿔 줄 뿐이고 신뢰를 주지 않는다. `--host`는 그대로 둔다(루프백. **띄워 확인**. `--public-url`만 준 경우는 **띄워 확인(실험)**).
+- `--trusted-host`가 없으면 페이지는 열리지만 `/api/*`와 `/cs/events`가 403이고 화면이 "Reconnecting…"에서 멈춘다(403은 **띄워 확인**, 화면은 **띄워 확인(실험)**). dsh는 요청의 Host가 루프백, 듣는 주소, 신뢰 목록 가운데 하나인지 보고, `Origin`이 있으면 Host와 같은지 본다(**소스 확인**: 업스트림 `packages/client/connection/src/api-request-trust.ts`). 신뢰되는 Host인데 로그인하지 않았으면 401이다(**띄워 확인**).
+- **프록시는 브라우저의 Host를 그대로 넘긴다.** 업스트림 주소로 바꾸면 브라우저가 보낸 `Origin`과 어긋나 403이 된다(**띄워 확인**).
+- **프록시는 WebSocket 업그레이드를 전달한다.** dsh의 실시간 채널이 `/api/remote.mux`의 WebSocket이다(**띄워 확인**: 프록시가 업그레이드를 본다. 업그레이드 헤더를 넘기지 않는 nginx 설정에서 연결이 404로 실패하는 것은 **띄워 확인(실험)**). 우리 이벤트 스트림 `/cs/events`는 SSE다.
+- 프록시 뒤에서 로그인, 프로젝트 만들기, 채팅, 이벤트 스트림이 된다. 이벤트는 연산을 실행하고 곧바로 온다(**띄워 확인**: 시험은 2초 안인지를 본다. 잰 값은 20~30ms였다). nginx와 Caddy의 기본 설정에서도 흘렀다(**띄워 확인(실험)**). 우리 헤더 `x-accel-buffering: no`를 nginx가 무시하게 해도 흘러서, 그 헤더가 꼭 있어야 하는지는 가르지 못했다(**미확인**).
+- dsh는 `X-Forwarded-*`를 읽지 않는다. 쿠키의 `Secure`는 dsh가 직접 TLS로 들을 때만 붙는다. 프록시가 HTTPS이고 dsh가 평문이어도 된다(**띄워 확인(실험)**, **소스 확인**: `browser-auth.ts`).
+- 프록시 쪽 Basic 인증은 dsh와 부딪치지 않는다. dsh는 `Authorization` 헤더를 읽지 않는다(**띄워 확인(실험)**: Basic 인증을 건 HTTPS 프록시 뒤에서 채팅과 WebSocket까지. **소스 확인**: `packages/client/connection/README.md`).
+- 경로 접두사 아래에 올리는 것은 하지 않는다. 우리 셸이 `/api/cs/…`와 `/cs/events`를 절대 경로로 부른다(`packages/ui-shell/src/client/api.ts`. 띄워 보지 않았다). 호스트 이름의 뿌리에 올린다.
+- 프록시 없이: `--tls-cert`·`--tls-key`로 dsh가 직접 HTTPS로 듣는다(이때 쿠키에 `Secure`가 붙는다. 인증서를 바꾸면 다시 띄운다). `--host <사설 주소>`로 평문으로 직접 열 수도 있고, dsh가 경고를 찍는다. 모든 주소(`0.0.0.0`)로 듣는 것은 dsh가 거절한다(**띄워 확인(실험)**).
+
+**로그인**
+
+- 토큰은 프로세스마다 새로 만든다. 같은 home으로 다시 띄우면 토큰이 바뀌고 앞의 토큰은 401이다(**띄워 확인**). 고정하거나 다시 찍는 길은 없다(**소스 확인**).
+- 토큰이 든 주소를 열면 쿠키를 받는다. 쿠키는 `HttpOnly; SameSite=Strict; Path=/`, 수명은 30일이고 쓴다고 늘어나지 않는다. `connection` 행의 `cookieMaxAgeDays`로 바꾼다(**띄워 확인(실험)**).
+- 쿠키는 호스트(HTTP에서는 포트까지)에 묶인다. 주소가 다르면 따로 로그인한다(**띄워 확인(실험)**).
+- **같은 home, 같은 주소면 다시 띄워도 쿠키가 유효하다**(**띄워 확인**). 서명 비밀이 `$DSH_HOME/.credentials.yaml`에 있다. 새 토큰이 필요한 것은 쿠키가 없거나 만료된 브라우저뿐이다.
+- 비밀번호나 계정 로그인은 없다. 토큰 로그인은 소유자(`owner`)다(**소스 확인**: `rpc-host.ts`).
+- 로그인하지 않은 요청: `/`는 401과 안내 글, `/api/cs/projects`와 `/cs/events`는 401이다. 정적 파일은 인증 없이 나간다(**띄워 확인(실험)**. `/api/cs/projects`의 401은 **띄워 확인**).
+- **로그인 주소는 표준 출력에 찍힌다.** 서비스로 돌리면 그 줄이 서비스 로그에 남고, 토큰은 프로세스가 사는 동안 유효하다. `web-runtime` 행의 `printUrl: false`로 끌 수 있다고 소스에 있다(**소스 확인**. 끄면 새 브라우저가 로그인할 주소를 얻을 길이 없다).
+
+**새 브라우저**
+
+- 저장된 상태가 없는 브라우저가 앞 세션이 아니라 새 빈 채팅을 여는 것은 dsh의 동작이다. dsh는 보던 세션을 브라우저의 localStorage(`dsh.sessions.current`, 출처별)에 두고, 값이 없으면 가장 최근 작업공간의 빈 세션을 열거나 만든다(**띄워 확인(실험)**: 그 값을 옮겨 준 브라우저는 앞의 대화를 열었다. **소스 확인**: 업스트림 `packages/client/ui-workspace/src/client/navigation.ts`의 `restoreSelection`).
+- 같은 브라우저라도 접속 주소가 다르면 저장이 따로다(`127.0.0.1`과 `localhost`도 다르다).
+- **우리 셸은 처음 온 브라우저를 홈에서 시작하게 한다**(사용자가 정했다). dsh의 그 시작 복원 한 번을 따라가지 않는다. 처음 온 브라우저인지는 셸의 자기 표시(localStorage `cs.shell.visited`)로 가리고 dsh의 저장 값은 읽지 않는다(**띄워 확인**: `tests/integration/fresh-browser.test.ts`. 규칙은 `packages/ui-shell/src/client/navigation.ts`의 `startupRestore`).
 
 ## 포크에서만 되는 것
 
@@ -684,10 +729,13 @@ pnpm exec vitest run --project integration tests/integration/shell.test.ts  # �
 
 | 틀 | 하는 일 |
 | --- | --- |
-| `launchDsh(options?)`(`dsh.ts`) | 임시 home에 프로필을 만들고 dsh를 빈 포트에 띄운다. 주소 줄을 기다려 `{ url, home, output(), exited, stop() }`를 준다. 행 하나라도 활성화에 실패했으면 거절한다. `patches`로 `--patch` 파일을 얹는다 |
-| `openPage(url, options?)`(`browser.ts`) | 헤드리스 Chromium으로 열고 첫 실행 창 둘을 버튼으로 닫는다(`modelConfigured: true`면 Preview Notice만). `{ page, issues, openTab(), close() }`를 준다. `issues`는 콘솔의 error·warning과 잡히지 않은 페이지 오류다. `openTab()`은 같은 브라우저 프로필로 탭을 하나 더 연다(쿠키와 저장된 상태가 남는다) |
+| `launchDsh(options?)`(`dsh.ts`) | 임시 home에 프로필을 만들고 dsh를 빈 포트에 띄운다. 주소 줄을 기다려 `{ url, home, output(), exited, stop() }`를 준다. 행 하나라도 활성화에 실패했으면 거절한다. `patches`로 `--patch` 파일을 얹는다. `port`(고정 포트), `trustedHost`(`--trusted-host`), `publicUrl`(`--public-url`. 주면 `url`이 그 출처의 로그인 주소다), `home`(같은 home으로 다시 띄울 때)을 받는다 |
+| `openPage(url, options?)`(`browser.ts`) | 헤드리스 Chromium으로 열고 첫 실행 창 둘을 버튼으로 닫는다(`modelConfigured: true`면 Preview Notice만). `{ page, issues, openTab(), close() }`를 준다. `issues`는 콘솔의 error·warning과 잡히지 않은 페이지 오류다. `openTab()`은 같은 브라우저 프로필로 탭을 하나 더 연다(쿠키와 저장된 상태가 남는다). `mapHostsToLoopback`에 준 호스트 이름은 브라우저가 127.0.0.1로 푼다(프록시를 다른 호스트 이름으로 열 때) |
 | `startFakeLlm(script)`(`llm.ts`) | OpenAI Chat Completions를 흉내 내는 가짜 LLM 서버를 띄운다. `{ baseURL, requests, patch, close() }`를 준다. `patch`를 `launchDsh({ patches })`에 주면 그 dsh의 기본 모델이 이 서버다(아래 "모델이 있어야 하는 시험") |
 | `runHostScenario(scenario, options?)`(`host.ts`) | 시나리오 모듈을 dsh 프로세스 안에서 실행하고 돌려준 값을 받는다(아래 "호스트 쪽 서비스를 부르는 시험"). `input`, `patches`, `env`, `timeoutMs`를 받는다 |
+| `startProxy(options)`(`proxy.ts`) | 의존성 없는 시험용 리버스 프록시를 127.0.0.1에 띄운다. 응답을 버퍼링하지 않고 WebSocket 업그레이드를 전달한다. 기본은 브라우저의 Host를 그대로 넘기고(`preserveHost: false`면 업스트림 주소로 바꾼다), `basicAuth`를 주면 Basic 인증을 건다. `{ port, seen, upgrades, close() }`를 준다 |
+| `rawRequest(target, path, options?)`, `freePort()`(`http.ts`) | Host 헤더를 직접 정해 보내는 HTTP 요청(`fetch`는 Host를 못 바꾼다)과 빈 포트 하나 |
+| `tokenOf(loginUrl)`(`dsh.ts`) | 로그인 주소의 토큰. 찍지 않는다. 비교는 해시로 한다 |
 | `redactLoginUrls(text)`(`dsh.ts`) | 주소와 토큰을 가린다. 틀이 내보내는 글은 모두 이것을 거친다. 주소는 `DshInstance.url`로만 건넨다 |
 
 브라우저로 화면을 보는 시험(`tests/integration/shell.test.ts`에서 추렸다):
@@ -772,7 +820,7 @@ const session = await openPage(dsh.url, { modelConfigured: true });
 - 시험 하나가 dsh를 한 번 띄운다. 띄우고 내리는 데 약 2초, 브라우저까지 열면 약 3.5초다(2026-11-27).
 - 끝나면 dsh와 브라우저 프로세스, 임시 폴더(`cs-dsh-test-*`)가 남지 않아야 한다. 틀이 `stop()`과 `close()`에서 정리하므로 시험은 `try`/`finally`로 둘을 반드시 부른다.
 - 시험이 시간 초과로 끊기면 Vitest가 워커를 신호로 죽여서 `finally`가 돌지 않는다. 그때는 `tests/harness/global-setup.ts`의 전역 정리가 남은 dsh를 죽이고 그 실행의 임시 폴더를 지운다. Vitest 자체를 Ctrl+C나 SIGTERM으로 끊어도 같다(**띄워 확인**, 2026-11-27). 브라우저는 워커가 죽을 때 같이 닫혔다(브라우저까지 연 채 시간 초과가 난 경우를 봤다).
-- 조합 시험 전체는 시험 17개, 약 24초다(2026-11-28. 파일끼리는 병렬로 돈다. 가장 긴 것은 가짜 LLM으로 턴을 도는 `chat.test.ts`의 약 21초다).
+- 조합 시험 전체는 시험 21개, 약 26초다(2026-11-28. 파일끼리는 병렬로 돈다. 가장 긴 것은 가짜 LLM으로 턴을 도는 `chat.test.ts`의 약 21초다).
 - 시험은 키 없이 돈다. 메시지와 도구 호출은 가짜 LLM으로 본다(위 "모델이 있어야 하는 시험").
 - 살아 있는 슬롯 트리는 dsh의 `cordis_inspect what:"client"`로 물어볼 수 있다고 업스트림 문서에 있다(미확인).
 
@@ -813,18 +861,17 @@ const session = await openPage(dsh.url, { modelConfigured: true });
 ## 확인하지 못한 것
 
 - **채팅에서 남은 것.** 메시지·추론·도구 호출·중지·탭을 닫아도 도는 턴은 1-3에서 확인했다("실제 모델로 확인한 것"). 남은 것: 채팅 안의 카드 슬롯에 우리 React 컴포넌트를 그리는 것(3-4), 승인을 묻는 도구, 첨부와 이미지 입력, 긴 대화의 압축, 재생성·편집·분기, DeepSeek 프로바이더에서의 동작(추론 표시, 웹 검색), 설정 화면의 폼으로 프로바이더를 추가하는 것.
-- **저장된 상태가 없는 브라우저로 열면 새 빈 채팅이 열린다.** 다른 기기나 시크릿 창에서 열면 마지막 프로젝트의 앞 세션이 아니라 새 빈 채팅이 열린다(**띄워 확인**, 2026-11-28). dsh의 동작인지 우리 셸이 주 세션을 따르는 방식 때문인지는 가르지 않았다. 앞 세션을 열게 할지는 정하지 않았다(1-5에서 다른 기기로 접속할 때 다시 본다).
 - **홈에서 우측 패널을 다시 펼치는 길.** 홈으로 가면 패널을 접을 뿐이고 패널은 dsh의 것이다. dsh의 펼침 버튼이 홈에서도 남아 있으면 사용자가 눌러 직전 세션의 채팅을 볼 수 있다(리뷰가 소스로 짚었다. 띄워 보지 않았다, **미확인**). 막으려면 dsh 내부에 기대는 장치가 하나 더 든다. 사용자가 고른 "최소"의 밖이라 하지 않았다.
 - **셸(3-0)에서 보지 못한 것.** 브라우저 탭 둘이 같은 프로젝트를 볼 때(대화가 있는 세션이 여럿일 때의 목록과 전환은 1-3에서 확인했다), 플러그인이 내려갈 때 두 장치가 되돌아가는지, 브랜드에 키보드로 닿아 Enter를 누르는 경우(CSS로는 막지 못한다), 접힌 사이드바의 모양.
-- **슬롯 등록의 `store`·`locale` 칸.** `inject`(값, 콜백)와 `hooks`, TSX와 JSX 자동 런타임, dsh 타입으로 하는 타입 검사, 공유 모듈 열한 개만 external로 둔 빌드, Astryx가 전혀 없는 브라우저 번들은 1-1에서 확인했다(2026-11-26).
+- **슬롯 등록의 `store` 칸.** `inject`(값, 콜백)와 `hooks`, TSX와 JSX 자동 런타임, dsh 타입으로 하는 타입 검사, 공유 모듈 열한 개만 external로 둔 빌드, Astryx가 전혀 없는 브라우저 번들은 1-1에서 확인했다(2026-11-26).
 - 서드파티 패키지가 같이 실린 브라우저 번들, 공유 모듈의 하위 경로(`zod/v4` 등), 플러그인이 내려갈 때 로더가 우리 `<style>`을 지우는 것, 호스트 절반을 고쳤을 때 다시 실리는지.
 - **에이전트 프리셋.** 우리 프리셋을 넣어 띄우는 것, 기본 제공 프리셋을 끄는 것(1-4).
 - DreamVerse의 서버 쪽 코드 가운데 프로젝트 계층과 화면용 API 밖의 것을 0.2.2-rc.5에서 실행하는 것(프로젝트 계층은 2-0, `@dv/api`는 2-2에서 옮겨 돌렸다. 에셋은 2-3).
-- 이벤트 스트림이 리버스 프록시 뒤에서 버퍼링 없이 흐르는지(1-5). dsh가 도는 중에 우리 서비스가 다시 실릴 때 브라우저가 스트림을 다시 잇는지.
+- dsh가 도는 중에 우리 서비스가 다시 실리거나 dsh를 다시 띄울 때 브라우저가 이벤트 스트림을 다시 잇는지.
+- **접속에서 남은 것**(1-5): 실제 인증서를 쓰는 nginx·Caddy, 그 둘의 Basic 인증과 forward auth, 경로 접두사 아래에 올리는 것, 큰 본문(수십 MB의 첨부)을 프록시로 보내는 것, 오래 조용하던 WebSocket의 시간 초과와 다시 잇기, `printUrl: false`, 서명 비밀을 지워 쿠키를 한꺼번에 무효로 만드는 것, 평문 HTTP(보안 컨텍스트가 아닌 출처)에서 클립보드처럼 보안 컨텍스트가 필요한 브라우저 기능.
 - 프로젝트 계층이 에이전트의 실제 턴에서 하는 일 가운데 남은 것: 실행 취소·다시 실행·stale을 에이전트가 도구로 다루는 턴, 연산이 오래 걸릴 때의 `cs_proj_wait`, 턴을 중지했을 때 돌던 연산의 기록(`stopped`). 도구 목록·상태와 갱신 메시지·턴 번호는 1-3에서 확인했다.
 - 가운데에 입력창을 끼운 첫 화면, `@` 메뉴에 우리 항목 추가.
 - `ctx.credentials`와 `ctx.storageDomain`을 저장소 밖 플러그인에서 쓰는 것(`ctx.tools`를 읽는 것은 1-2에서 확인했다).
 - 첫 실행 창을 설정으로 끄는 것, 같은 home으로 dsh를 다시 띄웠을 때의 화면(조합 시험은 늘 새 home이다).
-- 한국어 언어 팩 등록.
-- 리버스 프록시 배포, 예약·MCP·스킬·서브에이전트·웹 검색의 실제 동작.
+- 예약·MCP·스킬·서브에이전트·웹 검색의 실제 동작.
 - Chrome 이외의 브라우저.
