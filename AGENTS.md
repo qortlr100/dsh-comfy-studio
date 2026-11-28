@@ -2,7 +2,7 @@
 
 기존 ComfyStudio(`comfy-studio` 저장소, Next.js 단일 앱)를 대체하는 1인 사용자용 ComfyUI 스튜디오다. 에이전트 코어를 직접 만들지 않고 DeepSeek Harness(dsh) 위에 플러그인으로 얹는다. 서버 쪽 구조와 화면 구성은 DreamVerse Harness를 본뜬다.
 
-**지금 이 저장소에는 틀, 프로젝트 계층, 두 계약(카탈로그, 화면용 API), ComfyUI 연동 라이브러리가 있다(2026-11-28).** 1-0이 워크스페이스, 번들 `@cs/bundle`, 플러그인 `@cs/ui-shell`, 프로필을 만들고 띄우는 스크립트를 만들었고, 1-1이 그 플러그인에 브라우저 절반과 브라우저 번들 빌드를 더했고, 1-2가 시험 틀(Vitest 단위 시험, dsh를 실제로 띄우는 조합 시험)을 더했고, 2-0이 DreamVerse의 프로젝트 계층을 `@cs/project`로 옮겼다(기록, 히스토리, 연산 실행, 연산마다의 에이전트 도구. `docs/ARCHITECTURE.md` "프로젝트 계층"), 2-2가 DreamVerse의 화면용 API를 `@cs/api`로 옮겼다(`/api/cs/…` 라우트와 `/cs/events` 이벤트 스트림. `docs/ARCHITECTURE.md` "화면용 API"), 4-0이 기존 앱의 ComfyUI 연동 라이브러리를 `@cs/comfy`로 옮겼다(그래프와 필드, 그래프 패치, 응답 파서, 모델 계열, 서버 종류 넷의 백엔드. dsh에 의존하지 않는 라이브러리이고 아직 쓰는 곳이 없다. `docs/LEGACY.md` "ComfyUI 연동"), 2-1이 카탈로그 계약을 `@cs/catalog`로 만들었다(생성 프로바이더가 꽂히는 자리: 항목은 등록된 서버 하나, 요청은 완성된 그래프, 결과는 이벤트 스트림. 등록하는 프로바이더는 아직 없다. `docs/ARCHITECTURE.md` "카탈로그 계약"). 화면에는 빌드를 확인하는 시험용 버튼 하나만 있고(3-0에서 셸로 바뀐다), 프로젝트 계층에 연산을 등록하는 기능 컴포넌트는 아직 없다. 다음에 할 수 있는 단계는 `docs/ROADMAP.md` 맨 위에 있다.
+**지금 이 저장소에는 틀, 프로젝트 계층, 두 계약(카탈로그, 화면용 API), ComfyUI 연동 라이브러리, 셸이 있다(2026-11-28).** 1-0이 워크스페이스, 번들 `@cs/bundle`, 플러그인 `@cs/ui-shell`, 프로필을 만들고 띄우는 스크립트를 만들었고, 1-1이 그 플러그인에 브라우저 절반과 브라우저 번들 빌드를 더했고, 1-2가 시험 틀(Vitest 단위 시험, dsh를 실제로 띄우는 조합 시험)을 더했고, 2-0이 DreamVerse의 프로젝트 계층을 `@cs/project`로 옮겼다(기록, 히스토리, 연산 실행, 연산마다의 에이전트 도구. `docs/ARCHITECTURE.md` "프로젝트 계층"), 2-2가 DreamVerse의 화면용 API를 `@cs/api`로 옮겼다(`/api/cs/…` 라우트와 `/cs/events` 이벤트 스트림. `docs/ARCHITECTURE.md` "화면용 API"), 4-0이 기존 앱의 ComfyUI 연동 라이브러리를 `@cs/comfy`로 옮겼다(그래프와 필드, 그래프 패치, 응답 파서, 모델 계열, 서버 종류 넷의 백엔드. dsh에 의존하지 않는 라이브러리이고 아직 쓰는 곳이 없다. `docs/LEGACY.md` "ComfyUI 연동"), 2-1이 카탈로그 계약을 `@cs/catalog`로 만들었다(생성 프로바이더가 꽂히는 자리: 항목은 등록된 서버 하나, 요청은 완성된 그래프, 결과는 이벤트 스트림. 등록하는 프로바이더는 아직 없다. `docs/ARCHITECTURE.md` "카탈로그 계약"). 3-0이 `@cs/ui-shell`의 브라우저 절반으로 기본 dsh 화면을 교체했다(브랜드, 프로젝트 내비게이터, 가운데의 홈과 프로젝트 틀, 우측 패널의 채팅 탭. `docs/ARCHITECTURE.md` "화면 구조"). 프로젝트 틀에 꽂히는 화면과 프로젝트 계층에 연산을 등록하는 기능 컴포넌트는 아직 없다. 다음에 할 수 있는 단계는 `docs/ROADMAP.md` 맨 위에 있다.
 
 ## 확정된 방향
 
@@ -93,6 +93,7 @@ Node.js 24.9.0 이상과 pnpm 10.34.8이 필요하다. 체크아웃(본 체크�
 - 코드가 든 커밋 전에 돌릴 검사는 `pnpm check`다. 빌드는 브라우저 절반의 금지된 import(공유 모듈 표 밖의 `@deepseek-ai/*` 값 import 등)를 잡는다. 화면, 플러그인의 등록, 번들, 실행 스크립트, 시험 틀에 닿는 변경은 `pnpm test:integration`도 돌린다.
 - 조합 시험에는 헤드리스 Chromium이 필요하다. 장비마다 한 번 `pnpm exec playwright-core install chromium-headless-shell`로 받거나 `CHROME`에 Chrome·Chromium 실행 파일 경로를 준다. 시험은 띄울 때마다 새 임시 home을 쓰므로 개발용 home과 모델 키를 건드리지 않는다.
 - 단위 시험은 대상 옆에 `x.test.ts`로 두고, 조합 시험은 `tests/integration/`에 둔다. 조합 시험의 틀(`tests/harness/`)과 쓰는 법은 `docs/DSH.md` "띄워서 확인하는 법"에 있다.
+- 브라우저 절반이 타입으로 가져오는 우리 모듈은 dsh의 호스트 패키지(`@deepseek-ai/dsh-tools` 등)를 타입으로도 가져오지 않아야 한다. 호스트 선언이 따라와 브라우저 프로그램의 `ctx.sessions` 같은 서비스 타입을 덮는다(`docs/DSH.md` "타입을 얻는 패키지").
 - 브라우저 절반은 `packages/<이름>/src/client/`에 두고 스타일은 `*.module.css`로 쓴다. 호스트 절반(`src/` 중 `src/client/` 밖)은 Node가 `.ts`를 바로 실행하므로 지울 수 있는 문법만 쓰고 상대 import에 `.ts` 확장자를 붙인다. 표 밖의 dsh 패키지에서 타입만 가져올 때는 `import type { X } from`으로 쓴다(`import { type X } from`은 빌드가 거절한다). 근거는 `docs/DSH.md` "플러그인 패키지 하나의 모양"과 "브라우저 절반"이다.
 
 ## 꼭 지킬 것

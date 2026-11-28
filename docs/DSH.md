@@ -190,14 +190,14 @@ return module.exports; } });
 **CSS Modules로 싣는다**(1-1에서 정했다. `docs/DECISIONS.md` "확정", 2026-11-27). `x.module.css`를 import하면 클래스 이름 표를 받는다.
 
 ```tsx
-import styles from "./BuildProbe.module.css";
-<div className={styles.probe} />     // 실제 클래스는 cs-W6SYKq-probe 같은 모양이다
+import styles from "./Brand.module.css";
+<span className={styles.name} />     // 실제 클래스는 cs-W6SYKq-name 같은 모양이다
 ```
 
 - 빌드가 lightningcss로 클래스 이름을 `cs-[hash]-[local]`로 바꾸고, CSS를 번들 안에 문자열로 넣는다. 팩토리가 실행될 때 `<style data-plugin="<패키지>" data-plugin-css="<패키지>/<파일>">`로 `<head>`에 들어간다(**띄워 확인**, 2026-11-26).
 - 업스트림 프리셋과 같은 방식이다. dsh 로더는 플러그인이 내려갈 때 `style[data-plugin]`이 그 패키지인 태그를 지운다(**소스 확인**: 업스트림 `packages/client/modules/src/client/entry-lifecycle.ts`. 내려 보지는 않았다).
 - 클래스 이름 무늬가 업스트림(`[hash]_[local]`)과 다른 것은 일부러다. dsh 기본 요소를 숨기는 접미사 선택자(`[class$="_newSession"]`, "dsh 내부에 기대는 장치")가 우리 클래스에 걸리지 않게 한다.
-- 클래스가 없는 선택자는 바뀌지 않고 그대로 나간다. `button[class$="_newSession"]` 같은 속성 선택자와 `:global(.이름)`이 그렇다(lightningcss 1.33.0으로 변환해 봤다, 2026-11-26). 그래서 dsh 기본 요소를 숨기는 규칙도 `.module.css`에 둘 수 있다.
+- 클래스가 없는 선택자는 바뀌지 않고 그대로 나간다. `button[class$="_newSession"]` 같은 속성 선택자와 `:global(.이름)`이 그렇다(lightningcss 1.33.0으로 변환해 봤다, 2026-11-26). 그래서 dsh 기본 요소를 숨기는 규칙도 `.module.css`에 둘 수 있다. 클래스가 하나도 없는 파일은 `import "./chrome.module.css";`처럼 이름 없이 불러오면 스타일이 들어간다(**띄워 확인**, 2026-11-28: `packages/ui-shell/src/client/chrome.ts`. oxlint의 `import/no-unassigned-import`는 그 줄에서만 끈다).
 - `.module.css`가 아닌 `.css`는 빌드가 거절한다. 업스트림 프리셋은 맨 `x.css`(전역 주입)와 `x.css?inline`(문자열)도 받는다. 필요해지면 `scripts/build-client.ts`에 더한다.
 - 타입은 루트의 `types/css-modules.d.ts`가 준다(`Readonly<Record<string, string>>`).
 
@@ -241,7 +241,8 @@ react  react/jsx-runtime  react-dom  react-dom/client  @deepseek-ai/cordis  zod 
 - npm에 올라온 0.2.2-rc.5 패키지에 타입 선언이 실려 있다. 이 타입으로 `@cs/ui-shell`의 브라우저 절반을 타입 검사한다(2026-11-26). 타입이 실제로 걸리는지는 일부러 틀린 코드로 봤다: 없는 슬롯 이름, 목록 슬롯에 `id` 없는 등록, 서비스의 없는 멤버, 타입을 불러오지 않은 서비스, 슬롯 props와 `use<이름>` 선택자의 타입이 모두 오류가 된다.
 - **`@deepseek-ai/dsh-client-store`를 devDependency에 같이 넣는다.** `dsh-client-ui-slots`의 타입이 훅 타입(`SnapshotSelectorHook` 등)을 거기서 가져오는데 의존성으로 따라오지 않는다. 빠지면 `skipLibCheck` 아래에서 그 타입들이 조용히 `any`가 된다(2026-11-26).
 - `@deepseek-ai/dsh`를 설치해도 `dsh-client-ui-slots`, `dsh-client-ui-primitives`, `dsh-client-store`는 `node_modules`에 들어오지 않는다. 쓰는 패키지가 직접 넣는다(2026-11-26).
-- `@cs/ui-shell`이 지금 두는 것: `cordis` 4.1.0, `dsh-client-store`, `dsh-client-ui-primitives`, `dsh-client-ui-renderer`, `dsh-client-ui-sidebar`, `dsh-client-ui-slots`, `dsh-client-ui-theme`(0.2.2-rc.5), `@types/react` 18.3.32.
+- `@cs/ui-shell`이 지금 두는 것(3-0, 2026-11-28): `cordis` 4.1.0, `dsh-api-session-controller`, `dsh-api-workspace-controller`, `dsh-client-store`, `dsh-client-ui-conversation`, `dsh-client-ui-layout`, `dsh-client-ui-primitives`, `dsh-client-ui-renderer`, `dsh-client-ui-session`, `dsh-client-ui-sidebar`, `dsh-client-ui-sidebar-right`, `dsh-client-ui-slots`, `dsh-client-ui-workspace`, `dsh-session`, `dsh-workspace`(0.2.2-rc.5), `@types/react` 18.3.32, 그리고 타입만 읽는 `@cs/api`(`workspace:*`).
+- **브라우저 프로그램에 dsh의 호스트 타입이 섞이면 서비스의 타입이 뒤바뀐다**(2026-11-28에 밟았다). `@deepseek-ai/dsh-tools`의 타입은 `dsh-agent`를 거쳐 `dsh-session`의 호스트 선언을 끌고 오고, 그 선언의 `Context.sessions: SessionStore`가 클라이언트의 `ISessions`를 덮는다. 그러면 `ctx.sessions.list`가 타입 오류가 된다(`tsc --explainFiles`로 경로를 봤다). 브라우저 절반이 타입으로 가져오는 우리 모듈은 dsh의 호스트 패키지를 타입으로도 가져오지 않아야 한다. 그래서 `@cs/api/wire`는 `@cs/project/types`(호스트 모듈을 가져오지 않는 얼굴)만 가져오고, 연산 선언의 타입 `WireOperation`은 `packages/api/src/wire-operation.ts`로 떼었다(`docs/ARCHITECTURE.md` "화면용 API").
 - 브라우저 프로그램의 `tsconfig`는 `moduleResolution: bundler`, `module: preserve`, `jsx: react-jsx`, `lib`에 DOM이다(루트 `tsconfig.client.base.json`). Node 타입은 넣지 않는다.
 - oxlint의 `import/no-empty-named-blocks`와 `unicorn/require-module-specifiers`는 `import type {} from …`을 막으므로 껐다. `react/hooks`(컴파일러식 검사)는 props로 받은 훅을 막으므로 끄고, 대신 `react/rules-of-hooks`를 켰다(`docs/archive/PLAN_1-1.md` "린트 규칙").
 
@@ -250,14 +251,14 @@ react  react/jsx-runtime  react-dom  react-dom/client  @deepseek-ai/cordis  zod 
 브라우저 절반은 `inject`(기다릴 서비스 이름)와 `apply(ctx)`를 export한다(**띄워 확인**).
 
 ```ts
-// packages/ui-shell/src/client/index.ts에서 추렸다(2026-11-26).
+// packages/ui-shell/src/client/index.ts에서 추렸다(2026-11-28).
 import type { Context } from "@deepseek-ai/cordis";
 import type {} from "@deepseek-ai/dsh-client-ui-renderer/client"; // ctx.slots
 import type {} from "@deepseek-ai/dsh-client-ui-sidebar/client"; // 슬롯 sidebar.*
-import type {} from "@deepseek-ai/dsh-client-ui-theme/client"; // ctx.theme
-import { BuildProbe, type BuildProbeInjected } from "./BuildProbe.tsx";
+import type {} from "@deepseek-ai/dsh-client-ui-workspace/client"; // ctx.uiWorkspace
+import { Navigator } from "./Navigator.tsx";
 
-export const inject = ["slots", "theme"];
+export const inject = ["slots", "sidebarRightTabs", "sidebarRight", "workspaces", "sessions", "uiWorkspace", "layout"];
 
 export function apply(ctx: Context): void {
   // 슬롯 등록은 아래 "슬롯" 참고
@@ -279,7 +280,9 @@ export function apply(ctx: Context): void {
 - 등록은 `apply` 안에서만 한다. 모듈 최상위에 부작용을 두지 않는다.
 - 색은 토큰으로, 화면 문자열은 로케일 사전으로. 문자열 쪽은 이 저장소에서 1-6까지 미뤘다(`AGENTS.md`의 임시 규칙).
 
-**주의**: 2026-11-24~25의 시험 코드는 빨리 확인하려고 `ctx`의 값을 모듈 변수와 수동 구독으로 React 컴포넌트에 넘겼다. "화면 교체"와 "채팅을 우측 탭으로 옮기는 코드"의 조각은 그때의 동작 확인용이다. 실제 구현은 위 규칙대로 쓴다. 규칙대로 쓴 등록 가운데 `inject`(값, 콜백)와 `hooks`는 1-1에서 **띄워 확인**했다(2026-11-26, `packages/ui-shell/src/client`). `store`와 `locale` 칸은 아직 띄워 보지 않았다.
+**주의**: 2026-11-24~25의 시험 코드는 빨리 확인하려고 `ctx`의 값을 모듈 변수와 수동 구독으로 React 컴포넌트에 넘겼다. "화면 교체"와 "채팅을 우측 탭으로 옮기는 코드"의 조각은 그때의 동작 확인용이다. 실제 구현은 위 규칙대로 쓴다. 규칙대로 쓴 셸 전체(`inject`의 값·콜백·`hooks`, 슬롯이 주는 훅)는 3-0에서 **띄워 확인**했다(2026-11-28, `packages/ui-shell/src/client`). `store`와 `locale` 칸은 아직 띄워 보지 않았다.
+
+우리 셸은 `ctx`를 쓰는 곳을 다섯 파일로 묶었다: `index.ts`(등록), `host.ts`(dsh 서비스를 좁은 인터페이스 `ShellHost`로 감싼다. 문자열 id를 dsh의 브랜드 id로 바꾸는 곳도 여기 하나다: 단언하지 않고 dsh 스냅샷에서 찾아 쓴다), `actions.ts`·`follow.ts`(`ShellHost`만 본다. 그래서 단위 시험이 Cordis 없이 손으로 만든 호스트로 돈다), `views.ts`, `chrome.ts`.
 
 ## 슬롯
 
@@ -297,44 +300,41 @@ ctx.effect(() => ctx.slots.inject('main.conversation', () =>
 - **Factory 슬롯**은 여러 곳에서 다시 그릴 수 있게 선언된 조립이다. 슬롯 props의 `renderFactorySlot(이름, 속성, { slots })`으로 그린다. 대화 본문 `conversation.content`가 그렇다("채팅을 우측 탭으로 옮기는 코드").
 - 소스에서 찾은 슬롯 선언은 약 180개다(시험용 포함). 전체 목록은 업스트림 `packages/extensions/cordis-client-runner/src/client/slot-catalog.ts`에 있다.
 
-규칙대로 `ctx`의 값을 React 컴포넌트에 넘기는 등록(**띄워 확인**, 2026-11-26. `packages/ui-shell/src/client`에서 추렸다. 근거는 업스트림 `docs/subsystems/slots.md` "Developer-provided injection"):
+규칙대로 `ctx`의 값을 React 컴포넌트에 넘기는 등록(**띄워 확인**, 2026-11-26에 1-1의 시험용 컴포넌트로, 2026-11-28에 셸로. `packages/ui-shell/src/client`에서 추렸다. 근거는 업스트림 `docs/subsystems/slots.md` "Developer-provided injection"):
 
 ```tsx
-// BuildProbe.tsx — React 컴포넌트. ctx를 보지 않는다.
+// contract.ts — 등록이 넘기는 얼굴. apply에서 한 번 만든다.
 interface Observable<T> { getSnapshot(): T; subscribe(listener: () => void): () => void }
 
-export interface BuildProbeInjected {
-  owner: string;                                        // 값
-  setColorScheme(scheme: "light" | "dark"): void;       // 콜백
-  hooks: { theme: Observable<ThemeSnapshot> };          // 관찰 가능한 값. `useTheme(selector)`로 온다
+export interface ShellInjected {
+  actions: ShellActions;                                  // 콜백 묶음
+  hooks: {                                                // 관찰 가능한 값. `use<이름>(selector)`로 온다
+    shell: Observable<ShellState>;                        // useShell
+    views: Observable<readonly CenterViewTab[]>;          // useViews
+  };
 }
-type Props = PropsRuntime<"sidebar.footer.action"> & InjectFace<BuildProbeInjected>;
 
-export function BuildProbe({ wide, owner, setColorScheme, useTheme }: Props) {
-  const scheme = useTheme((snapshot) => snapshot.active.colorScheme);
-  return <Button onClick={() => setColorScheme(scheme === "dark" ? "light" : "dark")}>…</Button>;
+// Navigator.tsx — React 컴포넌트. ctx를 보지 않는다.
+type Props = PropsRuntime<"sidebar.workspaces"> & InjectFace<ShellInjected>;
+
+export function Navigator({ wide, actions, useShell, useWorkspaces, usePanelInfo }: Props) {
+  const projects = useShell((state) => state.projects);   // 등록이 넘긴 훅
+  const page = usePanelInfo((info) => info.activePanelId); // 슬롯이 주는 훅
+  return <button onClick={actions.goHome}>…</button>;
 }
 
 // index.ts — apply 안. ctx의 서비스는 여기서만 쓴다.
-const theme = {
-  getSnapshot: () => ctx.theme.getTheme(),
-  subscribe: (listener: () => void) => ctx.on("theme/change", listener),
-};
-ctx.slots.inject("sidebar.footer.action", () =>
-  ctx.slots.register({
-    name: "sidebar.footer.action", id: "cs-build-probe",
-    inject: (): BuildProbeInjected => ({
-      owner: "@cs/ui-shell",
-      setColorScheme: (scheme) => ctx.theme.setTheme(scheme),
-      hooks: { theme },
-    }),
-  }, BuildProbe));
+const injected: ShellInjected = { actions, hooks: { shell: store, views: followCenterViews(ctx) } };
+ctx.slots.inject("sidebar.workspaces", () =>
+  ctx.slots.register({ name: "sidebar.workspaces", priority: -1, inject: () => injected }, Navigator));
 ```
 
 - React 컴포넌트의 props 타입은 `PropsRuntime<"슬롯 이름">`(부모가 주는 값과 틀의 훅)과 `InjectFace<등록이 돌려주는 타입>`(`hooks` 칸이 `use<이름>` 훅으로 바뀐 모양)의 교차다. `hooks` 자체는 props로 오지 않는다(타입에서도 빠진다).
-- `hooks`에 넣는 값은 `getSnapshot`이 다음 변경까지 **같은 참조**를 돌려줘야 한다(업스트림 규칙: "Keep observable source and snapshot identities stable between changes"). 서비스의 "스냅샷 읽기 + 변경 이벤트" 쌍이 그대로 맞는다.
+- `hooks`에 넣는 값은 `getSnapshot`이 다음 변경까지 **같은 참조**를 돌려줘야 한다(업스트림 규칙: "Keep observable source and snapshot identities stable between changes"). 서비스의 "스냅샷 읽기 + 변경 이벤트" 쌍이 그대로 맞는다. 우리 저장소(`store.ts`)는 값이 바뀔 때만 새 객체를 만든다.
+- 훅에 넘기는 선택자는 원시값이나 이미 있는 객체를 돌려준다. 선택자 안에서 배열이나 객체를 새로 만들면 렌더가 되풀이된다. 목록은 선택자 밖에서 `useMemo`로 만든다.
 - 목록(`list`) 슬롯에 등록할 때는 `id`가 필수다. 빠지면 타입 오류다.
-- 이 시험용 등록은 3-0에서 셸의 등록으로 바뀐다.
+- **자식 슬롯을 우리가 선언할 수 있다**(**띄워 확인**, 2026-11-28). 등록 옵션의 `children`에 `{ "cs.center.view": { kind: "list", scope: "root" } }`를 적고, 타입은 `@deepseek-ai/dsh-client-ui-slots`의 `SlotMap`에 선언 병합으로 더한다(`packages/ui-shell/src/client/contract.ts`). 그 React 컴포넌트는 `renderSlot("cs.center.view", { …소유자 props }, { only: id })`로 항목 하나만 그린다. 다른 등록이 그 슬롯에 `id`·`order`·`label`(문자열 또는 함수)로 등록하면 그려진다. 등록된 항목의 목록은 `ctx.slots.entriesOfSlot(이름)`과 `ctx.slots.subscribe(이름, 듣는 함수)`로 읽고, 이름표는 `resolveSlotLabel`로 푼다(`views.ts`). 화면 둘을 임시로 등록해 순서대로 탭이 생기고 고른 것만 그려지는 것을 봤다. 조합 시험에는 등록하는 패키지가 없어 빈 상태만 본다(3-2에서 갤러리가 등록하면 그 시험이 본다).
+- **`hoc` 슬롯은 감싸는 자리다**(**띄워 확인**, 2026-11-28). 차지한 React 컴포넌트가 원래 내용을 `children`으로 받고 무엇을 그릴지 정한다. `sidebar.session.action`(새 세션 버튼)에 `children`을 그리지 않는 React 컴포넌트를 등록해 버튼을 우리 것으로 바꿨다(`NewProjectButton.tsx`). 등록에는 `id`를 준다.
 
 이 프로젝트에 관계있는 슬롯(이름, 종류/범위):
 
@@ -356,16 +356,28 @@ DreamVerse의 `@dv/ui-shell`이 쓰는 장치다. 아래 표의 방법은 기본
 | 가운데를 우리 화면으로               | `main.conversation`에 `priority: -1`                                                                                       |
 | 왼쪽의 작업공간 목록을 우리 목록으로 | `sidebar.workspaces`에 `priority: -1`                                                                                      |
 | 왼쪽 사이드바 전체를 교체            | `sidebar`에 `priority: -1`(DreamVerse는 이것을 쓰지 않고 일부를 CSS로 숨겼다)                                              |
-| 브랜드 이름과 마크                   | `sidebar.brand.name`·`sidebar.brand.mark`에 `priority: -1`(마크를 없애려면 `null`을 그리는 React 컴포넌트)                 |
+| 브랜드 이름과 마크                   | `sidebar.brand.name`·`sidebar.brand.mark`에 `priority: -1`(마크를 없애려면 `null`을 그리는 React 컴포넌트). 마크는 `size`(픽셀)를 props로 받고, 접힌 사이드바에도 그려진다 |
+| 새 세션 버튼을 다른 버튼으로         | `hoc` 슬롯 `sidebar.session.action`에 `children`을 그리지 않는 React 컴포넌트를 등록한다(props `wide`). DreamVerse가 갈라진 뒤에 생긴 슬롯이다 |
+| 가운데에 다른 패키지의 화면을 꽂기   | `main.conversation`에 등록할 때 자식 슬롯을 선언하고 `renderSlot`으로 그린다(위 "슬롯"의 자식 슬롯)                         |
+| 가운데를 dsh의 페이지에서 대화로     | `ctx.layout.selectPanel(null)`. dsh의 페이지(Plugins 등)가 떠 있으면 `main.conversation`이 그려지지 않는다                  |
 | 우측 패널에 탭 추가                  | `ctx.sidebarRightTabs.register(정의)` + `sidebar.right.pane.tab`에 `key: 정의의 id`로 본문 등록                            |
 | 우측 탭 열기                         | `ctx.sidebarRight.openTab(kind)`                                                                                           |
 | 채팅을 우측 탭으로                   | 탭 본문에서 Factory 슬롯 `conversation.content`를 그린다(아래)                                                             |
-| 프로젝트 만들고 열기                 | `ctx.workspaces.create({ path })` → `ctx.sessions.create({ workspaceId })` → `ctx.uiWorkspace.openSession(sessionId)`      |
+| 프로젝트 만들고 열기                 | 화면용 API(`POST /api/cs/projects`)로 만들고 → 그 작업공간이 `ctx.workspaces.list`에 나타나기를 기다린 뒤 → `ctx.uiWorkspace.openWorkspace(workspaceId)`(빈 세션을 다시 쓰거나 만들어 주 세션으로 연다). 2026-11-24의 시험은 `ctx.workspaces.create({ path })` → `ctx.sessions.create({ workspaceId })` → `ctx.uiWorkspace.openSession(sessionId)`였다 |
 | 사이드바에 패널 아이콘 추가          | `sidebar.panellist`에 `{ id, order, label }` + `main`에 `key: 같은 id`(덧붙이기형. 지금 방향에서는 쓰지 않는다)            |
 
 - `ctx.workspaces.create`의 `path`는 폴더의 절대 경로다. 시험에서는 시험이 준비한 폴더를 넘겼다. DreamVerse는 화면용 API(`/api/dv/projects/untitled`)에 새 폴더 경로를 물어 받고, 그 API는 "DreamVerse 폴더" 안에 빈 폴더를 만든다. 그 폴더의 위치는 dsh의 `defaultWorkspaceDirectory`(시스템의 문서 폴더를 기준으로 기본 작업공간 위치를 정한다)로 얻는다(**소스 확인(DreamVerse)**). 우리 쪽 위치는 2-0에서 정한다.
 - 세션을 만들 때 어느 에이전트 프리셋을 쓸지 줄 수 있다(`ctx.sessions.create`의 `agentPreset`, **소스 확인**).
-- DreamVerse 셸에는 프로젝트 안에서 세션을 바꾸는 부품이 있다(`packages/dv/ui-shell/src/client/SessionSwitcher.tsx`, 읽지 않았다). 프로젝트 하나에 세션을 몇 개 둘지는 3-0에서 정한다.
+- DreamVerse 셸에는 프로젝트 안에서 세션을 바꾸는 부품이 있다(`packages/dv/ui-shell/src/client/SessionSwitcher.tsx`). 우리는 프로젝트 하나에 세션을 여럿 두고 내비게이터에서 고른다(사용자가 정했다, 2026-11-28). 위쪽 줄의 전환기는 두지 않았다.
+
+우리 셸이 주 세션과 열린 프로젝트를 맞추는 법(3-0, **띄워 확인**, 2026-11-28. 규칙은 `packages/ui-shell/src/client/navigation.ts`, 근거는 업스트림 `packages/client/ui-workspace/src/client/navigation.ts`):
+
+- **dsh가 주 세션을 고른다.** 기동 때 저장해 둔 세션(`localStorage`의 `dsh.sessions.current`)을 다시 연다. 없으면 가장 최근 작업공간의 빈 세션을 열고, 작업공간과 세션이 하나도 없으면 `workspaces.initializeDefault()`를 부른다(**소스 확인**).
+- **열린 프로젝트는 주 세션을 따른다.** 가운데의 React 컴포넌트(슬롯 `main.conversation`, 범위 `session-maybe`)가 props의 `sessionId`를 저장소에 알리고, 그 세션을 가진 작업공간이 프로젝트면 그 프로젝트가 열린다. 그래서 새로고침하면 열려 있던 프로젝트가 돌아온다. 사용자가 이동을 시작했고 세션이 아직 옮겨 가는 중이면 따르지 않는다.
+- **프로젝트를 열면 주 세션을 그 안으로 옮긴다.** 주 세션이 이미 그 프로젝트의 세션이면 그대로 둔다(빈 세션이어도. 방금 만든 새 채팅이 목록에서 사라지지 않는다). 아니고 가장 최근에 쓴 세션이 있으면 `ctx.layout.beginNavigation()` 뒤에 `ctx.uiWorkspace.openSession(id)`(앞의 호출이 dsh의 기동 복원을 끊는다. `openSession`은 스스로 끊지 않는다, **소스 확인**), 없으면 `ctx.uiWorkspace.openWorkspace(workspaceId)`다.
+- **가운데는 누르자마자 바뀌고 주 세션은 조금 뒤에 옮겨 간다.** 그 사이에 새로고침하면 dsh는 앞의 세션을 되살린다(조합 시험이 이 틈에 걸렸다. 세션 줄이 활성으로 바뀐 것을 기다린 뒤에 새로고침한다).
+- 화면용 API로 만든 프로젝트의 작업공간은 dsh의 작업공간 피드를 타고 클라이언트 목록에 온다. 작업공간 목록이 바뀔 때마다 프로젝트 목록을 다시 읽는다.
+- 프로젝트를 목록에서 빼도 그 세션은 남는다. 주 세션이 그 세션이면 어느 프로젝트에도 속하지 않는 세션이 주 세션인 채로 홈이 보인다.
 
 ### 채팅을 우측 탭으로 옮기는 코드
 
@@ -390,7 +402,10 @@ ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () =>
   ctx.slots.register({ name: 'sidebar.right.pane.tab', key: CHAT_ID }, ChatTab)))
 ```
 
-- 이 코드로 우측 탭에 채팅 화면과 입력창이 그려지고 글이 쳐지는 것까지 **띄워 확인**했다. 메시지를 보내고 받는 것은 모델 키가 없어 확인하지 못했다(1-3).
+- 이 코드로 우측 탭에 채팅 화면과 입력창이 그려지고 글이 쳐지는 것까지 **띄워 확인**했다. 메시지를 보내고 받는 것은 모델 키가 없어 확인하지 못했다(1-3). 규칙대로 쓴 형태는 `packages/ui-shell/src/client/ChatTab.tsx`와 `index.ts`의 탭 등록이고, 조합 시험이 입력창에 글이 쳐지는 것을 본다(2026-11-28).
+- **탭을 여는 `ctx.sidebarRight.openTab(kind)`는 화면에 그 세션의 자리가 마운트돼 있어야 한다.** 없으면 던진다("no session surface is mounted"). `ctx.sidebarRight.mounted`(관찰 가능한 값)가 그 세션을 줄 때 부르고, 던지면 다시 시도한다(`follow.ts`). 우측 패널의 탭과 펼침은 세션마다 따로다. `isExpanded()`는 자리가 없으면 `false`이고 `toggleExpanded()`는 자리가 없으면 던진다(**소스 확인**: 업스트림 `packages/client/ui-sidebar-right/src/client/service.ts`). 펼침 여부를 구독하는 값은 없다.
+- **펼침은 세션마다 따로라서, 접어 둔 세션으로 돌아오면 접힌 채다.** 홈으로 갈 때 접은 패널은 그 세션의 것이다. 다른 프로젝트를 다녀온 뒤 돌아오면 dsh는 그 세션의 접힌 상태를 되살린다. 그래서 우리 셸은 사용자가 프로젝트나 채팅을 열 때마다 "채팅 요청"을 하나 올리고(`ShellState.chatRequest`), 그 이동이 연 세션의 자리가 마운트된 뒤에 탭을 다시 연다. 자리가 바뀌기 전에 열면 떠나는 세션의 탭이 열린다(**띄워 확인**, 2026-11-28: 조합 시험이 홈 → 둘째 프로젝트 → 홈 → 첫 프로젝트 순서로 채팅이 다시 보이는 것을 본다. 요청을 무시하게 망가뜨리면 실패한다).
+- 채팅 탭의 내용은 탭을 닫지 않는 한 홈으로 가도 DOM에 남는다(`keepMounted`. 패널만 접힌다). 세션을 옮겨도 앞 세션의 탭 본문이 숨겨진 채 남으므로, 시험은 `[data-cs-chat]`의 개수가 아니라 보이는 것의 개수를 센다.
 - `conversation.content`의 속성: `variant`는 `'main'` 또는 `'embedded'`, `phase`는 `'settling'`·`'hero'`·`'active'`, `hero`는 불리언, 지역 슬롯은 `views`와 `widthControls`다. 업스트림의 `ui-subagent/sidebar-chat`도 같은 Factory 슬롯을 쓴다(**소스 확인**).
 - `renderFactorySlot`에 넘기는 지역 React 컴포넌트는 모듈 최상위 함수여야 한다. 렌더 중에 만들면 매번 다시 마운트된다(**소스 확인**).
 - 탭 정의의 필드(**소스 확인**): `id`, `kind`, `multiple?`, `keepMounted?`, `patterns?`, `priority?`, `canOpen?`, `title(address)`, `guide?`.
@@ -438,7 +453,9 @@ dsh가 싣고 오는 언어는 영어, 중국어, 일본어, 스페인어, 프�
 | `ctx.sessions`         | `create({ workspaceId })` — 세션 id를 돌려준다. 옵션은 `workspaceId?`, `cwd?`, `sessionId?`, `agentPreset?`        |
 | `ctx.uiWorkspace`      | `openSession(id)`. 그 밖에 `openWorkspace`, `forkSession`, `connectWorkspace`, `startSession`, `archiveSession`    |
 | `ctx.theme`            | `setTheme(id)`, `getTheme()`                                                                                       |
-| `ctx.layout`           | 이름만 주입해 봤다                                                                                                 |
+| `ctx.layout`           | `selectPanel(null)`(dsh의 페이지에서 대화로), `beginNavigation()`(진행 중인 내비게이션을 끊는다)                   |
+
+3-0의 셸이 더 쓴 것(**띄워 확인**, 2026-11-28): `ctx.uiWorkspace.openWorkspace(workspaceId)`, `ctx.sidebarRight.toggleExpanded()`, `ctx.workspaces.list` 스냅샷의 `phase`(`pending`·`ready`)와 `archivedSessionIds`, `ctx.sessions.list` 스냅샷의 `phase`·`ids`·`byId[id]`(`blank`, `updatedAt`, `displayTitle`), `ctx.slots.entriesOfSlot(이름)`·`subscribe(이름, 듣는 함수)`. 두 목록은 `phase`가 `ready`가 된 뒤에 읽는다.
 
 ## 호스트 쪽
 
@@ -542,7 +559,14 @@ DreamVerse 화면 패키지 중 셋은 0.2.2-rc.5에 없는 이름을 써서 그
 | 사전 문자열 바꾸기         | DreamVerse는 로케일 사전을 직접 고쳐 문구를 바꾼다                                                                  | 소스 확인(DreamVerse)                 |
 | 명령 목록 가리기           | DreamVerse는 `commandUi.directory.fetchCommands`를 바꾼다                                                           | 소스 확인(DreamVerse)                 |
 
-DreamVerse가 CSS로 숨기거나 막는 기본 요소(`packages/dv/ui-shell/src/client/chrome.tsx`, **소스 확인(DreamVerse)**). 3-0에서 숨길 목록을 정할 때의 출발점이다. 아래는 추린 것이고, 선택자가 0.2.2-rc.5에서 맞는지는 첫 줄만 확인했다.
+**우리가 쓰는 장치는 둘이다**(3-0. 사용자가 "최소"를 골랐다, 2026-11-28). 둘 다 `packages/ui-shell/src/client/chrome.ts`와 `chrome.module.css`에 있고, 파일 머리의 주석에 무엇에 기대는지와 버전을 올릴 때 다시 볼 것이 적혀 있다. 조합 시험(`tests/integration/shell.test.ts`)이 둘 다 본다: 장치를 빼면 시험이 실패하는 것을 확인했다(**띄워 확인**, 2026-11-28).
+
+| 장치 | 하는 일 | 기대는 것 |
+| --- | --- | --- |
+| 서비스 함수 덮어쓰기 | `ctx.workspaces.initializeDefault`를 `undefined`를 돌려주는 함수로 가린다. 작업공간도 세션도 없는 첫 실행에서 dsh가 기본 작업공간(`<문서 폴더>/deepseek-harness/default-workspace`)을 만들지 않는다. 플러그인이 내려가면 가린 것을 지운다 | `initializeDefault`가 작업공간 서비스의 프로토타입 메서드이고, dsh의 첫 실행이 부르는 것이 이것 하나이고, `undefined`를 "열 것이 없다"로 다룬다(**소스 확인**: 업스트림 `packages/client/ui-workspace/src/client/navigation.ts`의 `restoreSelection`). Cordis의 서비스 프록시에는 get·set·apply 트랩만 있어 `defineProperty`가 실제 서비스에 닿는다(**소스 확인**) |
+| CSS 클래스 접미사 | `[data-slot="sidebar"] button[class*="_brand "]`, `[class$="_brand"]`의 포인터 입력을 끈다. 브랜드를 눌러도 새 세션이 열리지 않는다 | 브랜드가 `<해시>_brand` 클래스의 `<button>`이고 누르면 `startSession()`을 부른다. 접힌 사이드바에는 그 버튼이 없다(**소스 확인**: 업스트림 `packages/client/ui-sidebar/src/client/SidebarRoot.tsx`). 키보드(Tab, Enter)로는 여전히 눌린다 |
+
+DreamVerse가 CSS로 숨기거나 막는 기본 요소(`packages/dv/ui-shell/src/client/chrome.tsx`, **소스 확인(DreamVerse)**). 우리는 이 가운데 브랜드 누르기만 막는다. 아래는 추린 것이고, 선택자가 0.2.2-rc.5에서 맞는지는 첫 줄과 셋째 줄만 확인했다. 첫 줄(새 세션 버튼)은 0.2.2-rc.5에서는 슬롯 `sidebar.session.action`으로 바꿀 수 있어 장치가 필요 없다.
 
 ```css
 button[class$="_newSession"] { display: none !important; }                                   /* 새 세션 버튼 */
@@ -569,7 +593,11 @@ span[class$="_brandMark"]:has(> [data-slot="sidebar.brand.mark"]:empty) { displa
 - 브라우저 절반을 고치고 빌드하지 않으면 옛 `lib/client.js`(브라우저 번들)가 나간다. `pnpm dsh:start`는 띄우기 전에 빌드하지만, 띄워 둔 동안 고친 것은 `pnpm build`를 다시 돌려야 나간다.
 - **dsh를 띄워 둔 채 `lib/client.js`가 바뀌면 새로고침 없이 화면이 새 번들로 바뀐다**(**띄워 확인**, 2026-11-26. 파일을 바꾸고 1.5초 뒤에 이미 바뀌어 있었고 콘솔 오류는 없었다). 개발할 때는 dsh를 띄워 두고 `pnpm build`만 다시 돌리면 된다. 호스트 절반을 고친 것이 다시 실리는지는 보지 않았다.
 - `verbatimModuleSyntax` 아래에서 `import { type X } from "…"`는 값 import로 남는다. 표 밖의 `@deepseek-ai/*`면 빌드가 거절한다. `import type { X } from "…"`로 쓴다.
-- 임시 home으로 처음 띄우면 "Unable to create default workspace. Use Choose workspace to select a folder." 토스트가 뜬다(관찰, 2026-11-26. 콘솔 오류는 아니다. `HOME`까지 임시 폴더로 줘도 뜬다, 2026-11-27). dsh는 기본 작업공간을 `<문서 폴더>/deepseek-harness/default-workspace`에 두는데, 문서 폴더를 OS에 물어 얻고(Linux는 `xdg-user-dir DOCUMENTS`) 답이 없거나 홈 폴더와 같으면 던진다(**소스 확인**: `@deepseek-ai/dsh-api-workspace-controller`의 `default-directory`. 이 함수는 공개 진입점으로 나오지 않는다). 토스트의 원인은 이것으로 보인다(추정). 우리 새 프로젝트 폴더는 이 규칙을 쓰지 않는다(`docs/ARCHITECTURE.md` "프로젝트 계층"). 기본 작업공간 자체는 3-0이 다룬다.
+- 임시 home으로 처음 띄우면 "Unable to create default workspace. Use Choose workspace to select a folder." 토스트가 뜬다(관찰, 2026-11-26. 콘솔 오류는 아니다. `HOME`까지 임시 폴더로 줘도 뜬다, 2026-11-27). dsh는 기본 작업공간을 `<문서 폴더>/deepseek-harness/default-workspace`에 두는데, 문서 폴더를 OS에 물어 얻고(Linux는 `xdg-user-dir DOCUMENTS`) 답이 없거나 홈 폴더와 같으면 던진다(**소스 확인**: `@deepseek-ai/dsh-api-workspace-controller`의 `default-directory`. 이 함수는 공개 진입점으로 나오지 않는다). 토스트의 원인은 이것으로 보인다(추정). 우리 새 프로젝트 폴더는 이 규칙을 쓰지 않는다(`docs/ARCHITECTURE.md` "프로젝트 계층"). 3-0부터는 셸이 그 초기화를 가려서 우리 번들로 띄우면 이 토스트가 뜨지 않는다(**띄워 확인**, 2026-11-28. "dsh 내부에 기대는 장치").
+- 같은 dsh에서 페이지를 새로고침하면 "Get started" 창이 다시 뜬다(모델 키를 넣지 않은 home에서. **띄워 확인**, 2026-11-28). Preview Notice는 다시 뜨지 않는다. 새로고침 뒤의 화면을 보는 시험은 요소가 붙었는지(`state: "attached"`)만 보거나 창을 다시 닫는다.
+- 왼쪽 사이드바의 `sidebar.workspaces` 자리는 dsh의 사이드바 뷰포트가 스크롤한다. 그 안의 우리 요소에 `overflow`를 주면 줄 아래로 내려오는 메뉴가 잘린다(2026-11-28에 밟았다. Playwright는 스크롤해서 누르므로 클릭은 통과한다. 시험은 `document.elementFromPoint`로 가려지지 않았는지를 본다).
+- `pointer-events: none`인 요소는 Playwright의 `click()`이 기다리다 시간 초과로 끝난다. 눌러도 아무 일이 없는지를 볼 때는 `page.mouse.click(x, y)`로 좌표를 누른다.
+- 헤드리스 확인에서 `page.evaluate`에 넘기는 문자열은 식이다. `locator.evaluate`에 함수 모양의 문자열을 넘기면 요소를 받지 못한다. 선택자를 문자열 안에 넣어 `page.evaluate`로 부른다.
 - 헤드리스 확인 환경에 한국어 글꼴이 없으면 스크린샷의 한국어가 네모로 나온다. DOM의 글자로 확인한다.
 - 프로필의 번들 링크는 절대 경로다. 저장소 폴더를 옮기거나 다른 워크트리에서 띄우려면 링크를 다시 건다("워크트리와 DSH_HOME").
 - Playwright는 크기가 0인 요소를 "숨김"으로 본다. 표시용 빈 요소를 기다릴 때는 `state: 'attached'`를 쓴다.
@@ -583,7 +611,7 @@ span[class$="_brandMark"]:has(> [data-slot="sidebar.brand.mark"]:empty) { displa
 ```sh
 pnpm exec playwright-core install chromium-headless-shell   # 장비마다 한 번. 또는 CHROME=<Chrome·Chromium 실행 파일>
 pnpm test:integration                                       # 브라우저 번들을 빌드하고 dsh와 브라우저를 띄운다
-pnpm exec vitest run --project integration tests/integration/boot.test.ts   # 파일 하나만
+pnpm exec vitest run --project integration tests/integration/shell.test.ts  # 파일 하나만
 ```
 
 틀은 `tests/harness/`에, 조합 시험은 `tests/integration/`에 있다. 시험은 띄울 때마다 **새 임시 home**(`DSH_HOME`과 `HOME` 둘 다)을 만들고 끝나면 지운다. 개발용 home의 키와 설정을 건드리지 않고, 병렬로 돈다. dsh에는 허용 목록의 환경 변수만 넘어가므로 셸에 있는 모델 키가 시험에 섞이지 않는다.
@@ -595,17 +623,20 @@ pnpm exec vitest run --project integration tests/integration/boot.test.ts   # �
 | `runHostScenario(scenario, options?)`(`host.ts`) | 시나리오 모듈을 dsh 프로세스 안에서 실행하고 돌려준 값을 받는다(아래 "호스트 쪽 서비스를 부르는 시험"). `input`, `patches`, `env`, `timeoutMs`를 받는다 |
 | `redactLoginUrls(text)`(`dsh.ts`) | 주소와 토큰을 가린다. 틀이 내보내는 글은 모두 이것을 거친다. 주소는 `DshInstance.url`로만 건넨다 |
 
-브라우저로 화면을 보는 시험(`tests/integration/boot.test.ts`에서 추렸다):
+브라우저로 화면을 보는 시험(`tests/integration/shell.test.ts`에서 추렸다):
 
 ```ts
 const dsh = await launchDsh();
 try {
   const session = await openPage(dsh.url);
   try {
-    const probe = session.page.locator('[data-slot="sidebar.footer.action"] [data-cs-probe="@cs/ui-shell"]');
-    await probe.waitFor({ state: "attached", timeout: 10_000 });
-    await probe.getByRole("button").click();
-    await expect.poll(() => probe.getAttribute("data-cs-scheme")).toBe("dark");
+    const { page } = session;
+    await page.locator("[data-cs-home] [data-cs-home-empty]").waitFor({ timeout: 10_000 });
+    await page.locator("[data-cs-new-project]").click();
+    const editor = page.locator("[data-cs-chat]").locator('[contenteditable="true"]').first();
+    await editor.click();
+    await page.keyboard.type("hello shell");
+    await expect.poll(() => editor.textContent()).toContain("hello shell");
     expect(session.issues).toEqual([]);          // 콘솔 오류·경고 0건
   } finally {
     await session.close();
@@ -614,6 +645,8 @@ try {
   await dsh.stop();
 }
 ```
+
+우리 화면의 요소에는 시험이 잡을 `data-cs-*` 속성을 둔다(예: `data-cs-project="<id>"`, `data-cs-project-frame="<id>"`, `data-cs-chat`). 화면 문자열은 바뀌므로 문자열로 찾지 않는다.
 
 ### 호스트 쪽 서비스를 부르는 시험
 
@@ -686,7 +719,9 @@ expect(result.names).toContain("working_directory");
 
 ## 확인하지 못한 것
 
-- **실제 모델과의 채팅.** 모델 키가 없어 메시지를 주고받지 못했다. 우측 탭의 채팅에 메시지·도구 호출이 그려지는지, 채팅 안의 카드 슬롯에 우리 React 컴포넌트가 그려지는지는 1-3과 3-4에서 본다.
+- **실제 모델과의 채팅.** 모델 키가 없어 메시지를 주고받지 못했다. 우측 탭의 채팅에 메시지·도구 호출이 그려지는지, 채팅 안의 카드 슬롯에 우리 React 컴포넌트가 그려지는지는 1-3과 3-4에서 본다. 3-0의 셸에서 본 것은 입력창에 글이 쳐지는 데까지다.
+- **홈에서 우측 패널을 다시 펼치는 길.** 홈으로 가면 패널을 접을 뿐이고 패널은 dsh의 것이다. dsh의 펼침 버튼이 홈에서도 남아 있으면 사용자가 눌러 직전 세션의 채팅을 볼 수 있다(리뷰가 소스로 짚었다. 띄워 보지 않았다, **미확인**). 막으려면 dsh 내부에 기대는 장치가 하나 더 든다. 사용자가 고른 "최소"의 밖이라 하지 않았다.
+- **셸(3-0)에서 보지 못한 것.** 대화가 있는(비어 있지 않은) 세션이 여럿인 프로젝트의 세션 목록과 전환(모델 키가 있어야 세션에 대화가 생긴다), 브라우저 탭 둘이 같은 프로젝트를 볼 때, 플러그인이 내려갈 때 두 장치가 되돌아가는지, 브랜드에 키보드로 닿아 Enter를 누르는 경우(CSS로는 막지 못한다), 접힌 사이드바의 모양.
 - **슬롯 등록의 `store`·`locale` 칸.** `inject`(값, 콜백)와 `hooks`, TSX와 JSX 자동 런타임, dsh 타입으로 하는 타입 검사, 공유 모듈 열한 개만 external로 둔 빌드, Astryx가 전혀 없는 브라우저 번들은 1-1에서 확인했다(2026-11-26).
 - 서드파티 패키지가 같이 실린 브라우저 번들, 공유 모듈의 하위 경로(`zod/v4` 등), 플러그인이 내려갈 때 로더가 우리 `<style>`을 지우는 것, 호스트 절반을 고쳤을 때 다시 실리는지.
 - **에이전트 프리셋.** 우리 프리셋을 넣어 띄우는 것, 프리셋 밖에서 등록한 도구가 에이전트에게 보이는지, 기본 제공 프리셋을 끄는 것.
