@@ -38,13 +38,18 @@ export {
   type WireCatalogEntry,
   type WireHistory,
   type WireProject,
+  type WireProposalDecision,
   type WireState,
+  type VersionAssets,
 } from "./wire.ts";
 export { toWireOperation, type WireOperation } from "./wire-operation.ts";
 
 declare module "@deepseek-ai/cordis" {
   interface Context {
-    /** The view API: project state, operation declarations, human operation calls, undo and redo, and the history. */
+    /**
+     * The view API: project state, operation declarations, human operation calls, decisions on proposals, undo and
+     * redo, and the history.
+     */
     csApi: CsApi;
   }
 }
@@ -77,6 +82,7 @@ export const ROUTES = {
   undo: "/api/cs/undo",
   redo: "/api/cs/redo",
   acceptStale: "/api/cs/stale/accept",
+  proposalDecide: "/api/cs/proposal/decide",
   history: "/api/cs/history",
   catalog: "/api/cs/catalog",
 } as const;
@@ -221,6 +227,7 @@ export default class CsApi extends Service {
       post(ROUTES.undo, (body) => api.undo(body)),
       post(ROUTES.redo, (body) => api.redo(body)),
       post(ROUTES.acceptStale, (body) => api.acceptStale(body)),
+      post(ROUTES.proposalDecide, (body) => api.decideProposal(body)),
       post(ROUTES.history, (body) => api.listHistory(body)),
       get(ROUTES.catalog, () => api.listCatalog()),
     ];

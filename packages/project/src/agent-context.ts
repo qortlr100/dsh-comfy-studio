@@ -1,6 +1,6 @@
 /**
- * The `cs:project` system-prompt section: Project's general rules (the conversation's project, the history list, undo
- * and redo, stale records, and how to name records, assets, versions of the registered reference kinds
+ * The `cs:project` system-prompt section: Project's general rules (the conversation's project, the history list,
+ * proposals, undo and redo, stale records, and how to name records, assets, versions of the registered reference kinds
  * and other items). The text depends only on the registered reference kinds, which change only together with the
  * operation tool definitions, so it is the same at every step of a session; the project's state reaches the agent
  * through the project messages of the `project-updates` module. It holds nothing that the user cannot see in the views
@@ -34,7 +34,11 @@ export function projectContext(project: Pick<CsProject, "listReferenceKinds">): 
       "cs_proj_create names this conversation's project, do all work in it and never call cs_proj_create again. Changes of " +
       "the project that your own tool results did not show reach you as project updates; cs_proj_state reads the " +
       "whole project at any time.",
-    "- Every call of yours and every edit of the user is a step of the project history at once; the user does not accept changes.",
+    "- Every call of yours, except a call of a tool whose description says it writes a proposal, and every edit of " +
+      "the user is a step of the project history at once; the user does not accept those changes.",
+    "- A tool whose description says the call writes a proposal changes nothing: the user accepts or rejects the " +
+      "proposal in the app, and only an accepted proposal runs. Say in your reply what you proposed, then wait for " +
+      "the decision, which reaches you as a project update; never repeat a proposal that waits.",
     "- When the user asks to undo, roll back or go back to an earlier state, call cs_proj_undo: without to it goes back one " +
       "step; with to = a record ID from cs_proj_history_list the project shows its state just after that step. cs_proj_redo goes " +
       "forward one step. These moves add no step. A new change after a move discards the steps after the current one for good, " +

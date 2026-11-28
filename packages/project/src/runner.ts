@@ -21,6 +21,7 @@ import { discardedSteps } from "./history.ts";
 import type { OperationSpec } from "./operation-types.ts";
 import type { ReducerRegistry } from "./reducers.ts";
 import type { RecordLineInput, RecordStore } from "./record-store.ts";
+import { isProposalRecord, PROPOSE_OPERATION } from "./proposals.ts";
 import type { Scheduler } from "./scheduler.ts";
 import { OperationFailure, ProjectError } from "./shared.ts";
 import type {
@@ -128,6 +129,23 @@ function originOf(request: RunRequest): RecordOrigin {
   };
 }
 
+/**
+ * Refuse an agent's request for an operation whose `agent` is `propose` or `none`, before anything is read or written;
+ * the agent tools never send one, and this keeps the rule for every other caller too.
+ * @param spec - the operation.
+ * @param request - the call.
+ */
+function refuseAgent(spec: OperationSpec, request: RunRequest): void {
+  const agent = spec.agent ?? "run";
+  if (request.actor !== "agent" || agent === "run") return;
+  throw new ProjectError(
+    "agent_not_allowed",
+    agent === "propose"
+      ? `An agent cannot run ${spec.name}; it proposes the call and the user decides.`
+      : `An agent cannot call ${spec.name}; only the user runs it.`,
+  );
+}
+
 /** The operation registry and the change path. */
 export class Runner {
   private readonly operations = new Map<string, OperationSpec>();
@@ -168,7 +186,8 @@ export class Runner {
 
   /**
    * Register an operation. Refused with `operation_exists` when the name is registered, and with `invalid_params` when
-   * `component` is not a registered component key, or when `name` does not start with `<component>.`.
+   * `component` is not a registered component key, when `name` does not start with `<component>.`, or when a
+   * `readOnly` operation has `agent: 'propose'` (a read changes nothing to propose).
    * @param spec - the operation.
    * @returns a function that removes the registration (only if it is still this spec).
    */
@@ -187,6 +206,12 @@ export class Runner {
         `Operation ${spec.name} does not start with its component key '${spec.component}.'.`,
       );
     }
+    if (spec.readOnly === true && spec.agent === "propose") {
+      throw new ProjectError(
+        "invalid_params",
+        `Operation ${spec.name} is a read, so an agent's call has nothing to propose.`,
+      );
+    }
     this.operations.set(spec.name, spec);
     return () => {
       if (this.operations.get(spec.name) === spec) this.operations.delete(spec.name);
@@ -200,9 +225,11 @@ export class Runner {
 
   /**
    * @param record - a record.
-   * @returns whether the record's operation is registered with `outsideHistory`.
+   * @returns whether the record is written outside the history: its operation is registered with `outsideHistory`,
+   *   or it is a proposal record (`proj.propose`, `proj.proposal_decide`).
    */
   isOutsideHistory(record: ProjectRecord): boolean {
+    if (isProposalRecord(record)) return true;
     return (
       record.operation !== null && this.operations.get(record.operation)?.outsideHistory === true
     );
@@ -210,9 +237,9 @@ export class Runner {
 
   /**
    * Run one operation call. The steps are listed in `CONTRACTS.md` ("Runner: run"). Rejects with `ProjectError` only
-   * before a record exists (unknown operation, invalid params or inputs, input not ready, unknown project), or with the
-   * error of the operation's `precondition`. Once the record is written, resolves with it in its final status (`done`,
-   * `failed`, `cancelled`), or `pending` for a scheduled run.
+   * before a record exists (unknown operation, an agent's call of a `propose` or `none` operation, invalid params or
+   * inputs, input not ready, unknown project), or with the error of the operation's `precondition`. Once the record
+   * is written, resolves with it in its final status (`done`, `failed`, `cancelled`), or `pending` for a scheduled run.
    * @param request - the call.
    * @returns the record, its outputs and report.
    */
@@ -224,6 +251,7 @@ export class Runner {
         "unknown_operation",
         `Operation ${request.operation} is not registered.`,
       );
+    refuseAgent(spec, request);
     store.getProject(request.project);
 
     if (spec.readOnly === true) return await this.runRead(spec, request);
@@ -382,6 +410,69 @@ export class Runner {
   }
 
   /**
+   * Propose one call instead of running it: check it as `run` would check it before writing (operation, params, input
+   * roles, the records `after` names, inputs, `precondition`) against the current state, then append a `proj.propose`
+   * record outside the history. A pending proposal of the same session with the same operation, params and inputs is
+   * returned instead of a new one. Takes the project lock.
+   * @param request - the call; its origin becomes the proposal record's origin.
+   * @returns the `proj.propose` record. Rejects with the refusals of `run`, and with `invalid_params` for a read.
+   */
+  async propose(request: RunRequest): Promise<ProjectRecord> {
+    const { store, reducers } = this.deps;
+    const spec = this.operations.get(request.operation);
+    if (spec === undefined)
+      throw new ProjectError(
+        "unknown_operation",
+        `Operation ${request.operation} is not registered.`,
+      );
+    store.getProject(request.project);
+    if (spec.readOnly === true) {
+      throw new ProjectError(
+        "invalid_params",
+        `Operation ${spec.name} is a read; it writes nothing, so there is nothing to propose.`,
+      );
+    }
+    return await store.lock(request.project, async () => {
+      const state = reducers.getState(request.project);
+      await this.refuse(spec, request, state, request.after !== undefined);
+      const inputs = request.inputs.map(({ role, ref }) => ({ role, ref }));
+      const paramsKey = canonicalJson(request.params);
+      const inputsKey = canonicalJson(inputs);
+      const same = Object.values(state.components.proj.proposals).find(
+        (proposal) =>
+          proposal.status === "pending" &&
+          proposal.session === request.session &&
+          proposal.operation === spec.name &&
+          canonicalJson(proposal.params) === paramsKey &&
+          canonicalJson(proposal.inputs) === inputsKey,
+      );
+      if (same !== undefined) return store.getRecord(request.project, same.id);
+      return store.appendOutsideHistory(request.project, {
+        parents: [this.headOf(request.project)],
+        kind: "operation",
+        component: "proj",
+        operation: PROPOSE_OPERATION,
+        operation_version: "1",
+        ...originOf(request),
+        params: {
+          operation: spec.name,
+          operation_version: spec.version,
+          params: request.params,
+          inputs,
+          based_on: request.based_on ?? null,
+          supersedes: request.supersedes ?? [],
+        },
+        inputs: [],
+        outputs: [],
+        based_on: null,
+        supersedes: [],
+        deterministic: true,
+        status: "done",
+      });
+    });
+  }
+
+  /**
    * Accept a stale record's result: append `proj.stale_accept` with `params {record}` after the head. Takes the project
    * lock.
    * @param project - the project.
@@ -448,6 +539,7 @@ export class Runner {
           "unknown_operation",
           `Operation ${request.operation} is not registered.`,
         );
+      refuseAgent(spec, request);
       this.deps.store.getProject(request.project);
       const state = this.deps.reducers.getState(request.project);
       await this.refuse(

@@ -21,8 +21,10 @@
  * removes these Workspaces itself; removing a project never deletes a file.
  *
  * Agent tools. While the DSH `tools` registry is mounted, every registered operation also has its agent tool
- * `cs_<operation name with _>`, built by the `agent-tools` module. A tool call runs the operation as the agent on the
- * project of its chat session, in the session's DSH turn. Project also registers its own `cs_proj_*` tools (the
+ * `cs_<operation name with _>`, built by the `agent-tools` module, except an operation whose `agent` is `none`. A tool
+ * call runs the operation as the agent on the project of its chat session, in the session's DSH turn; for an operation
+ * whose `agent` is `propose` it writes a proposal instead (the `proposals` module), which runs as the user once the user
+ * accepts it ({@link CsProject.decideProposal}). Project also registers its own `cs_proj_*` tools (the
  * `proj-tools` module); `cs_proj_create` makes the session's folder a project, and the tools return the project
  * summary,
  * to which each component's reducer adds its fields through `Reducer.agentSummary`. While the DSH `systemPrompt`
@@ -35,7 +37,7 @@
  * asset or imports an output fails.
  *
  * The internal modules (`folders`, `record-store`, `runner`, `scheduler`, `history`, `reducers`, `subscriptions`,
- * `sessions`, `agent-tools`, `proj-tools`, `agent-context`, `project-updates`) are private;
+ * `proposals`, `sessions`, `agent-tools`, `proj-tools`, `agent-context`, `project-updates`) are private;
  * `CONTRACTS.md` in this package specifies each of them.
  *
  * @module @cs/project
@@ -58,6 +60,7 @@ import type { OperationSpec } from "./operation-types.ts";
 import { canonicalPath, ProjectFolders } from "./folders.ts";
 import { projTools, type ProjToolDeps } from "./proj-tools.ts";
 import { registerProjectUpdates } from "./project-updates.ts";
+import { ProposalDecider, type ProposalDecision, type ProposalOutcome } from "./proposals.ts";
 import { RecordStore } from "./record-store.ts";
 import { projReducer, ReducerRegistry } from "./reducers.ts";
 import { Runner } from "./runner.ts";
@@ -92,6 +95,12 @@ import type {
 export * from "./types.ts";
 export * from "./operation-types.ts";
 export { OperationFailure, ProjectError } from "./shared.ts";
+export {
+  DECIDE_OPERATION,
+  PROPOSE_OPERATION,
+  type ProposalDecision,
+  type ProposalOutcome,
+} from "./proposals.ts";
 export { promptAssets, replacePromptCitations } from "./citations.ts";
 export {
   citationTarget,
@@ -182,6 +191,7 @@ export default class CsProject extends Service {
   private readonly scheduler: Scheduler;
   private readonly sessions: Sessions;
   private readonly agentTools: AgentTools;
+  private readonly proposals: ProposalDecider;
   private assetStore: AssetStore | null = null;
   /**
    * Registers one operation's agent tool while the DSH tool registry is mounted, else null; and the disposer of each
@@ -252,6 +262,11 @@ export default class CsProject extends Service {
           this.currentAssetStore().importAsset(project, source, meta, createdBy),
       },
     });
+    this.proposals = new ProposalDecider({
+      store: this.store,
+      reducers: this.reducers,
+      runner: this.runner,
+    });
     this.sessions = new Sessions();
     this.agentTools = new AgentTools(ctx, {
       sessions: this.sessions,
@@ -261,6 +276,7 @@ export default class CsProject extends Service {
       listReferenceKinds: () => this.reducers.listReferenceKinds(),
       kindsWithVersion: (state, id, version) => this.reducers.kindsWithVersion(state, id, version),
       run: (request) => this.run(request),
+      propose: (request) => this.propose(request),
       getRecord: (project, record) => this.getRecord(project, record),
       listHistory: (query) => this.listHistory(query),
     });
@@ -439,6 +455,41 @@ export default class CsProject extends Service {
    */
   run(request: RunRequest): Promise<RunResult> {
     return this.runner.run(request);
+  }
+
+  /**
+   * Propose one operation call instead of running it, as an agent's call of a `propose` operation does: the call is
+   * checked as `run` checks it before writing, against the current state, and becomes a `proj.propose` record outside
+   * the history, which the user accepts or rejects with {@link decideProposal}. A pending proposal of the same session
+   * with the same operation, params and inputs is returned instead of a new one.
+   * @param request - the call.
+   * @returns the `proj.propose` record. Rejects with the refusals of `run`, and with `invalid_params` for a read.
+   */
+  propose(request: RunRequest): Promise<ProjectRecord> {
+    return this.runner.propose(request);
+  }
+
+  /**
+   * Decide a proposal. A rejection writes a `proj.proposal_decide` record. An acceptance runs the proposed operation as
+   * `origin` (the intent `accept proposal: <the proposal's intent>`, the proposal's `based_on` and `supersedes`), and
+   * once the run wrote a record, whatever its final status, writes the `proj.proposal_decide` record that names it.
+   * Both are written outside the history. A proposal decided already writes nothing and comes back with `result: null`.
+   * @param project - the project.
+   * @param proposal - the `proj.propose` record.
+   * @param decision - `accept` or `reject`.
+   * @param origin - the user who decides, from where.
+   * @returns the proposal after the call and the accepted run's result (null for a rejection or a decided proposal).
+   *   Throws `unknown_record` for an ID that names no proposal, `agent_not_allowed` for an agent's origin,
+   *   `proposal_busy` while another decision of the proposal is in flight, and the refusal of the accepted run, before
+   *   its record exists, unchanged: the proposal stays pending.
+   */
+  decideProposal(
+    project: ProjectId,
+    proposal: RecordId,
+    decision: ProposalDecision,
+    origin: RecordOrigin,
+  ): Promise<ProposalOutcome> {
+    return this.proposals.decide(project, proposal, decision, origin);
   }
 
   /**
@@ -767,9 +818,9 @@ export default class CsProject extends Service {
     return (cwd === undefined ? undefined : canonicalPath(cwd)) ?? null;
   }
 
-  /** Register the agent tool of an operation while the DSH tool registry is mounted. */
+  /** Register the agent tool of an operation while the DSH tool registry is mounted; an `agent: 'none'` operation has none. */
   private addTool(spec: OperationSpec): void {
-    if (this.registerOperationTool === null) return;
+    if (this.registerOperationTool === null || spec.agent === "none") return;
     this.toolDisposers.set(spec.name, this.registerOperationTool(spec));
   }
 

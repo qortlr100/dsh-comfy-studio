@@ -26,8 +26,10 @@ import {
   outputsOf,
   sessionOf,
   toJson,
+  toolNameOf,
   type ToolOutput,
 } from "./agent-tools.ts";
+import { DECIDE_OPERATION, PROPOSE_OPERATION } from "./proposals.ts";
 import type CsProject from "./index.ts";
 import type { OperationSpec } from "./operation-types.ts";
 import { ProjectError, SEEN_META_KEY } from "./shared.ts";
@@ -37,6 +39,7 @@ import type {
   ProjectRecord,
   ProjectShown,
   ProjectState,
+  Proposal,
   RecordId,
   RecordOrigin,
   RecordStatus,
@@ -141,8 +144,9 @@ function originOf(
 }
 
 /**
- * The project summary of a state: the record a write wrote, Project's fields, then each component's `agentSummary`
- * fields, then the stale and recent records.
+ * The project summary of a state: the record a write wrote, Project's fields (then `proposals`, each pending proposal
+ * as `{proposal, tool, reason}`, only while one is pending), then each component's `agentSummary` fields, then the
+ * stale and recent records.
  * @param project - the service.
  * @param deps - the asset store and the reducers' summaries.
  * @param projectId - the project.
@@ -169,6 +173,15 @@ export function projectSummary(
     head: state.head,
     records: proj.records.length,
   };
+  // The proposals that wait for the user's decision, by tool; absent while none waits.
+  const pending = Object.values(proj.proposals).filter((proposal) => proposal.status === "pending");
+  if (pending.length > 0) {
+    summary["proposals"] = pending.map((proposal) => ({
+      proposal: proposal.id,
+      tool: toolNameOf({ name: proposal.operation }),
+      reason: proposal.intent,
+    }));
+  }
   const stale = Object.keys(proj.stale);
   const recent = proj.records.slice(-RECENT_RECORDS).map((record) => ({
     record: record.id,
@@ -200,13 +213,54 @@ function recordSummary(project: CsProject, record: ProjectRecord): string {
 }
 
 /**
- * One line for a finished record: its operation's summary, else the operation name.
+ * One line for a finished record: the proposal line of a proposal record, else its operation's summary, else the
+ * operation name.
  * @param project - the service.
  * @param record - the record.
+ * @param proposals - the project's proposals, for the tool a decision's proposal names; none by default.
  * @returns the line.
  */
-export function summaryOf(project: CsProject, record: ProjectRecord): string {
-  return specOf(project, record)?.summarize(record) ?? record.operation ?? record.kind;
+export function summaryOf(
+  project: CsProject,
+  record: ProjectRecord,
+  proposals: Record<RecordId, Proposal> = {},
+): string {
+  return (
+    proposalSummary(record, proposals) ??
+    specOf(project, record)?.summarize(record) ??
+    record.operation ??
+    record.kind
+  );
+}
+
+/**
+ * The line of a proposal record, naming tools, never operations:
+ * - `proj.propose`: `proposed <tool>: <reason>`;
+ * - `proj.proposal_decide`: `accepted proposal <id> of <tool>; it ran as record <record>`, or
+ *   `rejected proposal <id> of <tool>; nothing ran` (` of <tool>` only when `proposals` has the proposal).
+ * @param record - a record.
+ * @param proposals - the project's proposals.
+ * @returns the line, or null for any other record.
+ */
+export function proposalSummary(
+  record: ProjectRecord,
+  proposals: Record<RecordId, Proposal>,
+): string | null {
+  if (record.component !== "proj") return null;
+  if (record.operation === PROPOSE_OPERATION) {
+    const operation = record.params["operation"];
+    const tool = typeof operation === "string" ? toolNameOf({ name: operation }) : "a tool";
+    return `proposed ${tool}: ${record.intent}`;
+  }
+  if (record.operation !== DECIDE_OPERATION) return null;
+  const { proposal, decision, record: ran } = record.params;
+  const id = typeof proposal === "string" ? proposal : "?";
+  const operation = Object.values(proposals).find((entry) => entry.id === id)?.operation;
+  const of = operation === undefined ? "" : ` of ${toolNameOf({ name: operation })}`;
+  if (decision === "rejected") return `rejected proposal ${id}${of}; nothing ran`;
+  return typeof ran === "string"
+    ? `accepted proposal ${id}${of}; it ran as record ${ran}`
+    : `accepted proposal ${id}${of}`;
 }
 
 /**

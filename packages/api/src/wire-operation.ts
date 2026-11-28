@@ -7,7 +7,7 @@
  *
  * @module @cs/api/wire-operation
  */
-import type { OperationSpec } from "@cs/project";
+import type { AgentCall, OperationSpec } from "@cs/project";
 
 /** An operation declaration without its executable parts. */
 export interface WireOperation {
@@ -22,6 +22,8 @@ export interface WireOperation {
   deterministic: boolean;
   /** The scheduler class: `none` for operations that wait in neither the CPU nor the GPU queue. */
   resource: OperationSpec["resource"];
+  /** What an agent's call does: `run` (also for an operation that declares none), `propose` or `none`. */
+  agent: AgentCall;
 }
 
 /**
@@ -40,5 +42,6 @@ export function toWireOperation(spec: OperationSpec): WireOperation {
     outputs: spec.outputs,
     deterministic: spec.deterministic,
     resource: spec.resource,
+    agent: spec.agent ?? "run",
   };
 }

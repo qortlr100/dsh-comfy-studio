@@ -7,6 +7,10 @@
  * `cs_seen` (a `ProjectShown`), the record in the status the result returned, each scheduled record as `pending`, and
  * the newest of them as the position, so the project updates do not repeat them; a read stores none.
  *
+ * An operation whose `agent` is `propose` has a tool whose call writes a proposal (`csProject.propose`) instead of
+ * running; its result has the status `proposed` and stores the proposal record as `done`. An operation whose `agent`
+ * is `none` has no tool (the service registers none).
+ *
  * The record's turn is the DSH turn number of the calling agent's session, read from the DSH agent registry
  * (`agents.turnBoundaryOf`).
  *
@@ -68,6 +72,8 @@ export interface AgentToolDeps {
   /** The reference kinds that have version `version` of `id` in the state, in registration order. */
   kindsWithVersion(state: ProjectState, id: string, version: number): string[];
   run(request: RunRequest): Promise<RunResult>;
+  /** Write a proposal of the call instead of running it; returns the `proj.propose` record. */
+  propose(request: RunRequest): Promise<ProjectRecord>;
   getRecord(project: ProjectId, record: RecordId): ProjectRecord;
   listHistory(query: HistoryQuery): HistoryEntry[];
 }
@@ -101,6 +107,25 @@ export const OUTPUT_SCHEMA = {
   },
 } as const;
 
+/** The last sentence of the description of a tool whose operation's `agent` is `propose`. */
+export const PROPOSE_HINT =
+  "Calling this tool does not run it: the call writes a proposal that the user accepts or rejects in the app.";
+
+/** The status of the result of a call that wrote a proposal. */
+export const PROPOSED = "proposed";
+
+/**
+ * The summary of the result of a call that wrote a proposal.
+ * @param tool - the tool name.
+ * @returns the text.
+ */
+export function proposedSummary(tool: string): string {
+  return (
+    `the call of ${tool} waits for the user to accept or reject it in the app; nothing has changed yet. ` +
+    "The user's decision reaches you as a project update; do not propose the same call again while it waits."
+  );
+}
+
 /** The value every operation tool returns to the model. */
 const RESULT_SCHEMA = {
   type: "object",
@@ -119,7 +144,9 @@ const RESULT_SCHEMA = {
     status: {
       type: "string",
       required: true,
-      description: "done, or pending (scheduled behind records that have not finished).",
+      description:
+        "done; pending (scheduled behind records that have not finished); or proposed (a proposal that the user " +
+        "accepts or rejects; nothing ran).",
     },
     summary: { type: "string", required: true },
     outputs: { type: "array", required: true, items: OUTPUT_SCHEMA },
@@ -467,6 +494,7 @@ export class AgentTools {
         : spec.deterministic
           ? "Repeating a call with the same inputs and params reuses the earlier result."
           : "",
+      spec.agent === "propose" ? PROPOSE_HINT : "",
     ].filter((hint) => hint !== "");
     return defineTool({
       name,
@@ -484,16 +512,18 @@ export class AgentTools {
             outputs: value.outputs,
           };
           if (value.record === "") return card;
-          // A record outside the history leaves the current position where it was, so the result shows no position.
+          // A record outside the history (a setting, a proposal) leaves the current position where it was, so the
+          // result shows no position. A proposal record is `done` when it is written.
+          const proposed = value.status === PROPOSED;
           const shown: ProjectShown = {
             project: brandString<ProjectId>(value.project),
-            ...(spec.outsideHistory === true
+            ...(spec.outsideHistory === true || proposed
               ? {}
               : { at: brandString<RecordId>(value.scheduled.at(-1) ?? value.record) }),
             records: {
-              // The status was copied from a record, so it is one of the record statuses.
+              // Any other status was copied from a record, so it is one of the record statuses.
               // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-              [value.record]: value.status as RecordStatus,
+              [value.record]: proposed ? "done" : (value.status as RecordStatus),
               ...Object.fromEntries(value.scheduled.map((id) => [id, "pending"])),
             },
           };
@@ -551,6 +581,19 @@ export class AgentTools {
     };
     await spec.prepareToolCall?.({ args, request, state, exec });
     if (this.waitsForProducer(project, spec, request.inputs)) request.after = [];
+    // A proposing operation writes a proposal for the user instead of running; nothing else changes.
+    if (spec.agent === "propose") {
+      const proposal = await this.deps.propose(request);
+      return {
+        project,
+        record: proposal.id,
+        status: PROPOSED,
+        summary: proposedSummary(toolNameOf(spec)),
+        outputs: [],
+        scheduled: [],
+        params: toJson(request.params),
+      };
+    }
     const before = new Set(this.deps.listHistory({ project }).map((entry) => entry.record.id));
     const result = await this.deps.run(request);
     const record = result.record;

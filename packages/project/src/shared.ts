@@ -22,7 +22,11 @@ export type ProjectErrorCode =
   | "status_backwards"
   | "record_finished"
   | "nothing_to_undo"
-  | "nothing_to_redo";
+  | "nothing_to_redo"
+  /** An agent's request for an operation whose `agent` is `propose` or `none`. */
+  | "agent_not_allowed"
+  /** A decision on a proposal while another decision on it is in flight. */
+  | "proposal_busy";
 
 /** A Project call was refused before it changed anything; `code` says why. */
 export class ProjectError extends Error {

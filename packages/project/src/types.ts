@@ -264,6 +264,38 @@ export interface OperationContext {
   ): AssetId;
 }
 
+/**
+ * What an agent's call of an operation does (`OperationSpec.agent`): `run` runs it at once, `propose` writes a proposal
+ * that the user accepts or rejects, and `none` gives agents no tool for it.
+ */
+export type AgentCall = "run" | "propose" | "none";
+
+/**
+ * One proposal: an agent's call of a `propose` operation, which runs only when the user accepts it, as the user. The
+ * `proj` reducer computes it from the `proj.propose` record and the `proj.proposal_decide` record that decides it.
+ */
+export interface Proposal {
+  /** The `proj.propose` record. */
+  id: RecordId;
+  operation: string;
+  operation_version: string;
+  params: Record<string, unknown>;
+  inputs: Array<{ role: string; ref: RecordInputRef }>;
+  based_on: RecordId | null;
+  supersedes: RecordId[];
+  /** The agent's reason. */
+  intent: string;
+  session: SessionId | null;
+  turn: TurnId | null;
+  tool_call: string | null;
+  created_at: string;
+  status: "pending" | "accepted" | "rejected";
+  /** When the user decided; absent while pending. */
+  decided_at?: string;
+  /** The record the accepted call wrote; absent while pending or rejected. */
+  record?: RecordId;
+}
+
 /** The kind of file or value an operation input or output carries. */
 type OperationValueType = "image" | "video" | "audio" | "text" | "json" | "any";
 
@@ -305,6 +337,8 @@ export interface ComponentStates {
     superseded: Record<RecordId, RecordId>;
     /** The record that created each output asset. */
     created_by: Record<AssetId, RecordId>;
+    /** Every proposal of the project by its `proj.propose` record, pending and decided. */
+    proposals: Record<RecordId, Proposal>;
   };
 }
 
@@ -322,7 +356,8 @@ export interface Reducer<K extends ComponentKey = ComponentKey> {
   initial(): ComponentStates[K];
   /**
    * Apply one record. The reducer receives every record of the chain, of every component, in order, then every record
-   * of its own component's `outsideHistory` operations in write order, and ignores the records it does not interpret.
+   * of its own component's `outsideHistory` operations in write order (for `proj`, also the proposal records
+   * `proj.propose` and `proj.proposal_decide`), and ignores the records it does not interpret.
    * @param slice - the slice before the record.
    * @param record - the record in its current form.
    * @returns the slice after the record.

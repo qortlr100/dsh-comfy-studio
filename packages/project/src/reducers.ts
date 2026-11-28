@@ -15,6 +15,7 @@
 import type { RecordStore } from "./record-store.ts";
 import type { JsonValue } from "@deepseek-ai/dsh-util-values";
 import { versionRefOf } from "./grammar.ts";
+import { isProposalRecord, reduceProposals } from "./proposals.ts";
 import { ProjectError } from "./shared.ts";
 import type {
   AssetId,
@@ -149,7 +150,13 @@ function reduceProj(
   record: ProjectRecord,
   versionCreator: VersionCreator,
 ): ProjSlice {
+  // A proposal record is outside the history: it is no record of the history list and marks nothing stale.
+  if (isProposalRecord(record)) {
+    const proposals = reduceProposals(slice.proposals, record);
+    return proposals === slice.proposals ? slice : { ...slice, proposals };
+  }
   const records = [...slice.records, record];
+  const { proposals } = slice;
   const created_by = { ...slice.created_by };
   if (record.status === "done") for (const asset of record.outputs) created_by[asset] = record.id;
   const superseded = { ...slice.superseded };
@@ -161,6 +168,7 @@ function reduceProj(
       created_by,
       superseded,
       stale: computeStale(records, { created_by, superseded }, versionCreator),
+      proposals,
     };
   }
   const reason = staleReason(
@@ -172,7 +180,7 @@ function reduceProj(
     reason === undefined || acceptedRecords(slice.records).has(record.id)
       ? slice.stale
       : { ...slice.stale, [record.id]: reason };
-  return { records, created_by, superseded, stale };
+  return { records, created_by, superseded, stale, proposals };
 }
 
 /**
@@ -189,11 +197,14 @@ function reduceProj(
  *   record that is (transitively) downstream of the superseded one becomes stale.
  *   A `proj.stale_accept` record with `params.record` removes that record's mark and keeps it removed for the rest of
  *   the chain, and records downstream of it are not stale through it.
+ * - `proposals`: each `proj.propose` record → its pending proposal, which the `proj.proposal_decide` record that names
+ *   it decides (`reduceProposals` of the `proposals` module). The registry passes these records, which are outside the
+ *   history, after the chain whatever the current position; they change nothing else and are not in `records`.
  * Request records and `proj.*` records other than `proj.stale_accept` change only `records`. The registry reduces the
  * slice with the `createdBy` of the reference kinds; `projReducer.reduce` called on its own finds no version producers.
  */
 export const projReducer: Reducer<"proj"> = {
-  initial: () => ({ records: [], stale: {}, superseded: {}, created_by: {} }),
+  initial: () => ({ records: [], stale: {}, superseded: {}, created_by: {}, proposals: {} }),
   reduce: (slice, record) => reduceProj(slice, record, noVersions),
 };
 
